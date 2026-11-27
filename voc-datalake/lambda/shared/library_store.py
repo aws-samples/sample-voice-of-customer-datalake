@@ -27,6 +27,7 @@ from typing import TYPE_CHECKING, Any, Final
 
 from botocore.exceptions import ClientError
 
+from shared.aws import CONDITION_FAILED, cancellation_codes
 from shared.exceptions import ConflictError, NotFoundError, ValidationError
 from shared.ids import timestamped_id
 from shared.ingest_tables import table_view
@@ -40,7 +41,7 @@ from shared.library_keys import (
     original_key,
     slug_key,
 )
-from shared.participants_tables import cancellation_codes, transact
+from shared.participants_tables import transact
 from shared.request_body import validated_text
 from shared.timestamps import now_iso, parse_iso
 
@@ -311,9 +312,9 @@ def _new_row(scope: WorkspaceScope | None, item_id: str, new: NewItem, slug: str
 def _refusal(error: ClientError) -> str | None:
     """Which entry of a create refused it: ``count`` (the library is full) or ``slug`` (taken), else None."""
     codes = cancellation_codes(error)
-    if len(codes) >= 3 and codes[0] == 'ConditionalCheckFailed':
+    if len(codes) >= 3 and codes[0] == CONDITION_FAILED:
         return 'count'
-    if len(codes) >= 3 and codes[1] == 'ConditionalCheckFailed':
+    if len(codes) >= 3 and codes[1] == CONDITION_FAILED:
         return 'slug'
     return None
 
@@ -390,9 +391,9 @@ def update_item(table: Any, scope: WorkspaceScope | None, item: Mapping[str, Any
         transact(table, scope, entries)
     except ClientError as exc:
         codes = cancellation_codes(exc)
-        if codes and codes[0] == 'ConditionalCheckFailed':
+        if codes and codes[0] == CONDITION_FAILED:
             raise ConflictError(STALE, code='stale', details={'version': int(item.get('version') or 0)}) from exc
-        if moves_slug and len(codes) > 1 and codes[1] == 'ConditionalCheckFailed':
+        if moves_slug and len(codes) > 1 and codes[1] == CONDITION_FAILED:
             raise ConflictError(SLUG_TAKEN, code='slug_taken') from exc
         raise
     return {**item, **changes, 'updated_by': actor.stored(), 'updated_at': now, 'version': expected + 1}
@@ -414,7 +415,7 @@ def delete_item_rows(table: Any, scope: WorkspaceScope | None, item: Mapping[str
     try:
         transact(table, scope, entries)
     except ClientError as exc:
-        if cancellation_codes(exc)[:1] == ['ConditionalCheckFailed']:
+        if cancellation_codes(exc)[:1] == [CONDITION_FAILED]:
             raise NotFoundError('Library item not found') from exc
         raise
 

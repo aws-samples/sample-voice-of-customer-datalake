@@ -58,7 +58,7 @@ Exact pins worth knowing (not holds; Dependabot still proposes their minor and p
   from the network, so a release is taken deliberately: read its changelog, then run the relay's specs
   (`src/voice/*.test.ts` in the stream package) and `lib/stacks/voice-relay.test.ts`, which runs the built `relay.js`.
 - `cdk-nag` (`voc-datalake/package.json`) is pinned exactly: `lib/utils/nag-ack.ts` renders finding ids the way
-  cdk-nag 3.0.2's (unexported) `flattenCfnReference` does; `lib/nag-suppressions.test.ts` fails if a release
+  cdk-nag 3.1.0's (unexported) `flattenCfnReference` does; `lib/nag-suppressions.test.ts` fails if a release
   renders them differently.
 
 ### Merging a Dependabot pull request
@@ -109,7 +109,7 @@ PIP_AUDIT=/tmp/pip-audit/bin/pip-audit AUDIT_PYTHON=python3 node scripts/depende
 |---|---|---|
 | npm production dependencies | `npm audit --omit=dev` per lockfile | high or critical |
 | npm development dependencies | `npm audit`, minus the production findings | critical (high is reported only) |
-| Lambda layer requirements | pip resolves for the Lambda target (CPython 3.14, arm64), then `pip-audit` | any known advisory |
+| Lambda layer requirements (all five) | pip resolves for the Lambda target (CPython 3.15, arm64: manylinux_2_28 or manylinux2014 wheels), then `pip-audit` | any known advisory |
 | `requirements-dev.txt` | resolved for the host, then `pip-audit` | nothing (reported only) |
 
 Development tools never ship to a Lambda or to the SPA bundle, so a high advisory in one should not block
@@ -155,7 +155,7 @@ release:
 | Area | Compared | With |
 |---|---|---|
 | `npm` | every package of the six lockfiles (root, `voc-datalake`, `frontend`, `frontend/e2e`, `lambda/stream`, `tools/kiro-acp-bridge`) | the npm registry's `latest` (not the in-range `wanted`) |
-| `pip` / `pip floor` | each `==` pin, and each `>=` / `~=` floor, in the four Lambda layers and `requirements-dev.txt` | PyPI. A floor is only informational: a fresh layer build already installs the newest release it allows |
+| `pip` / `pip floor` | each `==` pin, and each `>=` / `~=` floor, in the five Lambda layers and `requirements-dev.txt` | PyPI. A floor is only informational: a fresh layer build already installs the newest release it allows |
 | `Lambda runtime` | every `Runtime.PYTHON_3_x` / `Runtime.NODEJS_x_X` in `voc-datalake/lib` | the newest runtime the installed `aws-cdk-lib` knows |
 | `toolchain` | `engines.node`, `.python-version`, the workflows' `node-version` / `python-version` | the newest Node LTS line and Python line (endoflife.date) |
 | `GitHub Action`, `workflow tool` | each SHA-pinned `uses:` (its `# vX` comment) and `GITLEAKS_VERSION`, `ACTIONLINT_VERSION`, `ZIZMOR_VERSION` | the repository's latest GitHub release (`GITHUB_TOKEN` or `gh auth token` raises the API limit) |
@@ -163,6 +163,14 @@ release:
 Each line is classed `major`, `minor` or `patch`, majors first. Majors are upgraded deliberately, one at a
 time on their own release branch (the reason Dependabot ignores them). A newer Python line than the Lambda
 runtime does not mean Lambda supports it yet: the `Lambda runtime` line is the one that says so.
+
+A Lambda runtime and CI's move together, in the same change. Every workflow's `setup-python` reads
+`.python-version`, which `voc-datalake/lambda/shared/test/test_python_runtime_lockstep.py` holds equal to the stacks'
+`Runtime.PYTHON_3_x` (3.15), and every workflow's `setup-node` names the major of the stacks' `Runtime.NODEJS_x_X`
+(26 since 7.104.00; `test_node_runtime_lockstep.py`). The one exception is the voice relay
+(`lib/stacks/voice-relay.ts`): it is not a Lambda but an AgentCore Runtime on `NODE_22`, the newest Node AgentCore's
+direct code deployment takes, and the test holds it there so the exclusion is looked at again when AgentCore takes a
+newer one. `engines.node` (24.15+) and ruff's and pyright's Python 3.12 are the local floor, not what CI runs.
 
 `--json` prints the findings as JSON; `--fail-on major|minor|patch` exits 1 when a finding at or above that
 level exists. Exit 2 means a check could not run (no network, a directory without `node_modules`); it is

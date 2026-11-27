@@ -7,7 +7,11 @@ caller-supplied URL into an HTTP request:
   and again on every redirect hop and at connect time;
 - `POST /scrapers` (``save_scraper``) on every URL of the saved config;
 - the webscraper ingestor before EVERY request, including each redirect hop
-  (``shared/http_utils.fetch_public_url``).
+  (``shared/http_utils.fetch_public_url``);
+- the public-only guard of a page a person names (``require_public``): a design
+  reference's live capture (``design_capture/capture_worker.py``) and a product
+  source's link (``shared/product_source_routes.py``, ``shared/product_source_links.py``,
+  7.104.00), one rule and the same words for both.
 
 It lives in ``lambda/shared`` because both bundles ship that directory: the API
 Lambdas copy ``/asset-input/shared`` (``createApiLambdaCode`` in api-stack.ts)
@@ -275,6 +279,35 @@ def validate_url(url: object) -> tuple[bool, str]:
     if error is not None:
         return False, error
     return True, ''
+
+
+#: Schemes a page a person names may have: where it starts must be https; where it ends up (after redirects, or a
+#: browser's own navigation) may be http(s), never file:, data:, javascript: or chrome:.
+_START_SCHEMES = ('https://',)
+_FINAL_SCHEMES = ('https://', 'http://')
+
+
+class NotPublicURLError(ValueError):
+    """A page a person named is not a public https page (``require_public``). Its message is the person's, and
+    ``reason`` the short code a log or a caller's own error carries: ``url_not_allowed`` (where it starts) or
+    ``final_url_not_allowed`` (where it ended)."""
+
+    def __init__(self, message: str, reason: str) -> None:
+        super().__init__(message)
+        self.reason = reason
+
+
+def require_public(url: str, *, final: bool) -> None:
+    """The public-only guard of a page a person names: an allowed scheme (https to start; http(s) where it ended,
+    ``final``) and a public address (``validate_url``), else ``NotPublicURLError`` naming why. ``final``: the
+    address the page ended on, judged again (a redirect, or the page itself, may have moved it)."""
+    where = 'The page ended on an address that is not allowed' if final else 'This address is not allowed'
+    reason = 'final_url_not_allowed' if final else 'url_not_allowed'
+    if not url.startswith(_FINAL_SCHEMES if final else _START_SCHEMES):
+        raise NotPublicURLError(f'{where} (only public https pages can be read)', reason)
+    is_valid, why = validate_url(url)
+    if not is_valid:
+        raise NotPublicURLError(f'{where} ({why})', reason)
 
 
 def scraper_url_error(

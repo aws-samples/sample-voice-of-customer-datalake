@@ -360,10 +360,84 @@ def test_more_than_six_or_no_persona_ids_is_400(call, body):
     assert call('POST', PERSONA_REVIEW, OWNER, body)[0]['statusCode'] == 400
 
 
-def test_a_project_without_personas_is_400(call):
-    response, body = call('POST', PERSONA_REVIEW, OWNER, {})
-    assert response['statusCode'] == 400
-    assert 'no personas' in json.dumps(body)
+def test_a_project_without_personas_and_no_company_personas_is_400_no_personas(call, table):
+    before = table.scan()['Items']
+    with patch('projects_handler.assist_jobs.start') as start:
+        response, body = call('POST', PERSONA_REVIEW, OWNER, {})
+    assert (response['statusCode'], body['code']) == (400, 'no_personas')
+    assert 'no personas' in body['error']
+    start.assert_not_called()
+    assert table.scan()['Items'] == before
+
+
+# The company library of the project's own scope reviews a project without personas (docs/document-review.md).
+WS_B = 'ws_01JC3Q8ZK6V7W9X2Y4A5B6C7D9'
+
+
+def _company_persona(table, persona_id, created_at, *, pk='PROJECT#company_personas'):
+    table.put_item(Item={'pk': pk, 'sk': f'PERSONA#{persona_id}', 'persona_id': persona_id,
+                         'name': f'Company {persona_id}', 'created_at': created_at})
+
+
+def _review_work(reply='{"stance": "mixed", "verdict": "Fine.", "comments": []}'):
+    import projects_handler
+
+    with patch('shared.document_review.converse', return_value=reply) as converse:
+        result = projects_handler._persona_review_work({'project_id': 'p1', 'document_id': 'd1',
+                                                        'body_json': json.dumps({'persona_ids': None})})
+    return result, converse
+
+
+def test_a_project_without_personas_starts_a_review_by_the_company_personas(call, table):
+    _company_persona(table, 'c1', '2026-10-01T00:00:00+00:00')
+    with patch('projects_handler.assist_jobs.start', return_value={'success': True, 'job_id': 'job_c'}) as start:
+        response, body = call('POST', PERSONA_REVIEW, EDITOR, {})
+    assert (response['statusCode'], body['job_id']) == (202, 'job_c')
+    assert start.call_args.args[1] == 'assist_persona_review'
+
+
+def test_the_company_personas_review_a_project_without_its_own_and_the_result_says_so(call, table):
+    _company_persona(table, 'c1', '2026-10-01T00:00:00+00:00')
+    result, _converse = _review_work()
+    assert (result['persona_source'], [p['persona_id'] for p in result['personas']]) == ('company', ['c1'])
+    threads = call('GET', COMMENTS, OWNER)[1]['threads']
+    assert [(t['author']['kind'], t['author']['persona_id'], t['text']) for t in threads] == [
+        ('persona', 'c1', 'Fine.')]
+
+
+def test_the_projects_own_personas_review_first_and_the_company_library_is_not_asked(table):
+    table.put_item(Item={'pk': 'PROJECT#p1', 'sk': 'PERSONA#a', 'persona_id': 'a', 'name': 'Ann'})
+    _company_persona(table, 'c1', '2026-10-01T00:00:00+00:00')
+    result, converse = _review_work()
+    assert (result['persona_source'], [p['persona_id'] for p in result['personas']]) == ('project', ['a'])
+    assert converse.call_count == 1
+
+
+def test_the_company_fallback_asks_at_most_six_personas_newest_first(table):
+    for n in range(8):
+        _company_persona(table, f'c{n}', f'2026-10-0{n + 1}T00:00:00+00:00')
+    result, converse = _review_work()
+    assert [p['persona_id'] for p in result['personas']] == ['c7', 'c6', 'c5', 'c4', 'c3', 'c2']
+    assert converse.call_count == 6
+
+
+def test_another_workspaces_personas_never_review_a_deployment_project(call, table):
+    """Workspace B's copy of the project and B's company library hold personas; the deployment's project, with
+    none and no deployment library, is still 400 no_personas, and its review work asks nobody."""
+    table.put_item(Item={'pk': f'WS#{WS_B}#PROJECT#p1', 'sk': 'PERSONA#b', 'persona_id': 'b', 'name': 'B own'})
+    _company_persona(table, 'cb', '2026-10-01T00:00:00+00:00', pk=f'WS#{WS_B}#PROJECT#company_personas')
+    with patch('projects_handler.assist_jobs.start') as start:
+        response, body = call('POST', PERSONA_REVIEW, OWNER, {})
+    assert (response['statusCode'], body['code'], start.called) == (400, 'no_personas', False)
+    result, converse = _review_work()
+    assert (result['personas'], result['filed'], converse.called) == ([], 0, False)
+
+
+def test_persona_ids_naming_none_of_the_reviewers_is_a_plain_400(call, table):
+    _company_persona(table, 'c1', '2026-10-01T00:00:00+00:00')
+    response, body = call('POST', PERSONA_REVIEW, OWNER, {'persona_ids': ['nobody']})
+    assert (response['statusCode'], body.get('code')) == (400, None)
+    assert 'persona_ids' in body['error']
 
 
 def test_the_persona_review_work_files_verbatim_comments_on_the_document(table):

@@ -5,9 +5,9 @@ directories of one site-packages (``voc-datalake/.venv``, which CI installs from
 the network. ``Requires-Dist`` markers are evaluated for the Lambda runtime (:data:`LAMBDA_MARKERS`), not the
 machine running the audit, so a macOS venv resolves the layer the arm64 Linux build installs.
 
-:data:`RUNTIME_PROVIDED` is what ``public.ecr.aws/lambda/python:3.14`` ships in
-``/var/lang/lib/python3.14/site-packages`` (measured 2026-10-24: ``importlib.metadata.distributions()`` in
-the image, ``pip`` left out). ``test_py_layers.py`` re-checks the names and import names against the image
+:data:`RUNTIME_PROVIDED` is what ``public.ecr.aws/lambda/python:3.15`` ships in
+``/var/lang/lib/python3.15/site-packages`` (measured 2026-11-26 on the arm64 image, Python 3.15.2:
+``importlib.metadata.distributions()`` in the image, ``pip`` left out). ``test_py_layers.py`` re-checks the names and import names against the image
 when Docker and the image are present (skipped otherwise). A layer that ships one of these shadows the
 runtime's copy, because ``/opt/python`` precedes the runtime's site-packages on ``sys.path``.
 """
@@ -27,9 +27,9 @@ from packaging.specifiers import SpecifierSet
 from packaging.utils import canonicalize_name
 from packaging.version import InvalidVersion, Version
 
-#: The marker environment of the Lambda Python 3.14 arm64 runtime the layers are built for.
+#: The marker environment of the Lambda Python 3.15 arm64 runtime the layers are built for.
 LAMBDA_MARKERS: dict[str, str] = {
-    'python_version': '3.14', 'python_full_version': '3.14.8', 'implementation_version': '3.14.8',
+    'python_version': '3.15', 'python_full_version': '3.15.2', 'implementation_version': '3.15.2',
     'implementation_name': 'cpython', 'platform_python_implementation': 'CPython', 'os_name': 'posix',
     'sys_platform': 'linux', 'platform_system': 'Linux', 'platform_machine': 'aarch64',
     'platform_release': '', 'platform_version': '',
@@ -42,15 +42,15 @@ class RuntimeDist:
     imports: tuple[str, ...]
 
 
-#: Distributions the Lambda Python 3.14 runtime provides (see the module docstring).
+#: Distributions the Lambda Python 3.15 runtime provides (see the module docstring).
 RUNTIME_PROVIDED: dict[str, RuntimeDist] = {
-    'awslambdaric': RuntimeDist('4.2.2', ('awslambdaric',)),
-    'boto3': RuntimeDist('1.42.97', ('boto3',)),
-    'botocore': RuntimeDist('1.42.97', ('botocore',)),
+    'awslambdaric': RuntimeDist('4.2.3', ('awslambdaric', 'runtime_client')),
+    'boto3': RuntimeDist('1.43.127', ('boto3',)),
+    'botocore': RuntimeDist('1.43.127', ('botocore',)),
     'jmespath': RuntimeDist('1.1.0', ('jmespath',)),
     'python-dateutil': RuntimeDist('2.9.0.post0', ('dateutil',)),
-    's3transfer': RuntimeDist('0.16.0', ('s3transfer',)),
-    'simplejson': RuntimeDist('4.2.0', ('simplejson',)),
+    's3transfer': RuntimeDist('0.19.3', ('s3transfer',)),
+    'simplejson': RuntimeDist('4.3.0', ('simplejson',)),
     'six': RuntimeDist('1.17.0', ('six',)),
     'snapshot-restore-py': RuntimeDist('1.0.0', ('snapshot_restore_py',)),
     'urllib3': RuntimeDist('2.8.0', ('urllib3',)),

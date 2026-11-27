@@ -8,7 +8,9 @@
 // title, as the server keys them), so a comment made on one version shows on the next. The mock's
 // one caller is the project's team AND, on /review, the reviewer `reviewer@example.com`.
 // The persona review is an assist job of the project registry (shared.startProjectAssistJob),
-// filing one quote per persona that is found verbatim in the document. So is "Revise from
+// filing one quote per persona that is found verbatim in the document; a project without
+// personas is reviewed by the company library's (mock-company-personas.js, through `shared`), its result's
+// `persona_source` saying which, and with neither it is a 400 `no_personas`. So is "Revise from
 // comments" (reviseRoute: recommendations, proposal or applied), and `…/comments/addressed` marks
 // threads by the path's version, or clears them (`addressed: false`), appending to their history. proj_1's PRD and PR/FAQ start with a few threads (SEEDED_THREADS), seeded on the first
 // request of this module.
@@ -33,7 +35,7 @@ const threadsBySeries = new Map(); // series key -> thread[]
 const shares = new Map(); // share id -> share
 const shareBySeries = new Map(); // series key -> share id
 
-const bad = (status, error) => [status, { success: false, error }];
+const bad = (status, error, code) => [status, { success: false, error, ...(code === undefined ? {} : { code }) }];
 const nowIso = () => new Date().toISOString();
 const newCommentId = () => `dc_${String(Date.now() * 1000).padStart(20, '0')}${randomBytes(3).toString('hex')}`;
 const isObject = (value) => value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -141,12 +143,21 @@ function createShare(projectId, doc, key, body) {
   return [200, { share: shareView(share), created: true }];
 }
 
+/** Who reviews (document_review.reviewers): the project's own personas, else the company library's. */
+function reviewers(detail, shared) {
+  const own = detail.personas ?? [];
+  return own.length > 0 ? { source: 'project', pool: own } : { source: 'company', pool: shared.companyLibraryPersonas() };
+}
+
 /** Persona review: one quote per persona (the document's first sentence long enough), plus a verdict. */
-function personaReview(detail, doc, key) {
+function personaReview({ detail, doc, key }, shared) {
   const sentences = String(doc.content ?? '').replace(/[#*_`>|-]/g, ' ').split(/(?<=[.!?])\s+/)
     .map((s) => s.replace(/\s+/g, ' ').trim()).filter((s) => s.length >= 20);
-  const personas = (detail.personas ?? []).slice(0, MAX_REVIEW_PERSONAS);
-  if (personas.length === 0) return bad(400, 'This project has no personas to ask yet');
+  const { source, pool } = reviewers(detail, shared);
+  const personas = pool.slice(0, MAX_REVIEW_PERSONAS);
+  if (personas.length === 0) {
+    return bad(400, 'This project has no personas to ask yet, and the company has none either. Add personas on the Personas tab first', 'no_personas');
+  }
   const results = personas.map((persona, index) => {
     const author = { kind: 'persona', persona_id: persona.persona_id, name: persona.name };
     const quote = sentences[index % Math.max(1, sentences.length)];
@@ -156,7 +167,10 @@ function personaReview(detail, doc, key) {
     }
     return { persona_id: persona.persona_id, name: persona.name, ok: true, stance: 'mixed', filed: quote === undefined ? 1 : 2, dropped: 0 };
   });
-  return [200, { document_id: doc.document_id, version: doc.version ?? 1, personas: results, filed: results.reduce((n, r) => n + r.filed, 0) }];
+  return [200, {
+    document_id: doc.document_id, version: doc.version ?? 1, personas: results, filed: results.reduce((n, r) => n + r.filed, 0),
+    persona_source: source,
+  }];
 }
 
 // ── Revise from comments (lambda/shared/document_revision.py) ──────────────────────────────
@@ -362,7 +376,7 @@ function documentRoute(req, match, body, shared) {
   const key = seriesKey(projectId, doc);
   if (kind === 'persona-review') {
     return req.method === 'POST'
-      ? shared.startProjectAssistJob(projectId, 'assist_persona_review', personaReview(detail, doc, key))
+      ? shared.startProjectAssistJob(projectId, 'assist_persona_review', personaReview({ detail, doc, key }, shared))
       : bad(405, 'Method not allowed');
   }
   if (kind === 'revise-from-comments') {

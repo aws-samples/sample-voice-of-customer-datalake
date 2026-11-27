@@ -25,7 +25,7 @@ function synth(context: Record<string, unknown>, region = 'us-east-1', writes = 
   const table = new dynamodb.Table(stack, 'Table', { partitionKey: { name: 'pk', type: dynamodb.AttributeType.STRING } });
   table.addGlobalSecondaryIndex({ indexName: 'gsi1', partitionKey: { name: 'g', type: dynamodb.AttributeType.STRING } });
   const fn = new lambda.Function(stack, 'Fn', {
-    runtime: lambda.Runtime.PYTHON_3_14, handler: 'h.handler', code: lambda.Code.fromInline('def handler(e, c): pass'),
+    runtime: lambda.Runtime.PYTHON_3_15, handler: 'h.handler', code: lambda.Code.fromInline('def handler(e, c): pass'),
   });
   table.grantReadData(fn);
   if (writes) table.grant(fn, 'dynamodb:PutItem');

@@ -4,7 +4,7 @@ import { Meter, pricesFor } from './meter.js';
 import { GOODBYE_TURN } from './prompt.js';
 import { VoiceSession } from './voice-session.js';
 import {
-  FakeChannel, FakeStore, FakeTransport, ManualClock, PROJECT_ID, SESSION_ID, sessionInput, settle,
+  FakeChannel, FakeStore, FakeTransport, ManualClock, PROJECT_ID, SESSION_ID, productInput, sessionInput, settle,
 } from './voice-fixtures.js';
 
 const MINUTE = 60_000;
@@ -67,6 +67,16 @@ describe('VoiceSession start', () => {
     expect(run.transport.stream(0).names()).toStrictEqual(
       ['sessionStart', 'promptStart', 'contentStart', 'textInput', 'contentEnd', 'contentStart']);
     expect(run.transport.stream(0).bodies('textInput')[0]?.content).toContain('You are "Maria"');
+  });
+
+  it('opens a persona\'s stream with its cite tool and a product interview\'s with none (7.104.00)', async () => {
+    const tools = (run: Run): unknown => Object(run.transport.stream(0).bodies('promptStart')[0]).toolConfiguration;
+    const persona = await started();
+    expect(Object(tools(persona)).tools).toMatchObject([{ toolSpec: { name: 'cite' } }]);
+    const interview = await started(productInput());
+    expect(tools(interview)).toBeUndefined();
+    expect(interview.transport.stream(0).bodies('textInput')[0]?.content).toContain('You are an AI interviewer.');
+    expect(interview.channel.of('ready')).toHaveLength(1);
   });
 
   it('refuses a session the store does not activate (used, ended, past its minute or gone) and writes nothing', async () => {

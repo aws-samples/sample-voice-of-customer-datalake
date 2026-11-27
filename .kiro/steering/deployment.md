@@ -5,8 +5,8 @@ This guide covers how to deploy the VoC (Voice of Customer) platform, including 
 ## Prerequisites
 
 - **AWS CLI** configured with appropriate credentials
-- **Node.js** 24.15+ and npm (root `package.json` `engines`; the same line as CI and the `nodejs24.x` Lambda runtime)
-- **Python** 3.14+ (for Lambda functions)
+- **Node.js** 24.15+ and npm (root `package.json` `engines`, the local floor; CI runs Node 26, the Node Lambdas' `nodejs26.x`)
+- **Python** 3.12+ for the local lint and tests (the Lambdas run Python 3.15)
 - **AWS CDK** CLI installed (`npm install -g aws-cdk`)
 
 ## Project Structure
@@ -329,7 +329,7 @@ jobs:
       
       - uses: actions/setup-node@v4
         with:
-          node-version: '24'
+          node-version: '26'
           
       - name: Install dependencies
         run: |

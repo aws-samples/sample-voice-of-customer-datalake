@@ -322,7 +322,8 @@
       "importPersona": "Importación de persona",
       "mergeDocuments": "Fusión de documentos",
       "research": "Investigación",
-      "draftPrototype": "Borrador de prototipo"
+      "draftPrototype": "Borrador de prototipo",
+      "extractProductDescription": "Extracción de descripción del producto"
     },
     "completedCount_many": "{{count, number}} completados",
     "moreFailedCount_many": "{{count, number}} más con error"
@@ -551,6 +552,7 @@
       "oneLiner": "Descripción en una línea",
       "problemSolved": "Problema resuelto",
       "productName": "Nombre del producto",
+      "productSummary": "Qué hace el producto",
       "successMetrics": "Métricas de éxito",
       "targetUsers": "Usuarios objetivo"
     },
@@ -576,28 +578,6 @@
     },
     "subtitle": "La información de aquí se inyecta automáticamente en la generación de PRD y PR/FAQ como contexto actual del producto.",
     "title": "Descripción del producto/servicio",
-    "upload": {
-      "accepted": "PNG, JPEG, GIF, WebP hasta 3,5 MB · MD, TXT hasta 10 MB",
-      "delete": "Eliminar documento",
-      "dropZone": "Suelta archivos aquí, pega una captura o haz clic para subir",
-      "empty": "Aún no hay documentos.",
-      "errors": {
-        "tooLarge": "Demasiado grande (>10 MB): {{name}}",
-        "unsupportedType": "Tipo no compatible: {{name}} ({{type}}). Se aceptan: {{accepted}}",
-        "uploadFailed": "{{name}}: error al subir — {{message}}"
-      },
-      "extractedChars_one": "{{count, number}} carácter extraído",
-      "extractedChars_other": "{{count, number}} caracteres extraídos",
-      "heading": "Documentos internos",
-      "hint": "Imágenes y texto — máx. 20",
-      "loading": "Cargando…",
-      "notYet": "PDF y Word (.docx) aún no se leen aquí: añádelos a la Biblioteca y menciónalos en el asistente con #.",
-      "statusExtracting": "Extrayendo…",
-      "statusFailed": "Falló",
-      "statusReady": "Listo",
-      "statusUploading": "Subiendo…",
-      "extractedChars_many": "{{count, number}} caracteres extraídos"
-    },
     "assistant": {
       "button": "Rellenar con el asistente de IA",
       "hint": "El asistente pregunta por cada campo vacío, de uno en uno, y luego muestra todas tus respuestas en una tarjeta para que las apruebes.",
@@ -627,6 +607,185 @@
         "title": "Notas",
         "description": "Cualquier otra cosa que deban saber quienes redactan el PRD y el PR/FAQ."
       }
+    },
+    "sources": {
+      "title": "Fuentes",
+      "description": "Archivos, enlaces y respuestas que lee la extracción para describir el producto.",
+      "hint": "20 como máximo",
+      "empty": "Añade documentos, imágenes o enlaces, o responde a unas preguntas.",
+      "emptyViewer": "Aún no hay fuentes.",
+      "answerQuestions": "Responder preguntas",
+      "dropZone": "Suelta archivos aquí, pega una captura o haz clic para subir",
+      "accepted": "PDF, Word (.docx), PowerPoint (.pptx) hasta 25 MB · MD, TXT hasta 10 MB · PNG, JPEG, GIF, WebP hasta 3,5 MB",
+      "loading": "Cargando…",
+      "loadFailed": "No se pudieron cargar las fuentes. Comprueba tu conexión e inténtalo de nuevo.",
+      "typedAnswers": "Respuestas escritas",
+      "voiceInterview": "Entrevista por voz",
+      "status": {
+        "uploading": "Subiendo…",
+        "pending": "Esperando lectura",
+        "extracting": "Leyendo…",
+        "fetching": "Descargando…",
+        "ready": "Lista",
+        "failed": "Error"
+      },
+      "chars_one": "{{count, number}} carácter leído",
+      "chars_many": "{{count, number}} caracteres leídos",
+      "chars_other": "{{count, number}} caracteres leídos",
+      "pages_one": "{{count, number}} página",
+      "pages_many": "{{count, number}} páginas",
+      "pages_other": "{{count, number}} páginas",
+      "cut": "recortada en el límite de lectura",
+      "readByModel": "leída por IA",
+      "injection": "Partes de este texto parecen instrucciones para un modelo de IA. Se lee solo como datos, nunca se sigue.",
+      "retry": "Reintentar",
+      "refetch": "Volver a descargar",
+      "delete": "Eliminar fuente",
+      "link": {
+        "label": "Añadir un enlace",
+        "placeholder": "https://example.com/producto",
+        "add": "Añadir enlace",
+        "adding": "Añadiendo…",
+        "invalid": "Escribe la dirección de una página pública que empiece por https://.",
+        "tooLong": "El enlace tiene más de 2.048 caracteres."
+      },
+      "errors": {
+        "unsupportedType": "Tipo no admitido: {{name}} ({{type}}). Se admiten: {{accepted}}",
+        "tooLarge": "Demasiado grande (más de {{mb}} MB): {{name}}",
+        "uploadFailed": "{{name}}: {{message}}",
+        "linkFailed": "No se añadió el enlace: {{message}}",
+        "refreshFailed": "La fuente no se volvió a leer: {{message}}",
+        "deleteFailed": "La fuente no se eliminó: {{message}}",
+        "tryAgain": "Inténtalo de nuevo."
+      }
+    },
+    "extract": {
+      "button": "Extraer descripción del producto",
+      "running": "Extrayendo…",
+      "hint": "Lee cada fuente lista y propone un valor para cada campo, con sus fuentes. Nada cambia hasta que lo aceptes.",
+      "noReady": "Añade una fuente y espera a que esté lista.",
+      "confirmTitle": "¿Extraer ahora?",
+      "confirmLeftOut_one": "{{count, number}} fuente se está leyendo todavía y quedará fuera. ¿Extraer ahora?",
+      "confirmLeftOut_many": "{{count, number}} fuentes se están leyendo todavía y quedarán fuera. ¿Extraer ahora?",
+      "confirmLeftOut_other": "{{count, number}} fuentes se están leyendo todavía y quedarán fuera. ¿Extraer ahora?",
+      "confirm": "Extraer ahora",
+      "steps": {
+        "queued": "Esperando para empezar…",
+        "starting": "Iniciando…",
+        "readingSources": "Leyendo las fuentes…",
+        "thinking": "Pensando ({{elapsed}})…",
+        "checkingCitations": "Comprobando las citas…",
+        "saved": "Propuesta guardada, finalizando…"
+      },
+      "failed": {
+        "refused": "El modelo se negó a leer estas fuentes. Quita la fuente que pueda haberlo causado e inténtalo de nuevo.",
+        "timedOut": "La extracción tardó más de 12 minutos y se detuvo. Inténtalo con menos fuentes o más cortas, o reinténtalo con xhigh.",
+        "cut": "La respuesta se quedó sin espacio. Inténtalo con menos fuentes o más cortas.",
+        "unreadable": "No se pudo leer la respuesta. Inténtalo de nuevo.",
+        "stale": "Esta extracción dejó de informar de su progreso. Inténtalo de nuevo.",
+        "generic": "La extracción falló. Inténtalo de nuevo."
+      },
+      "tryAgain": "Intentar de nuevo",
+      "retryXhigh": "Reintentar con xhigh",
+      "retryXhighHint": "Menor esfuerzo de razonamiento: el modelo piensa menos tiempo y termina antes.",
+      "errors": {
+        "noReadySources": "Ninguna fuente está lista todavía: añade una o espera a que se lea.",
+        "busy": "Ya hay una extracción en curso en este proyecto. Síguela en Tareas en segundo plano.",
+        "busyStale": "La extracción detenida sigue ocupando este proyecto hasta unos 16 minutos después de empezar. Inténtalo entonces.",
+        "rateLimited": "Demasiadas extracciones: como máximo 1 por minuto y 10 al día por proyecto, y 20 al día por persona. Inténtalo más tarde.",
+        "generic": "No se pudo iniciar la extracción. Inténtalo de nuevo."
+      }
+    },
+    "review": {
+      "title": "Descripción del producto propuesta",
+      "loadFailed": "No se pudo cargar la propuesta de la extracción. Comprueba tu conexión e inténtalo de nuevo.",
+      "subtitle_one": "De {{count, number}} fuente, {{at}}. No se escribe nada hasta que lo aceptes.",
+      "subtitle_many": "De {{count, number}} fuentes, {{at}}. No se escribe nada hasta que lo aceptes.",
+      "subtitle_other": "De {{count, number}} fuentes, {{at}}. No se escribe nada hasta que lo aceptes.",
+      "skipped_one": "{{count, number}} fuente quedó fuera, por encima del límite de lectura de la extracción: {{names}}",
+      "skipped_many": "{{count, number}} fuentes quedaron fuera, por encima del límite de lectura de la extracción: {{names}}",
+      "skipped_other": "{{count, number}} fuentes quedaron fuera, por encima del límite de lectura de la extracción: {{names}}",
+      "partlyApplied": "Aplicada en parte",
+      "groups": {
+        "proposed": "Propuestos",
+        "conflict": "Conflictos",
+        "gap": "Huecos",
+        "unchanged": "Sin cambios"
+      },
+      "current": "Actual",
+      "proposed": "Propuesto",
+      "empty": "(vacío)",
+      "by": {
+        "you": "escrito por ti",
+        "teammate": "escrito por un compañero",
+        "extract": "de una extracción",
+        "assistant": "del asistente de IA"
+      },
+      "confidence": {
+        "high": "Confianza alta",
+        "medium": "Confianza media",
+        "low": "Confianza baja"
+      },
+      "noVerified": "Sin fuente verificada",
+      "accepted": "Aceptado",
+      "changed": "Cambiado desde la extracción: «Aceptar todo lo propuesto» lo omite, y aceptarlo sustituye el valor nuevo.",
+      "citations": "Citas",
+      "page": "p. {{page}}",
+      "sourceDeleted": "fuente eliminada",
+      "unverified": "Esta cita no se encontró en la fuente.",
+      "editLabel": "Valor propuesto para {{field}}",
+      "select": "Aceptar {{field}}",
+      "gapNote": "Ninguna fuente respondió estos campos: mira las preguntas junto al formulario.",
+      "acceptSelected": "Aceptar seleccionados",
+      "acceptAll": "Aceptar todo lo propuesto",
+      "dismiss": "Descartar",
+      "readOnly": "Solo quien edita este proyecto puede aceptar o descartar la propuesta.",
+      "result": {
+        "applied_one": "{{count, number}} campo aplicado.",
+        "applied_many": "{{count, number}} campos aplicados.",
+        "applied_other": "{{count, number}} campos aplicados.",
+        "changed": "{{field}} cambió desde la extracción y no se aplicó.",
+        "personValue": "{{field}} tiene un valor que escribió una persona y no se sustituyó.",
+        "allChanged": "Todos los campos seleccionados cambiaron desde la extracción, así que no se aplicó nada. Las filas muestran los valores nuevos.",
+        "closed": "Esta propuesta se sustituyó por una extracción más reciente o se descartó. Vuelve a extraer para obtener una nueva.",
+        "failed": "No se pudo aceptar la propuesta. Inténtalo de nuevo.",
+        "dismissFailed": "No se pudo descartar la propuesta. Inténtalo de nuevo."
+      },
+      "proposedBadge": "Propuesto",
+      "proposedBadgeLabel": "Propuesto: revisar el valor propuesto de {{field}}",
+      "newSources_one": "Esta extracción no leyó {{count, number}} fuente lista: vuelve a extraer para usarla.",
+      "newSources_many": "Esta extracción no leyó {{count, number}} fuentes listas: vuelve a extraer para usarlas.",
+      "newSources_other": "Esta extracción no leyó {{count, number}} fuentes listas: vuelve a extraer para usarlas."
+    },
+    "gaps": {
+      "title": "Preguntas",
+      "description": "Las fuentes no respondieron a estas. Tus respuestas serán una fuente más; después vuelve a extraer.",
+      "defaultDescription": "Responde a unas preguntas sobre el producto. Tus respuestas serán una fuente que lee la extracción.",
+      "type": "Escribir respuestas",
+      "talk": "Hablarlo",
+      "chat": "Responder en el chat de IA",
+      "save": "Guardar respuestas",
+      "saving": "Guardando…",
+      "cancel": "Cancelar",
+      "saved": "Tus respuestas se guardaron como fuente.",
+      "extractAgain": "Volver a extraer",
+      "errors": {
+        "save": "No se guardaron las respuestas: {{message}}"
+      }
+    },
+    "questions": {
+      "productName": "¿Cómo se llama el producto o servicio?",
+      "oneLiner": "En una frase, ¿qué hace y para quién?",
+      "productSummary": "En un párrafo breve, ¿qué hace el producto y cómo lo usa la gente?",
+      "targetUsers": "¿Quiénes son sus clientes o usuarios objetivo?",
+      "problemSolved": "¿Qué problema les resuelve?",
+      "currentState": "¿En qué punto de su ciclo de vida está: una idea, un MVP, en beta, disponible para todos o maduro?",
+      "keyFeatures": "¿Cuáles son sus funciones clave?",
+      "differentiators": "¿Con qué competidores o alternativas lo comparan los clientes, y en qué se diferencia?",
+      "successMetrics": "¿Cuáles son sus objetivos y qué métricas muestran el éxito?",
+      "knownLimitations": "¿Qué restricciones o limitaciones conocidas tiene?",
+      "nonGoals": "¿Qué queda fuera del alcance a propósito (no objetivos)?",
+      "freeFormNotes": "¿Algo más que deban saber quienes escriben el PRD y el PR/FAQ?"
     }
   },
   "tabs": {
@@ -1044,6 +1203,27 @@
       "savingToLibrary": "Guardando en la Biblioteca…",
       "savedToLibrary": "Guardado en la Biblioteca.",
       "libraryFailed": "No se pudo guardar en la Biblioteca."
+    },
+    "product": {
+      "consent": {
+        "title": "Hablarlo",
+        "transcript": "La transcripción de la conversación se guarda como fuente de este proyecto, con los datos personales de tus respuestas ocultados. El audio nunca se guarda.",
+        "interviewer": "Un entrevistador de IA hace las preguntas en voz alta y tú respondes por tu producto. Es una IA, no una persona.",
+        "language": "La voz aún no habla el idioma de tu interfaz. Habla en {{supported}} y el entrevistador te seguirá.",
+        "headphones": "Usa auriculares para que el entrevistador no se oiga a sí mismo.",
+        "sourcesFull": "Este proyecto ya tiene 20 fuentes, el máximo, así que la entrevista no podría guardarse como una. Elimina primero una fuente y luego habla de ello."
+      },
+      "session": {
+        "title": "Entrevista sobre el producto",
+        "badge": "Entrevistador de IA",
+        "note": "Una IA hace las preguntas. Tus respuestas serán una fuente de este proyecto; el audio nunca se guarda.",
+        "interviewer": "Entrevistador",
+        "saving": "Guardando tus respuestas como fuente…",
+        "saved": "Tus respuestas se guardaron como fuente de este proyecto. Vuelve a extraer para usarlas.",
+        "savedOverCap": "Tus respuestas se guardaron como fuente de este proyecto. Se añadieron fuentes durante la entrevista, así que el proyecto tiene ahora más de 20: elimina una antes de añadir otra.",
+        "nothingSaved": "No se dijo nada, así que no se guardó nada.",
+        "savedFailed": "No se pudieron guardar tus respuestas."
+      }
     }
   }
 }

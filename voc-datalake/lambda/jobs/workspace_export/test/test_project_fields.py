@@ -36,6 +36,11 @@ WRITERS: Final = frozenset({
     'lambda/shared/project_validation.py', 'lambda/shared/project_validation_routes.py',
     # 7.69.00: a voice session's pointer under its project (and its own VOICE# row), and its persona_interview document.
     'lambda/shared/voice_sessions.py', 'lambda/shared/voice_transcripts.py',
+    # 7.104.00: a product proposal, its review marks, the product context's accepted fields and field_meta, the
+    # extract's lock (the export leaves the lock out: DOCUMENT_KINDS does not read it).
+    'lambda/shared/product_proposals.py', 'lambda/shared/product_extract.py',
+    # 7.104.00: a product source's row (a link's and a claim's on the routes, a read's result on the assist twin).
+    'lambda/shared/product_source_routes.py', 'lambda/shared/product_source_worker.py',
 })
 #: Modules that name a project's keys and write, but none of its own rows: each has its own export allowlist or none.
 NOT_PROJECT_ROW_WRITERS: Final = {
@@ -54,6 +59,8 @@ NOT_PROJECT_ROW_WRITERS: Final = {
     'lambda/api/agents_handler.py': ("the agents API (7.80.00): reads a PRD's project META, projected, to refuse one "
                                      "that is not the deployment's; writes no project row"),
     'lambda/shared/voice_session_routes.py': "a voice session's transcript job, an assist job row (keys only)",
+    'lambda/shared/product_proposal_routes.py': ("the product extract's routes (7.104.00): their writes are "
+                                                 "shared/product_proposals.py's; an extract's doc_config is a job's"),
     'lambda/shared/ws_repo.py': "the workspace layer: a project id's claim and a link's routing row",
     'lambda/jobs/retention/lineage.py': ("an erasure's marks: rewrites a row's id lists and its erased_evidence, both "
                                          'classified, adds none (its cursor keys look like writes)'),

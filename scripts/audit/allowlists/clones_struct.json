@@ -49,13 +49,6 @@
     },
     {
       "files": [
-        "voc-datalake/lambda/api/ballots_handler.py",
-        "voc-datalake/lambda/api/product_context.py"
-      ],
-      "reason": "wire DTOs of two unrelated records (a voting session's facilitator view with derived row/state fields and created_by left out on purpose; an uploaded product document); equal only in being field-by-field dict projections with defaults"
-    },
-    {
-      "files": [
         "voc-datalake/lambda/api/feedback_form_handler.py",
         "voc-datalake/lambda/shared/company_context.py",
         "voc-datalake/lambda/shared/dimension_config.py",

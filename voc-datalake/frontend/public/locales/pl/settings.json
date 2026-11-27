@@ -43,6 +43,10 @@
         "description": "PRD, PR/FAQ, persony i raporty z badań",
         "label": "Generowanie dokumentów"
       },
+      "product_extract": {
+        "description": "Czyta źródła produktu w projekcie (dokumenty, linki, obrazy, odpowiedzi) i proponuje opis produktu",
+        "label": "Wyodrębnianie opisu produktu"
+      },
       "enrichment": {
         "description": "Sentyment, kategorie i pilność każdego zaimportowanego elementu",
         "label": "Wzbogacanie opinii"

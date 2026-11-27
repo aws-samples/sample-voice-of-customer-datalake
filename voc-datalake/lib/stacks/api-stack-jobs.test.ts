@@ -675,7 +675,7 @@ describe('the private fixture provider', () => {
   it('has the exact runtime shape', () => {
     const { Runtime, MemorySize, Timeout, Architectures } = provider.props;
     expect({ Runtime, MemorySize, Timeout, Architectures }).toStrictEqual({
-      Runtime: 'python3.14', MemorySize: 256, Timeout: 30, Architectures: ['arm64'],
+      Runtime: 'python3.15', MemorySize: 256, Timeout: 30, Architectures: ['arm64'],
     });
   });
 

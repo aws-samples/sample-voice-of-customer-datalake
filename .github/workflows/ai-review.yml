@@ -86,7 +86,7 @@ jobs:
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         if: steps.gate.outputs.ready == 'true'
         with:
-          node-version: '24'
+          node-version: '26'
 
       # While the review is advisory, a GitHub or AWS outage in the next two steps is a warning, not a red check.
       - name: Read the PR's commits, diff and conversation (as data)

@@ -224,7 +224,7 @@ describe('root staging behavior (aws-cdk-lib IgnoreStrategy.git)', () => {
   it('still drops tests, caches, and non-payload file types anywhere', () => {
     expect(ignores('plugins/_shared/test/test_base_ingestor.py')).toBe(true);
     expect(ignores('lambda/shared/test/test_api.py')).toBe(true);
-    expect(ignores('plugins/webscraper/ingestor/__pycache__/handler.cpython-314.pyc')).toBe(true);
+    expect(ignores('plugins/webscraper/ingestor/__pycache__/handler.cpython-315.pyc')).toBe(true);
     // NOT staged: manifest.json is a synth-time input which plugin-loader
     // reads from the SOURCE tree; the bundle command never copies it, so
     // keeping it out of the hash is correct (edits to manifests alone must

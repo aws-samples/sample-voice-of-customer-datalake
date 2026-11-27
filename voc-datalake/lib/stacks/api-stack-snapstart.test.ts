@@ -230,7 +230,7 @@ describe('snapStartInvokeTarget', () => {
   it.each([false, true])('refuses a function that is not on the budgeted list (snapStart=%s)', (enabled) => {
     const stack = new cdk.Stack(new cdk.App({ context: { snapStart: enabled } }), 'Probe');
     const fn = new lambda.Function(stack, 'SomeOtherApi', {
-      runtime: lambda.Runtime.PYTHON_3_14,
+      runtime: lambda.Runtime.PYTHON_3_15,
       handler: 'index.handler',
       code: lambda.Code.fromInline('def handler(event, context):\n    return None\n'),
     });

@@ -1,8 +1,9 @@
 /**
  * What Connect hands to an external assistant, and the skill's lockstep with
  * the server: the skill must document every tool the global MCP server exposes
- * (lambda/shared/mcp_global_tools.py and the tools it includes from
- * lambda/shared/mcp_global_tools_steps.py and mcp_global_tools_work.py), and nothing it does not.
+ * (lambda/shared/mcp_global_tools.py and the tools it includes from lambda/shared/mcp_global_tools_steps.py,
+ * mcp_global_tools_work.py, mcp_global_tools_engineering.py, mcp_global_tools_forms.py and mcp_global_tools_product.py),
+ * and nothing it does not.
  */
 import { describe, it, expect } from 'vitest'
 import * as fs from 'fs'
@@ -15,7 +16,10 @@ import {
 
 const FRONTEND = path.join(__dirname, '../../..')
 const SKILL = fs.readFileSync(path.join(FRONTEND, 'public', 'voc-mcp-skill.md'), 'utf8')
-const TOOLS_SOURCE = ['mcp_global_tools.py', 'mcp_global_tools_steps.py', 'mcp_global_tools_work.py', 'mcp_global_tools_engineering.py']
+const TOOLS_SOURCE = [
+  'mcp_global_tools.py', 'mcp_global_tools_steps.py', 'mcp_global_tools_work.py', 'mcp_global_tools_engineering.py',
+  'mcp_global_tools_forms.py', 'mcp_global_tools_product.py',
+]
   .map((file) => fs.readFileSync(path.join(FRONTEND, '..', 'lambda', 'shared', file), 'utf8'))
   .join('\n')
 

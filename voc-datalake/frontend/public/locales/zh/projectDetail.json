@@ -308,7 +308,8 @@
       "importPersona": "用户角色导入",
       "mergeDocuments": "文档合并",
       "research": "研究",
-      "draftPrototype": "原型草稿"
+      "draftPrototype": "原型草稿",
+      "extractProductDescription": "产品描述提取"
     }
   },
   "notFound": {
@@ -532,6 +533,7 @@
       "oneLiner": "一句话描述",
       "problemSolved": "解决的问题",
       "productName": "产品名称",
+      "productSummary": "产品能做什么",
       "successMetrics": "成功指标",
       "targetUsers": "目标用户"
     },
@@ -557,27 +559,6 @@
     },
     "subtitle": "此处的信息将作为当前产品上下文自动注入 PRD 和 PR/FAQ 的生成。",
     "title": "产品/服务描述",
-    "upload": {
-      "accepted": "PNG、JPEG、GIF、WebP 最大 3.5 MB · MD、TXT 最大 10 MB",
-      "delete": "删除文档",
-      "dropZone": "将文件拖放到此处、粘贴截图，或点击上传",
-      "empty": "暂无文档。",
-      "errors": {
-        "tooLarge": "文件过大（>10 MB）：{{name}}",
-        "unsupportedType": "不支持的类型：{{name}}（{{type}}）。支持：{{accepted}}",
-        "uploadFailed": "{{name}}：上传失败 — {{message}}"
-      },
-      "extractedChars_one": "已提取 {{count, number}} 个字符",
-      "extractedChars_other": "已提取 {{count, number}} 个字符",
-      "heading": "内部文档",
-      "hint": "图片和文本 — 最多 20 个",
-      "loading": "加载中…",
-      "notYet": "此处尚不读取 PDF 和 Word (.docx)：请将它们添加到资料库，并在助手中用 # 提及。",
-      "statusExtracting": "提取中…",
-      "statusFailed": "失败",
-      "statusReady": "就绪",
-      "statusUploading": "上传中…"
-    },
     "assistant": {
       "button": "用 AI 助手填写",
       "hint": "助手会逐一询问每个空白字段，每次一个问题，最后把所有回答汇总在一张卡片上供你批准。",
@@ -607,6 +588,178 @@
         "title": "备注",
         "description": "PRD 和 PR/FAQ 撰写者还需要了解的其他信息。"
       }
+    },
+    "sources": {
+      "title": "来源",
+      "description": "提取时读取的文件、链接和回答，用来描述产品。",
+      "hint": "最多 20 个",
+      "empty": "添加文档、图片或链接，或者回答几个问题。",
+      "emptyViewer": "还没有来源。",
+      "answerQuestions": "回答问题",
+      "dropZone": "将文件拖放到此处、粘贴截图，或点击上传",
+      "accepted": "PDF、Word (.docx)、PowerPoint (.pptx) 最大 25 MB · MD、TXT 最大 10 MB · PNG、JPEG、GIF、WebP 最大 3.5 MB",
+      "loading": "加载中…",
+      "loadFailed": "无法加载来源。请检查网络连接后重试。",
+      "typedAnswers": "输入的回答",
+      "voiceInterview": "语音访谈",
+      "status": {
+        "uploading": "上传中…",
+        "pending": "等待读取",
+        "extracting": "读取中…",
+        "fetching": "获取中…",
+        "ready": "就绪",
+        "failed": "失败"
+      },
+      "chars_one": "已读取 {{count, number}} 个字符",
+      "chars_other": "已读取 {{count, number}} 个字符",
+      "pages_one": "{{count, number}} 页",
+      "pages_other": "{{count, number}} 页",
+      "cut": "已在读取上限处截断",
+      "readByModel": "由 AI 读取",
+      "injection": "这段文本的部分内容看起来像给 AI 模型的指令。它只作为数据读取，绝不会被执行。",
+      "retry": "重试",
+      "refetch": "重新获取",
+      "delete": "删除来源",
+      "link": {
+        "label": "添加链接",
+        "placeholder": "https://example.com/product",
+        "add": "添加链接",
+        "adding": "添加中…",
+        "invalid": "请输入以 https:// 开头的公开页面地址。",
+        "tooLong": "链接超过 2,048 个字符。"
+      },
+      "errors": {
+        "unsupportedType": "不支持的类型：{{name}}（{{type}}）。支持：{{accepted}}",
+        "tooLarge": "文件过大（超过 {{mb}} MB）：{{name}}",
+        "uploadFailed": "{{name}}：{{message}}",
+        "linkFailed": "未能添加链接：{{message}}",
+        "refreshFailed": "未能重新读取该来源：{{message}}",
+        "deleteFailed": "未能删除该来源：{{message}}",
+        "tryAgain": "请重试。"
+      }
+    },
+    "extract": {
+      "button": "提取产品描述",
+      "running": "提取中…",
+      "hint": "读取每个就绪的来源，为每个字段提出一个值并附上来源。接受之前不会有任何改动。",
+      "noReady": "请添加来源，并等待它就绪。",
+      "confirmTitle": "现在提取吗？",
+      "confirmLeftOut_one": "有 {{count, number}} 个来源仍在读取，将被排除。现在提取吗？",
+      "confirmLeftOut_other": "有 {{count, number}} 个来源仍在读取，将被排除。现在提取吗？",
+      "confirm": "现在提取",
+      "steps": {
+        "queued": "等待开始…",
+        "starting": "正在启动…",
+        "readingSources": "正在读取来源…",
+        "thinking": "思考中（{{elapsed}}）…",
+        "checkingCitations": "正在核对引用…",
+        "saved": "提议已保存，正在完成…"
+      },
+      "failed": {
+        "refused": "模型拒绝读取这些来源。请移除可能导致此问题的来源后重试。",
+        "timedOut": "提取超过 12 分钟，已停止。请减少来源或使用更短的来源重试，或以 xhigh 重试。",
+        "cut": "回答空间不足。请减少来源或使用更短的来源重试。",
+        "unreadable": "无法读取回答。请重试。",
+        "stale": "此提取已停止报告进度。请重试。",
+        "generic": "提取失败。请重试。"
+      },
+      "tryAgain": "重试",
+      "retryXhigh": "以 xhigh 重试",
+      "retryXhighHint": "降低推理强度：模型思考时间更短，因此更快完成。",
+      "errors": {
+        "noReadySources": "还没有就绪的来源：请添加一个，或等待读取完成。",
+        "busy": "此项目已有提取在运行。请在“后台任务”中查看。",
+        "busyStale": "已停止的提取在开始后约 16 分钟内仍会占用此项目。请到时再试。",
+        "rateLimited": "提取次数过多：每个项目每分钟最多 1 次、每天 10 次，每人每天 20 次。请稍后重试。",
+        "generic": "无法开始提取。请重试。"
+      }
+    },
+    "review": {
+      "title": "建议的产品描述",
+      "loadFailed": "无法加载提取的建议。请检查网络连接后重试。",
+      "subtitle_one": "来自 {{count, number}} 个来源，{{at}}。接受之前不会写入任何内容。",
+      "subtitle_other": "来自 {{count, number}} 个来源，{{at}}。接受之前不会写入任何内容。",
+      "skipped_one": "有 {{count, number}} 个来源超出提取的读取上限，已被排除：{{names}}",
+      "skipped_other": "有 {{count, number}} 个来源超出提取的读取上限，已被排除：{{names}}",
+      "partlyApplied": "已部分应用",
+      "groups": {
+        "proposed": "建议",
+        "conflict": "冲突",
+        "gap": "空缺",
+        "unchanged": "未变"
+      },
+      "current": "当前",
+      "proposed": "建议",
+      "empty": "（空）",
+      "by": {
+        "you": "由你输入",
+        "teammate": "由队友输入",
+        "extract": "来自提取",
+        "assistant": "来自 AI 助手"
+      },
+      "confidence": {
+        "high": "置信度高",
+        "medium": "置信度中",
+        "low": "置信度低"
+      },
+      "noVerified": "没有已核实的来源",
+      "accepted": "已接受",
+      "changed": "提取后已更改：“接受全部建议”会跳过它，单独接受会替换新值。",
+      "citations": "引用",
+      "page": "第 {{page}} 页",
+      "sourceDeleted": "来源已删除",
+      "unverified": "在来源中没有找到这段引用。",
+      "editLabel": "{{field}} 的建议值",
+      "select": "接受 {{field}}",
+      "gapNote": "没有来源回答这些字段：请查看表单旁的问题。",
+      "acceptSelected": "接受所选",
+      "acceptAll": "接受全部建议",
+      "dismiss": "忽略",
+      "readOnly": "只有此项目的编辑者可以接受或忽略这份建议。",
+      "result": {
+        "applied_one": "已应用 {{count, number}} 个字段。",
+        "applied_other": "已应用 {{count, number}} 个字段。",
+        "changed": "{{field}} 在提取后已更改，未应用。",
+        "personValue": "{{field}} 的值由人输入，未被替换。",
+        "allChanged": "所选的每个字段在提取后都已更改，因此没有应用任何内容。各行显示的是新值。",
+        "closed": "此提议已被更新的提取取代或已被忽略。请重新提取以获得新的提议。",
+        "failed": "无法接受这份建议。请重试。",
+        "dismissFailed": "无法忽略该提议。请重试。"
+      },
+      "proposedBadge": "有建议",
+      "proposedBadgeLabel": "有建议：查看 {{field}} 的建议值",
+      "newSources_one": "此次提取没有读取 {{count, number}} 个就绪的来源：再次提取即可使用。",
+      "newSources_other": "此次提取没有读取 {{count, number}} 个就绪的来源：再次提取即可使用。"
+    },
+    "gaps": {
+      "title": "问题",
+      "description": "来源没有回答这些问题。你的回答会成为又一个来源；然后再次提取。",
+      "defaultDescription": "回答几个关于产品的问题。你的回答会成为提取读取的来源。",
+      "type": "输入回答",
+      "talk": "口头回答",
+      "chat": "在 AI 聊天中回答",
+      "save": "保存回答",
+      "saving": "保存中…",
+      "cancel": "取消",
+      "saved": "你的回答已保存为来源。",
+      "extractAgain": "再次提取",
+      "errors": {
+        "save": "回答未能保存：{{message}}"
+      }
+    },
+    "questions": {
+      "productName": "这个产品或服务叫什么名字？",
+      "oneLiner": "用一句话说，它为谁做什么？",
+      "productSummary": "用一小段话说，这个产品做什么，人们如何使用它？",
+      "targetUsers": "它的目标客户或用户是谁？",
+      "problemSolved": "它为他们解决了什么问题？",
+      "currentState": "它处在生命周期的哪个阶段：想法、MVP、测试版、正式发布还是成熟？",
+      "keyFeatures": "它的主要功能有哪些？",
+      "differentiators": "客户会拿它和哪些竞品或替代方案比较，它有什么不同？",
+      "successMetrics": "它的目标是什么，哪些指标能体现成功？",
+      "knownLimitations": "它有哪些约束或已知限制？",
+      "nonGoals": "哪些内容是有意不在范围内的（非目标）？",
+      "freeFormNotes": "撰写 PRD 和 PR/FAQ 的人还应该知道什么？"
     }
   },
   "tabs": {
@@ -1010,6 +1163,27 @@
       "savingToLibrary": "正在保存到资料库…",
       "savedToLibrary": "已保存到资料库。",
       "libraryFailed": "无法保存到资料库。"
+    },
+    "product": {
+      "consent": {
+        "title": "口头回答",
+        "transcript": "对话的文字记录会作为此项目的来源保存，你回答中的个人数据会被遮盖。音频绝不会被保存。",
+        "interviewer": "由 AI 访谈者大声提问，你为自己的产品作答。它是 AI，不是真人。",
+        "language": "语音功能还不支持你的界面语言。请说{{supported}}，访谈者会跟随你。",
+        "headphones": "请使用耳机，以免访谈者听到自己的声音。",
+        "sourcesFull": "此项目已有 20 个来源，已达上限，因此访谈无法保存为来源。请先删除一个来源，然后再进行访谈。"
+      },
+      "session": {
+        "title": "产品访谈",
+        "badge": "AI 访谈者",
+        "note": "由 AI 提问。你的回答会成为此项目的来源；音频绝不会被保存。",
+        "interviewer": "访谈者",
+        "saving": "正在将你的回答保存为来源…",
+        "saved": "你的回答已保存为此项目的来源。再次提取即可使用。",
+        "savedOverCap": "你的回答已保存为此项目的一个来源。访谈期间添加了来源，项目现在的来源超过 20 个：添加新来源前请先删除一个。",
+        "nothingSaved": "没有说任何内容，因此没有保存任何内容。",
+        "savedFailed": "无法保存你的回答。"
+      }
     }
   }
 }

@@ -264,6 +264,13 @@ PHASE_3: dict[str, frozenset[str]] = {
         'POST /projects/<project_id>/personas/<persona_id>/evidence/refresh',
         'POST /projects/<project_id>/personas/evidence-pack',
     }),
+    # 7.104.00: the Product tab's sources, the project's (the store refuses a workspace: PRODUCT_SOURCES_STORE).
+    'product_source_routes.py': frozenset({
+        'POST /projects/<project_id>/product-docs/<doc_id>/refresh',
+        'POST /projects/<project_id>/product-docs/<doc_id>/uploaded',
+        'POST /projects/<project_id>/product-docs/answers',
+        'POST /projects/<project_id>/product-docs/urls',
+    }),
     # 7.68.00: the Validate step, the project's (its pin form and its answers the deployment's, as every prototype's).
     'project_validation_routes.py': frozenset({
         'GET /projects/<project_id>/validation',
@@ -274,6 +281,13 @@ PHASE_3: dict[str, frozenset[str]] = {
         'PUT /projects/<project_id>/validation/criteria',
         'PUT /projects/<project_id>/validation/form',
     }),
+    # The Product tab's extract and proposals (7.104.00): a project's rows, which move with projects (3h).
+    'product_proposal_routes.py': frozenset({
+        'GET /projects/<project_id>/product-proposals/latest',
+        'POST /projects/<project_id>/product-extract',
+        'POST /projects/<project_id>/product-proposals/<proposal_id>/accept',
+        'POST /projects/<project_id>/product-proposals/<proposal_id>/dismiss',
+    }),
     # The voice sessions (7.69.00): a project persona's sessions move with projects; the month's usage is the
     # deployment's (a workspace's own budget comes with them).
     'voice_session_routes.py': frozenset({
@@ -282,6 +296,11 @@ PHASE_3: dict[str, frozenset[str]] = {
         'GET /projects/voice/usage',
         'POST /projects/<project_id>/personas/<persona_id>/voice-sessions',
         'POST /projects/<project_id>/personas/<persona_id>/voice-sessions/<session_id>/end',
+        # The product interview (7.104.00): its sessions move with projects too.
+        'GET /projects/<project_id>/product-interview/voice-sessions',
+        'GET /projects/<project_id>/product-interview/voice-sessions/<session_id>',
+        'POST /projects/<project_id>/product-interview/voice-sessions',
+        'POST /projects/<project_id>/product-interview/voice-sessions/<session_id>/end',
     }),
     'projects_handler.py': frozenset({
         'DELETE /projects/<project_id>',

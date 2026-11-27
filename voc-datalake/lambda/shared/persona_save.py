@@ -21,10 +21,11 @@ from __future__ import annotations
 
 import time
 from collections.abc import Callable
-from typing import Any, Final
+from typing import Any
 
 from botocore.exceptions import ClientError
 
+from shared.aws import CONDITION_FAILED, TRANSACTION_CONFLICT, cancellation_codes
 from shared.exceptions import NotFoundError
 from shared.ingest_tables import table_view
 from shared.logging import logger
@@ -44,7 +45,7 @@ from shared.ws_repo import WorkspaceScope
 WRITABLE_CHECK_INDEX = 0
 PERSONA_PUT_INDEX = 1
 #: Cancellation codes a retry can clear (a concurrent transaction on the same rows, a throttle).
-RETRYABLE_CODES = frozenset({'TransactionConflict', 'ThrottlingError', 'ProvisionedThroughputExceeded', 'RequestLimitExceeded'})
+RETRYABLE_CODES = frozenset({TRANSACTION_CONFLICT, 'ThrottlingError', 'ProvisionedThroughputExceeded', 'RequestLimitExceeded'})
 MAX_ATTEMPTS = 3
 RETRY_BASE_SECONDS = 0.2
 
@@ -53,22 +54,6 @@ PROJECT_GONE_MESSAGE = 'The project was deleted while its personas were being ge
 
 class ProjectNotWritableError(NotFoundError):
     """The project is deleted (or being deleted): nothing may be written into it."""
-
-
-#: A cancelled transaction's code for an entry whose condition did not hold (one of ``cancellation_codes``).
-CONDITION_FAILED: Final = 'ConditionalCheckFailed'
-
-
-def cancellation_codes(error: ClientError) -> list[str | None]:
-    """The per-item codes of a cancelled transaction (``None`` = that item was fine); [] otherwise."""
-    reasons = error.response.get('CancellationReasons')
-    if not isinstance(reasons, list):
-        return []
-    codes: list[str | None] = []
-    for reason in reasons:
-        code = reason.get('Code')
-        codes.append(code if isinstance(code, str) and code != 'None' else None)
-    return codes
 
 
 def _code_at(codes: list[str | None], index: int) -> str | None:
@@ -96,9 +81,9 @@ def _retryable(error: ClientError, project_id: str, item: dict, attempt: int) ->
         f"[PERSONA] Save of {item.get('persona_id')} cancelled (attempt {attempt}/{MAX_ATTEMPTS})",
         extra={'project_id': project_id, 'cancellation_reasons': codes},
     )
-    if _code_at(codes, WRITABLE_CHECK_INDEX) == 'ConditionalCheckFailed':
+    if _code_at(codes, WRITABLE_CHECK_INDEX) == CONDITION_FAILED:
         raise ProjectNotWritableError(PROJECT_GONE_MESSAGE) from error
-    if _code_at(codes, PERSONA_PUT_INDEX) == 'ConditionalCheckFailed':
+    if _code_at(codes, PERSONA_PUT_INDEX) == CONDITION_FAILED:
         return False
     if attempt == MAX_ATTEMPTS or not RETRYABLE_CODES.intersection(c for c in codes if c):
         raise error

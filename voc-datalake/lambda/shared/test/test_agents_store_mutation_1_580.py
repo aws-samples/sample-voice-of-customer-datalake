@@ -215,12 +215,6 @@ def _client_error(code: str, reasons: list[Any] | None = None) -> ClientError:
 
 
 class TestDynamoErrors:
-    def test_cancellation_codes_name_every_reason(self) -> None:
-        error = _client_error('TransactionCanceledException', [
-            {'Code': 'ConditionalCheckFailed'}, None, {}, {'Code': ''}])
-        assert store._cancellation_codes(error) == ['ConditionalCheckFailed', 'None', 'None', 'None']
-        assert store._cancellation_codes(_client_error('TransactionCanceledException')) == []
-
     def test_only_a_cancelled_transaction_is_one(self) -> None:
         assert store._is_cancelled_transaction(_client_error('TransactionCanceledException')) is True
         assert store._is_cancelled_transaction(_client_error('ConditionalCheckFailedException')) is False

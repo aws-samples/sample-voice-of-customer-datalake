@@ -182,7 +182,7 @@ not memory. API Gateway and sandbox setup come on top of it.
 
 `python -X importtime` on each handler, imported the way its bundle lays it out (handler + `shared/` at
 the root, layer libraries + boto3 on the path). Measured on local Python 3.12 on Apple silicon, so read the numbers
-as relative; Lambda runs 3.14 on Graviton.
+as relative; Lambda runs 3.15 on Graviton (3.14 when these were measured).
 
 | Handler | Import time with the X-Ray SDK loaded (ms) | Import time now (ms) |
 |---|---|---|
@@ -229,7 +229,7 @@ Mac (`compile()` of exactly the modules each handler imports; Graviton is two to
 | agents | 63 | 13,288 | 90 ms |
 
 Every bundle built by `pythonLambdaAsset` (`lib/utils/python-lambda-asset.ts`) now ends with
-`PYTHON_BUNDLE_COMPILE`: `python -m compileall --invalidation-mode unchecked-hash` in the Python 3.14 bundling
+`PYTHON_BUNDLE_COMPILE`: `python -m compileall --invalidation-mode unchecked-hash` in the Python 3.15 bundling
 image, after the prune (which still deletes any `.pyc` from the source tree). Unchecked-hash bytecode (PEP 552)
 loads without reading or hashing the source and carries no timestamp, which is safe because a deployed bundle never
 changes; if the runtime's Python ever differs, it ignores the files and compiles from source as before. Each zip
@@ -242,7 +242,7 @@ with at least 5 cold starts in both): projects 1,575 → 1,244 ms (−21 %), set
 1,290 → 1,106 ms (−14 %), agents 1,257 → 1,097 ms (−13 %), metrics 1,248 → 1,112 ms (−11 %), feedback forms
 1,245 → 1,108 ms (−11 %), chat 1,140 → 1,045 ms (−8 %), integrations 1,152 → 1,074 ms (−7 %). The after sample is
 small (5–18 cold starts each). `lib/utils/python-lambda-asset.test.ts` builds one real bundle (when Docker
-and the image are present) and checks a `cpython-314` unchecked-hash `.pyc` next to every shipped module. Not
+and the image are present) and checks a `cpython-315` unchecked-hash `.pyc` next to every shipped module. Not
 covered: the two functions CoreStack builds without bundling (the product-document extractor, which is
 stdlib + boto3 only, and the Node custom-resource handler).
 
@@ -271,11 +271,11 @@ dependencies) and lxml (12 MB) now go only to the functions that use them.
   `dependency-layers.test.ts` checks the templates against the list.
 - **What the bundling strips.** `LAYER_STRIP` in `lib/utils/python-layer-bundling.ts`, in lockstep with
   `scripts/build-layers.sh`:
-  - the SDK closure the Python 3.14 runtime already ships: boto3, botocore, s3transfer, jmespath,
+  - the SDK closure the Python 3.15 runtime already ships: boto3, botocore, s3transfer, jmespath,
     python-dateutil, six, urllib3. Every dependent's version range accepts the runtime's versions; `py_layers`
     reports a `runtime-conflict` the day one does not;
   - files that never run in Lambda: `bin/`, `*.pyi`, `*-stubs`, and the `tests/` some wheels ship.
-  - `.pyc` (compiled for 3.14 by the same image) and `*.dist-info` stay.
+  - `.pyc` (compiled for 3.15 by the same image) and `*.dist-info` stay.
 - **What is kept everywhere.** websocket-client (0.4 MB) and the requests stack (requests, charset-normalizer, idna,
   certifi: 1.8 MB together) are each under the 2 MB size at which `py_layers` calls a library a split candidate.
 

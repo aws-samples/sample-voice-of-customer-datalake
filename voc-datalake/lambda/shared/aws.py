@@ -4,7 +4,9 @@ Provides pre-configured clients with connection reuse.
 """
 
 import json
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
+from datetime import datetime, timedelta
 from functools import lru_cache
 from typing import Any, Final
 
@@ -13,7 +15,7 @@ from botocore.exceptions import ClientError
 
 from shared import dynamodb_fast_items
 from shared.concurrency import MAX_IN_FLIGHT_READS
-from shared.exceptions import ValidationError
+from shared.exceptions import ServiceUnavailableError, TooManyRequestsError, ValidationError
 from shared.logging import logger
 
 # Module-level clients for connection reuse across invocations
@@ -79,6 +81,48 @@ def unqualified_function_arn(function_arn: str) -> str:
     return ':'.join(function_arn.split(':')[:7])
 
 
+#: Two codes of a cancelled transaction's entries (a ``TransactionCanceledException``'s ``CancellationReasons``, read by
+#: ``cancellation_codes``): an entry whose condition did not hold, and one another transaction was writing at the same
+#: time (worth another try). Their one home: since 7.104.00 no module of ``lambda/`` outside its tests spells either
+#: (the tests' fake AWS answers spell the wire's codes). The error codes (``ConditionalCheckFailedException``,
+#: ``TransactionConflictException``) are other strings.
+CONDITION_FAILED: Final = 'ConditionalCheckFailed'
+TRANSACTION_CONFLICT: Final = 'TransactionConflict'
+
+
+def cancellation_codes(error: Exception) -> list[str | None]:
+    """The per-entry codes of a cancelled transaction, in its entries' order (7.104.00: the one reader, in place of
+    four copies that rendered an entry with no code as None, ``'None'`` or ``''``): each entry's ``Code``
+    (``CONDITION_FAILED``, ``TRANSACTION_CONFLICT``, ``ThrottlingError``, ...), None for an entry that was fine
+    (DynamoDB's ``'None'``) and for one with no code, an empty one or one that is not text. [] for an error with no
+    list of reasons: only a ``TransactionCanceledException`` carries one, so a caller need not check its error code
+    first. DynamoDB names a code on every entry, so a fine entry and one with no code differ only in a test's double;
+    the one reader that tells them apart on purpose keeps its own (the aggregator's ``_cancellation_reasons``, whose
+    unreadable entry vetoes a retry)."""
+    response = getattr(error, 'response', None)
+    reasons = response.get('CancellationReasons') if isinstance(response, Mapping) else None
+    if not isinstance(reasons, list):
+        return []
+    codes: list[str | None] = []
+    for reason in reasons:
+        code = reason.get('Code') if isinstance(reason, Mapping) else None
+        codes.append(code if isinstance(code, str) and code not in ('', 'None') else None)
+    return codes
+
+
+def cancelled_by_condition(error: Exception, index: int | None = None) -> bool:
+    """A cancelled transaction one of whose entries failed its condition (``CONDITION_FAILED``), or with ``index`` the
+    entry at that index (a condition elsewhere in the same transaction is not that one's). False for an error with no
+    reasons, or too few: an unreadable cancellation is not taken for a condition (``cancellation_codes``). A
+    ``TransactionCanceledException`` is not only a failed condition: contention (``TRANSACTION_CONFLICT``), throttling
+    and the rest cancel with it too, and botocore does not retry it, so a caller that answers a condition with a 4xx
+    asks this first and answers anything else as the transient failure it may be."""
+    codes = cancellation_codes(error)
+    if index is None:
+        return CONDITION_FAILED in codes
+    return 0 <= index < len(codes) and codes[index] == CONDITION_FAILED
+
+
 def is_conditional_check_failure(error: Exception) -> bool:
     """True for DynamoDB's ConditionalCheckFailedException, however it arrives.
 
@@ -116,6 +160,58 @@ def update_unless_condition_fails(table: Any, **update_item: Any) -> bool:
             return False
         raise
     return True
+
+
+#: How long a rate limit's counter row is kept in voc-aggregates: 2 days, past the end of the longest window any limit
+#: counts (a UTC day). The one rule of every ``count_once`` counter (7.104.00: the voice sessions', the product extract's
+#: and the product sources' reads).
+COUNTER_TTL: Final = timedelta(days=2)
+
+
+@dataclass(frozen=True)
+class Counter:
+    """One rate limit's counter: its row's key, the most it counts (``limit``) and its refusal (429 ``code`` with
+    ``message``)."""
+
+    key: Mapping[str, str]
+    limit: int
+    code: str
+    message: str
+
+
+#: ``count_once``'s answer when another request was counting on the same rows at that moment (``TRANSACTION_CONFLICT``).
+COUNTING_BUSY_MESSAGE: Final = 'Another request is being counted against the same limit. Try again.'
+
+
+def count_once(table: Any, counters: Counter | Sequence[Counter], now: datetime) -> None:
+    """One more on every counter of ``counters``, all or none: each row's ``count`` + 1 unless it is already at its
+    ``limit``, its ``ttl`` ``COUNTER_TTL`` after ``now``. A counter at its limit refuses them all: 429 with that
+    counter's code and message (the first such counter's, in their order). One counter is one conditional UpdateItem;
+    several are one TransactWriteItems (on the resource's client, which takes native values), whose refused entry is
+    read through ``cancelled_by_condition``. Contention (another request counting on the same rows at once,
+    ``TRANSACTION_CONFLICT``) is a 503 ``busy`` (nothing counted, worth another try), as shared/product_proposals.py
+    answers it; every other cancellation propagates as it came."""
+    listed = (counters,) if isinstance(counters, Counter) else tuple(counters)
+    ttl = int((now + COUNTER_TTL).timestamp())
+    updates = [{'Key': dict(counter.key), 'UpdateExpression': 'ADD #count :one SET #ttl = :ttl',
+                'ConditionExpression': 'attribute_not_exists(#count) OR #count < :limit',
+                'ExpressionAttributeNames': {'#count': 'count', '#ttl': 'ttl'},
+                'ExpressionAttributeValues': {':one': 1, ':limit': counter.limit, ':ttl': ttl}} for counter in listed]
+    if len(updates) == 1:
+        if not update_unless_condition_fails(table, **updates[0]):
+            raise TooManyRequestsError(listed[0].message, code=listed[0].code)
+        return
+    try:
+        table.meta.client.transact_write_items(
+            TransactItems=[{'Update': {'TableName': table.name, **update}} for update in updates])
+    except ClientError as error:
+        refused = next((counter for index, counter in enumerate(listed) if cancelled_by_condition(error, index)),
+                       None)
+        if refused is not None:
+            raise TooManyRequestsError(refused.message, code=refused.code) from error
+        if TRANSACTION_CONFLICT in cancellation_codes(error):
+            raise ServiceUnavailableError(COUNTING_BUSY_MESSAGE, code='busy') from error
+        raise
 
 
 def consistent_item(table: Any, key: Mapping[str, Any], projection: tuple[str, ...] = ()) -> dict | None:

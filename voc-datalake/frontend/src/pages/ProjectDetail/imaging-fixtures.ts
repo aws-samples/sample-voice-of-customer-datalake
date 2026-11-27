@@ -3,7 +3,7 @@
  *
  * jsdom has no image codec, so `OffscreenCanvas` and `createImageBitmap` are
  * stubbed. Only the primitives are faked — what each spec tests is the module's
- * response to the sizes the fake encoder reports. Shared by the DocsUpload and
+ * response to the sizes the fake encoder reports. Shared by the Sources card's and
  * ImportPersonaModal specs, which used to carry identical copies.
  */
 import { vi, expect } from 'vitest'

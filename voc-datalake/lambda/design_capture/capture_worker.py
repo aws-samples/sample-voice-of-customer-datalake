@@ -3,7 +3,8 @@
 One reference, one page, one browser session of at most ``SESSION_SECONDS``:
 
 1. the reference row is read; anything but a pending/ready/error ``website`` row is skipped;
-2. its URL is re-checked with the SSRF guard (``shared.url_policy.validate_url``, https only);
+2. its URL is re-checked with the public-only guard (``shared.url_policy.require_public``, https only; the guard a
+   product source's link takes too);
 3. a tab navigates to it and waits (bounded) for the page to settle;
 4. the FINAL URL after navigation and redirects is checked again the same way — a page that
    ended on a private, loopback or non-http(s) address is refused and nothing it showed is read;
@@ -75,7 +76,7 @@ from shared.css_tokens import custom_properties, tokens_from_css
 from shared.logging import logger
 from shared.tailwind_components import Theme
 from shared.timestamps import now_iso
-from shared.url_policy import validate_url
+from shared.url_policy import NotPublicURLError, require_public
 
 #: The managed browser session lives at most this long (seconds) — one page.
 SESSION_SECONDS: Final = 120
@@ -134,20 +135,13 @@ class CapturedPage:
 
 # ── The page ────────────────────────────────────────────────────────────────
 
-#: Schemes a URL may have: the configured page must be https; where it ends up may be http(s) (no file:, data:, chrome:).
-_START_SCHEMES: Final = ('https://',)
-_FINAL_SCHEMES: Final = ('https://', 'http://')
-
-
 def _require_public(url: str, *, final: bool) -> None:
-    """The SSRF guard: a public address with an allowed scheme, else CaptureError naming why."""
-    where = 'The page ended on an address that is not allowed' if final else 'This address is not allowed'
-    code = 'final_url_not_allowed' if final else 'url_not_allowed'
-    if not url.startswith(_FINAL_SCHEMES if final else _START_SCHEMES):
-        raise CaptureError(f'{where} (only public https pages can be read)', reason=code)
-    is_valid, reason = validate_url(url)
-    if not is_valid:
-        raise CaptureError(f'{where} ({reason})', reason=code)
+    """The public-only guard (``shared.url_policy.require_public``), its refusal a CaptureError with the same words
+    and reason code."""
+    try:
+        require_public(url, final=final)
+    except NotPublicURLError as exc:
+        raise CaptureError(str(exc), reason=exc.reason) from exc
 
 
 class _Tab:

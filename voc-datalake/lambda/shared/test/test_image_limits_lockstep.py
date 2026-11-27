@@ -16,7 +16,7 @@ Three sets of numbers are pinned here.
 
 3. ``MAX_FILE_BYTES``, the upload cap. This duplication PREDATES visual
    grounding: ``lambda/api/product_context.py`` and
-   ``frontend/src/pages/ProjectDetail/ProductDocsUpload.tsx`` have each carried
+   ``frontend/src/pages/ProjectDetail/productSourceUpload.ts`` (the docs card's, before 7.104.00) have each carried
    their own ``10 * 1024 * 1024`` with nothing holding them together, so lowering
    the server cap would leave the client happily starting uploads that the API
    then rejects. It is closed here opportunistically because that is precisely
@@ -46,7 +46,7 @@ def _ts_num_const(name: str) -> int:
     return int(match.group(1).replace('_', ''))
 
 
-FRONTEND_SOURCE = 'frontend/src/pages/ProjectDetail/ProductDocsUpload.tsx'
+FRONTEND_SOURCE = 'frontend/src/pages/ProjectDetail/productSourceUpload.ts'
 RESIZE_SOURCE = 'frontend/src/pages/ProjectDetail/resizeImage.ts'
 
 
@@ -56,8 +56,8 @@ def _frontend_int_const(name: str, source: str = FRONTEND_SOURCE) -> int:
     Handles ``const NAME = 10 * 1024 * 1024`` rather than requiring a literal, so
     the frontend keeps the form that documents where the number comes from, and
     numeric separators (``3_750_000``) for the same reason. `source` is a
-    parameter because the caps are spread over two files in the same directory —
-    a .tsx and a .ts — and the reading is identical for both.
+    parameter because the caps are spread over two files in the same directory
+    (productSourceUpload.ts and resizeImage.ts), and the reading is identical for both.
     """
     path = repo_root() / source
     if not path.is_file():
@@ -161,7 +161,7 @@ class TestUploadCapLockstep:
         server = _product_context().MAX_FILE_BYTES
         client = _frontend_int_const('MAX_FILE_BYTES')
         assert server == client, (
-            f'product_context.MAX_FILE_BYTES is {server} but ProductDocsUpload.tsx '
+            f'product_context.MAX_FILE_BYTES is {server} but productSourceUpload.ts '
             f'uses {client}. The client pre-check and the server cap have to agree, '
             'or one of them is either rejecting files the other accepts or waving '
             'through files the other refuses. Change both, or neither.'

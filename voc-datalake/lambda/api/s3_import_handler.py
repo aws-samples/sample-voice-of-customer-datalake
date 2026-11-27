@@ -94,8 +94,9 @@ PROCESSED_PREFIX = 'processed'
 # WORKSPACE_FOLDER), so `ws` is no source name on either path.
 WORKSPACE_FOLDER = 'ws'
 RESERVED_SOURCES = (PROCESSED_PREFIX, WORKSPACE_FOLDER)
-# A source folder name, as `POST /s3-import/sources` and `upload-url` sanitise it.
-_SOURCE_NAME = re.compile(r'[A-Za-z0-9_-]+')
+# A character a source folder name never holds: `POST /s3-import/sources` and `upload-url` make each one `_`, and a
+# staged key's source folder and a listed `source` hold none (one rule for all four).
+_NOT_SOURCE_NAME = re.compile(r'[^A-Za-z0-9_-]')
 # Control characters and a backslash have no place in a staged file name.
 _UNSAFE_FILENAME_CHARS = re.compile(r'[\x00-\x1f\x7f\\]')
 INVALID_KEY = 'Key is outside the import layout <source>/<file.csv|.json|.jsonl>'
@@ -147,7 +148,7 @@ def _deletable_key(key: str) -> str:
     source, filename = parts
     if source == WORKSPACE_FOLDER:
         raise ValidationError(_reserved(WORKSPACE_FOLDER))
-    if not _SOURCE_NAME.fullmatch(source) or source == PROCESSED_PREFIX:
+    if not source or _NOT_SOURCE_NAME.search(source) or source == PROCESSED_PREFIX:
         raise ValidationError(INVALID_KEY)
     if not filename.strip() or not filename.endswith(IMPORTABLE_EXTENSIONS):
         raise ValidationError(INVALID_KEY)
@@ -269,7 +270,7 @@ def create_source():
     if not source_name:
         raise ValidationError('Source name is required')
 
-    safe_name = re.sub(r'[^a-zA-Z0-9_-]', '_', source_name)
+    safe_name = _NOT_SOURCE_NAME.sub('_', source_name)
     if safe_name in RESERVED_SOURCES:
         raise ValidationError(_reserved(safe_name))
 
@@ -293,7 +294,7 @@ def list_files():
     source = params.get('source', '')
     include_processed = str(params.get('include_processed')).lower() == 'true'
     # A folder name only: `ws/<id>` or `a/b` would list another place's files, or a deeper prefix.
-    if source and (not _SOURCE_NAME.fullmatch(source) or source == WORKSPACE_FOLDER):
+    if source and (_NOT_SOURCE_NAME.search(source) or source == WORKSPACE_FOLDER):
         raise ValidationError(INVALID_SOURCE)
     scope = _request.scope()
 
@@ -386,7 +387,7 @@ def get_upload_url():
     if not filename.endswith(IMPORTABLE_EXTENSIONS):
         raise ValidationError('Only CSV, JSON, and JSONL files are supported')
 
-    safe_source = re.sub(r'[^a-zA-Z0-9_-]', '_', source)
+    safe_source = _NOT_SOURCE_NAME.sub('_', source)
     safe_filename = re.sub(r'[^a-zA-Z0-9_.-]', '_', filename)
     key = f"{safe_source}/{safe_filename}"
     if safe_source in RESERVED_SOURCES:

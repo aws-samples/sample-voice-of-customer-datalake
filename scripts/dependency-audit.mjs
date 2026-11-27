@@ -15,9 +15,9 @@
  *   never ship to a Lambda or to the SPA bundle, so a high one should not block unrelated pull requests,
  *   but a critical one runs on every contributor's machine and in CI.
  * - Python, each Lambda layer's requirements.txt: pip resolves it the way the layer build would (Lambda
- *   target: manylinux2014_aarch64, CPython 3.14, wheels only) into exact pins, then `pip-audit` checks
- *   those pins against the PyPI advisory database. Any known vulnerability fails: pip-audit reports no
- *   severity. requirements-dev.txt (test and lint tools, resolved for this host) is reported only.
+ *   target: manylinux_2_28_aarch64 or manylinux2014_aarch64, CPython 3.15, wheels only) into exact pins, then
+ *   `pip-audit` checks those pins against the PyPI advisory database. Any known vulnerability fails: pip-audit
+ *   reports no severity. requirements-dev.txt (test and lint tools, resolved for this host) is reported only.
  * - The reviewed-ignore file (.github/dependency-audit-ignore.json): every entry needs an advisory id,
  *   the package, a reason and an expiry date at most MAX_IGNORE_DAYS ahead. A malformed or expired entry
  *   fails; an entry that matched nothing is reported so it can be deleted. See docs/dependencies.md.
@@ -51,9 +51,16 @@ export const NPM_DIRS = [
   'voc-datalake/lambda/stream',
   'tools/kiro-acp-bridge',
 ]
-const LAMBDA_TARGET = ['--platform', 'manylinux2014_aarch64', '--python-version', '3.14', '--implementation', 'cp', '--only-binary=:all:']
+/**
+ * The Lambda target (Python 3.15 on Amazon Linux 2023, arm64). pip expands no PEP 600 tag to the older ones, so both
+ * are named: lxml tags its cp315 aarch64 wheels manylinux_2_26 and _2_28 only, pydantic-core and cffi manylinux2014 only.
+ */
+const LAMBDA_TARGET = [
+  '--platform', 'manylinux_2_28_aarch64', '--platform', 'manylinux2014_aarch64',
+  '--python-version', '3.15', '--implementation', 'cp', '--only-binary=:all:',
+]
 export const PIP_TARGETS = [
-  ...['email-intake-deps', 'ingestion-deps', 'processing-deps', 'signing-deps'].map((layer) => ({
+  ...['email-intake-deps', 'engineering-ci-deps', 'ingestion-deps', 'processing-deps', 'signing-deps'].map((layer) => ({
     file: `voc-datalake/lambda/layers/${layer}/requirements.txt`,
     gating: true,
     resolveArgs: LAMBDA_TARGET,

@@ -2,8 +2,10 @@
  * cdk-nag 3 acknowledgements: one typed helper over CDK's `Validations.of(scope).acknowledge()`.
  *
  * cdk-nag 3 is a policy-validation plugin. A rule is acknowledged per FINDING (`AwsSolutions-IAM5[<finding>]`),
- * exactly: there is no prefix, no regex and no "every finding of this rule" form. An acknowledgement on a
- * construct covers that construct and everything below it (cdk-nag walks a resource's ancestors).
+ * exactly: there is no prefix and no regex. cdk-nag 3.1.0 added an "every finding of this rule" form (the bare rule
+ * id); the platform does not use it: {@link acknowledgementCovering} matches the exact id only, so a bare id on a rule
+ * that reports findings leaves them unacknowledged in lib/nag-suppressions.test.ts, which fails. An acknowledgement on
+ * a construct covers that construct and everything below it (cdk-nag walks a resource's ancestors).
  *
  * A finding is written either as the literal id cdk-nag prints (`Action::kms:ReEncrypt*`, `Resource::*`) or,
  * for a resource ARN, as the SAME expression the grant uses ({@link resourceFinding}). The second form is
@@ -128,7 +130,7 @@ function intrinsic(node: Record<string, unknown>, name: string): unknown {
 }
 
 /**
- * cdk-nag's `flattenCfnReference` (lib/utils/flatten-cfn-reference.ts in cdk-nag 3.0.2, not exported):
+ * cdk-nag's `flattenCfnReference` (lib/utils/flatten-cfn-reference.ts in cdk-nag 3.1.0, as in 3.0.2; not exported):
  * `${X}` → `<X>`, Fn::Join joined, Fn::GetAtt → `<Res.Attr>`, Ref → `<Name>`, Fn::ImportValue → its name.
  * lib/nag-suppressions.test.ts proves every rendered acknowledgement matches a finding cdk-nag reports.
  */

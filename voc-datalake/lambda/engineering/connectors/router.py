@@ -66,8 +66,8 @@ class HostRouter:
     def post_comment(self, connection_id: str, on: CommentTarget, number: int, body: str) -> str:
         return self._host(connection_id).post_comment(connection_id, on, number, body)
 
-    def issue_comment(self, connection_id: str, number: int, marker: str, since: int) -> str | None:
-        return self._host(connection_id).issue_comment(connection_id, number, marker, since)
+    def issue_comment(self, connection_id: str, number: int, marker: str) -> str | None:
+        return self._host(connection_id).issue_comment(connection_id, number, marker)
 
     def branch_tree_hash(self, connection_id: str, branch: str) -> str | None:
         return self._host(connection_id).branch_tree_hash(connection_id, branch)

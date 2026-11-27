@@ -40,7 +40,7 @@ function fixture() {
   const plain = new dynamodb.Table(producer, 'Plain', { partitionKey: { name: 'pk', type: dynamodb.AttributeType.STRING } });
   const bucket = new s3.Bucket(producer, 'Raw', { encryptionKey: key, encryption: s3.BucketEncryption.KMS, enforceSSL: true, versioned: true });
   const fn = (scope: cdk.Stack, id: string) => new lambda.Function(scope, id, {
-    runtime: lambda.Runtime.PYTHON_3_14, handler: 'h.handler', code: lambda.Code.fromInline('def handler(e, c): pass'),
+    runtime: lambda.Runtime.PYTHON_3_15, handler: 'h.handler', code: lambda.Code.fromInline('def handler(e, c): pass'),
   });
   return { app, producer, consumer, table, plain, bucket, fn };
 }

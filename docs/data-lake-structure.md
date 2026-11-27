@@ -152,6 +152,18 @@ Other prefixes in the same bucket store project uploads, extracted product conte
 (`avatars/<project_id>/<persona_id>.png`) and generated prototype assets. `scratch/` holds working
 copies of research and document workflows and expires after 2 days.
 
+A project's product sources (the Product tab, [project-workspace.md](project-workspace.md)) sit under
+`projects/<project_id>/product_docs/` (`ws/<ws>/projects/<project_id>/product_docs/` in a workspace, which
+no route writes yet):
+
+| Key | Holds | Read by |
+|-----|-------|---------|
+| `raw/<doc>.<md\|txt\|png\|jpg\|gif\|webp>` | A Markdown, text or image upload | The S3-triggered product-doc extractor (`lambda/product_doc_extractor/`) |
+| `source/<doc>.<pdf\|docx\|pptx>` (since 7.104.00) | A PDF, DOCX or PPTX upload, at most 25 MB | The projects API's assist twin (`lambda/shared/product_source_worker.py`, through `shared/library_extract.py`); outside the extractor's `raw/` keys and its `ws/` suffix rules, so it never reads one |
+| `extracted/<doc>.txt` | Every source's text: an upload's, a link's page (one public https page, never crawled) and typed or spoken answers (no upload of their own) | PRD / PR-FAQ generation, an extract, retention and an erasure; a source's delete removes it with every version of its upload |
+
+A project's delete removes the whole `product_docs/` folder. `schemas/project-keys-cases.json` pins each key.
+
 ## DynamoDB Tables
 
 All tables use on-demand capacity and customer-managed KMS encryption. Physical names are
@@ -162,7 +174,7 @@ All tables use on-demand capacity and customer-managed KMS encryption. Physical 
 | `voc-feedback` | `pk=SOURCE#<brand_name, else source_platform>`, `sk=FEEDBACK#<id>` | Processed feedback and enrichment. Producers send the deployment's brand name, so most items share one partition; filter by `source_platform` to select a source. Its stream feeds the aggregator |
 | `voc-aggregates` | `pk`, `sk` | Daily metrics, settings, logs, form configs, source and scraper runs, prioritization rows, ballots and voting sessions |
 | `voc-watermarks` | `source` (`<plugin_id>#<key>`; `WS#<ws>#<plugin_id>#<key>` for a run in a workspace, [multi-workspace.md](multi-workspace.md), since 7.00.00) | Per-source ingestion progress |
-| `voc-projects` | `pk`, `sk` | Project metadata, personas, artifacts, document comments and review links, global MCP tokens (`MCPGTOKEN`), and managed-version state |
+| `voc-projects` | `pk`, `sk` | Project metadata, personas, artifacts, the product description, its sources, proposals and extract lock (`PRODUCT_CONTEXT`, `PRODUCT_DOC#`, `PRODUCT_PROPOSAL#`, `PRODUCT_EXTRACT`, below), document comments and review links, global MCP tokens (`MCPGTOKEN`), and managed-version state |
 | `voc-jobs` | `pk=PROJECT#<id>`, `sk=JOB#<id>` | Long-running research and generation jobs, and assist jobs |
 | `voc-conversations` | `pk=USER#<subject>`, `sk=CONV#<id>` | Per-user AI assistant sessions (`kind=assistant`; `messages_json`/`page_json`/`pending_json` JSON strings, `message_count`, item kept under ~350 KB) and legacy chat records (native `messages` list); current writes do not set TTL |
 | `voc-idempotency` | `id` | Processor and aggregator retry claims |
@@ -219,6 +231,9 @@ such as every source or persona counter. Common key families include:
 | `CIRCUIT#<plugin>` / `TRIPPED`, `FAILURES#<plugin>` | Plugin circuit breaker ([plugin-architecture.md](plugin-architecture.md#circuit-breaker)); a run in a workspace keeps `WS#<ws>#CIRCUIT#<plugin>` and `WS#<ws>#FAILURES#<plugin>` |
 | `IMPORT_RUN`, `IMPORT_RUN#<run id>` | Import history (kept, no TTL; rows from earlier releases keep their 90-day TTL, [import-history.md](import-history.md)); an S3 import run in a workspace writes `WS#<ws>#IMPORT_RUN` and `WS#<ws>#IMPORT_RUN#<run id>` |
 | `PRIORITIZATION` / `ROW#<id>` | Prioritization rows ([prioritization.md](prioritization.md)) |
+| `PRODUCTX#PROJECT#<project_id>#<YYYYMMDDHHMM>`, `PRODUCTX#PROJECT#<project_id>#<YYYY-MM-DD>`, `PRODUCTX#USER#<sub>#<YYYY-MM-DD>` / `COUNT` | The product extract's limits (since 7.104.00): a project's extracts of a UTC minute (at most 1) and of a UTC day (at most 10), and a person's of a UTC day across projects (at most 20), the three counted together or not at all; 2-day TTL |
+| `PRODUCTURL#PROJECT#<project_id>#<YYYY-MM-DD>`, `PRODUCTURL#USER#<sub>#<YYYY-MM-DD>` / `COUNT` | The product sources' link reads of a UTC day (an add or a refresh, since 7.104.00): a project's (at most 30) and a person's across projects (at most 60), the two counted together; 2-day TTL |
+| `PRODUCTFILE#USER#<sub>#<YYYY-MM-DD>` / `COUNT` | A person's reads of a PDF, Word or PowerPoint product source on the projects API's assist twin of a UTC day (an announced upload or a Retry, at most 60; since 7.104.00); 2-day TTL |
 
 Metric rows are kept indefinitely (no `ttl`). The table keeps TTL enabled for its operational rows (logs,
 circuit-breaker failures, import history, voting sessions). Settings and other durable configuration rows
@@ -230,6 +245,30 @@ repairing counters.
 A project uses `pk=PROJECT#<project_id>`. Its sort keys include `META`, `PERSONA#<id>`, managed artifact
 prefixes such as `PRD#`, `PRFAQ#`, and `PROTOTYPE#`, and uploaded `DOC#` rows. The index `gsi1-by-type`
 lists items of one type, such as every project.
+
+`PRODUCT_CONTEXT` is the project's product description (12 fields), with `field_meta.<field> = {by, sub, at}`:
+who last wrote each field (since 7.104.00; `person` for a person and the assistant's approval card, which runs
+with the person's own token, `assistant` for an MCP client, an agent or a plan step, `extract` for an accepted
+extract). `PRODUCT_DOC#<doc>` is one product source of any kind (`source_kind`: `file`, the default of an older
+row, `url` or `interview`), with its status (`pending`, `extracting`, `ready`, `failed`), who added it
+(`created_by`), its reading (`extracted_chars`, `truncated`, `method`, `pages`, `injection_flag`), a twin read's
+claim (`extract_token`, `claimed_at`), an upload's declared `sha256`, a link's `url`, `final_url`, `title` and
+`fetched_at`, and an interview's `interview_mode`, `session_id` and `proposal_id`. A project holds at most 20
+sources, links and answers included, and at most 10 links: a working-set limit checked before each add (two adds at
+once may both take the last place, and a voice interview the project filled up during is saved past it); an
+extract's cost is bounded by what it sends and by the counters above, not by the count of rows.
+
+`PRODUCT_PROPOSAL#<YYYYMMDDTHHMMSSffffffZ>#<hex>` (`proposal_id` `pp_<stamp>_<hex>`, the newest sorts last; since
+7.104.00) is one extract's proposal: its `status` (`open`, `partly_applied`, `applied`, `dismissed`, `superseded`),
+`job_id`, `created_by`, `model` (the model that answered, the one asked for, the effort and the usage),
+`prompt_version`, its `sources` (`S1`…: `doc_id`, name, kind, characters sent, `cut`) and `skipped_sources`, its
+`fields` (each of the 12: `status`, `value`, `citations`, `confidence`, `note`, `seen`, `accepted`) and its
+`questions` (one a field at most). A source's delete takes its citations out of every proposal; the values, notes
+and the source's name stay, the source marked deleted. `PRODUCT_EXTRACT` is the project's extract lock (`lock_id`,
+`started_at`, `started_epoch`, `started_by`, `job_id`, `released_at`), held by one extract at a time and taken over
+16 minutes after it started; released by an update, never deleted, and neither exported nor bundled. An accept
+also writes an `AUDIT#product_context` row (ids only: the project, the proposal, the fields, the actor and the
+model).
 
 PRDs, PR/FAQs, and prototypes have internal version state in a separate partition:
 

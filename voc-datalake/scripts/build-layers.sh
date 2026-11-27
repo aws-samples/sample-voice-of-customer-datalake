@@ -51,8 +51,8 @@ done
 echo "Building Lambda layers using $CONTAINER_CMD (ARM64/Graviton for Lambda)..."
 echo "Project root: $PROJECT_ROOT"
 
-# Use the official AWS Lambda Python 3.14 image with ARM64 platform
-DOCKER_IMAGE="public.ecr.aws/sam/build-python3.14:latest"
+# Use the official AWS Lambda Python 3.15 image with ARM64 platform
+DOCKER_IMAGE="public.ecr.aws/sam/build-python3.15:latest"
 PLATFORM="linux/arm64"
 
 # Install layer deps, then strip what the runtime ships and what never runs.

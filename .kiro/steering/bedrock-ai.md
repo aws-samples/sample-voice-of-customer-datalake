@@ -29,6 +29,7 @@ write and read back as Automatic if tampered.
 |---|---|
 | AI assistant (surface key `chat`: floating assistant + `/chat` page, streamed over `/chat/stream`) | Claude Sonnet 5.5 |
 | Document generation (PRD, PR/FAQ, personas, research) | Claude Sonnet 5.5 |
+| Product extract (surface `product_extract`: the Product tab's description from its sources, 7.104.00) | Claude Sonnet 5.5, its own: the pick for all surfaces and the deployment's default never replace it (a model profile still does); capacity fallback Sonnet 5 only, a refusal asked again once on Sonnet 5 |
 | Prototype builder | Claude Opus 5.5 |
 | Feedback enrichment (processor) | Claude Haiku 5.5 |
 | Utilities (category suggestions, selector detection) | Claude Sonnet 5.5 |
@@ -73,6 +74,22 @@ and reject an explicit thinking budget (adaptive thinking is always-on; a
 manual `thinking.budget_tokens` is a 400 on Opus 4.7 and later). Never pass
 those fields unconditionally — resolve the model first, then let the shared
 helpers shape the request.
+
+**Effort (7.104.00).** Each allowlist row's `effort_levels` lists the `output_config.effort` levels the model takes
+(low…max on every 5.x model and Opus 4.8; no `xhigh` on Sonnet 4.6; none on Haiku 4.5, which refuses the field),
+read through `supports_effort(model_id, level)`. Send an effort only where it allows that level, with adaptive
+thinking (`thinking: {type: adaptive}`) beside it: Bedrock caps the effort at `high` without thinking. Both go in
+Converse's `additionalModelRequestFields` (the engineering harness has sent `output_config.effort` that way since
+7.58.01); `[BEDROCK] Effective params` names what went on the wire.
+
+**Streaming from Python (7.104.00).** A call whose answer can outlive one 840 s read (a max-effort extract) streams
+with ConverseStream (`shared/product_extract_model.py`): its role needs `grantClaudeModels(role, 'stream')`
+(`bedrock:InvokeModelWithResponseStream`), a heartbeat thread keeps the job's progress fresh and closes the stream at
+the job's own deadline, and the stream's `metadata.usage` is logged with `usage_meter.log_stream_usage` (operation
+`ConverseStream`): the botocore usage hook meters Converse and InvokeModel only. A refusal is a `stopReason` of
+`refusal` (Claude's own; botocore's enum does not list it) or `content_filtered`; ask for
+`additionalModelResponseFieldPaths: ['/stop_details']` to read its category where Bedrock forwards it. Bedrock has no
+server-side `fallbacks`: the caller asks again itself (`model_config.refusal_fallback`).
 
 ## Usage Pattern
 

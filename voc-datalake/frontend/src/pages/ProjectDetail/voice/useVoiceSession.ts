@@ -2,7 +2,8 @@
  * @fileoverview A live voice session for the modal (docs/voice-personas.md): its connection (voiceConnection.ts),
  * the state folded from the relay's messages (voiceSessionState.ts), the microphone's level, a clock that runs while
  * the session is live, and, once it is over, the projects API's end (`POST …/voice-sessions/{sid}/end`, which files
- * the transcript: voiceSessionEnd.ts) and the session's status until the transcript document is there.
+ * the transcript: voiceSessionEnd.ts) and the session's status until the transcript is saved (a persona's as a
+ * document, a product interview's as a source of the project).
  *
  * The end is posted whatever ended the session (End, the relay's limit, a dropped connection), retried, and sent once
  * more with `keepalive` when the page goes away (`pagehide`) after the connection ended but before the end was
@@ -15,7 +16,7 @@ import { useEffect, useReducer, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import type { RelayMessage, VoiceEndReason } from '@stream/voice/protocol'
 import { voiceKeys, voiceSessionsApi } from '../../../api/voiceSessionsApi'
-import type { StartedVoiceSession, VoiceSessionStatus } from '../../../api/voiceSessionsApi'
+import type { StartedVoiceSession, VoiceSessionStatus, VoiceSubject } from '../../../api/voiceSessionsApi'
 import { createVoiceConnection } from './voiceConnection'
 import type { VoiceAudio } from './voiceAudio'
 import { createEndRecorder } from './voiceSessionEnd'
@@ -52,17 +53,18 @@ function useLiveClock(live: boolean): number {
 
 export interface VoiceSessionTarget {
   readonly projectId: string
-  readonly personaId: string
+  /** A project persona, or the Product tab's AI interviewer (7.104.00). */
+  readonly subject: VoiceSubject
   readonly started: StartedVoiceSession
   readonly audio: VoiceAudio
 }
 
-export function useVoiceSession({ projectId, personaId, started, audio }: VoiceSessionTarget) {
+export function useVoiceSession({ projectId, subject, started, audio }: VoiceSessionTarget) {
   const [state, dispatch] = useReducer(reducer, undefined, () => initialVoiceState(started.session_minutes * 60, started.minutes_left))
   const [level, setLevel] = useState(0)
   const [posted, setPosted] = useState<EndState>('no')
   const [recorder] = useState(() => createEndRecorder(
-    (keepalive) => voiceSessionsApi.end(projectId, personaId, started.session_id, keepalive), setPosted))
+    (keepalive) => voiceSessionsApi.end(projectId, subject, started.session_id, keepalive), setPosted))
   const [connection] = useState(() => createVoiceConnection(started.connect_url, audio, {
     onMessage: (message) => dispatch({ kind: 'relay', message }),
     onLevel: setLevel,
@@ -83,7 +85,7 @@ export function useVoiceSession({ projectId, personaId, started, audio }: VoiceS
   }, [recorder])
   const status = useQuery({
     queryKey: voiceKeys.session(started.session_id),
-    queryFn: () => voiceSessionsApi.getSession(projectId, personaId, started.session_id),
+    queryFn: () => voiceSessionsApi.getSession(projectId, subject, started.session_id),
     enabled: posted === 'yes',
     refetchInterval: (query) => (settled(query.state.data) ? false : STATUS_POLL_MS),
   })

@@ -100,7 +100,9 @@ export function acknowledgeStackFindings({ core, ingestion, processing, api }: C
     ]),
     ...rawDataPrefixSuppressions(raw, [
       'avatars/*', 'company-context/*', 'company-context/design/logo_preview_*', 'company-context/design/icons_*',
-      'library/*', 'memory-imports/*', 'projects/*/product_docs/*', 'projects/*/product_docs/extracted/*',
+      'library/*', 'memory-imports/*', 'projects/*/product_docs/*',
+      // The document generator's read of the product sources (7.104.00): their text and an image upload, never source/.
+      'projects/*/product_docs/extracted/*', 'projects/*/product_docs/raw/*',
       'prototypes/*', 'raw/github_issues/*', 'raw/feedback_form/*', 'raw/feature_requests/*', 'scratch/document_jobs/*',
       // With -c voicePersonas=true (7.69.00): the projects API's voice sessions' scratch files.
       'scratch/voice/*',

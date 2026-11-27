@@ -9,7 +9,7 @@
  *    PYTHON_BUNDLE_PRUNE. Recorded from real in-process synths (the template
  *    holds no bundling command), so a site that bypasses the helper fails too.
  * 2. A real Docker build of one production bundle contains no test file and no
- *    `.pyc` from the source tree, and holds an unchecked-hash `cpython-314` `.pyc`
+ *    `.pyc` from the source tree, and holds an unchecked-hash `cpython-315` `.pyc`
  *    next to every shipped module (no compile at cold start). Skipped when Docker or
  *    the bundling image is not available locally (it never pulls the multi-GB image), so check 1 (the script
  *    ends with the prune, then the compile) is the one that always runs and catches a revert.
@@ -33,14 +33,14 @@ import { SYNTH_ACCOUNT, SYNTH_REGION } from '../test-support/synth-app';
 import { PYTHON_BUNDLE_COMPILE, PYTHON_BUNDLE_PRUNE, pythonBundleScript } from './python-lambda-asset';
 import { createWorkerFunction, workerRole } from './worker-lambda';
 
-const PYTHON_IMAGE = lambda.Runtime.PYTHON_3_14.bundlingImage;
+const PYTHON_IMAGE = lambda.Runtime.PYTHON_3_15.bundlingImage;
 const PLUGIN_IDS = pluginDirectoryIds(join(process.cwd(), 'plugins'));
 
 /**
  * The `bash -c` script of every Python-image FUNCTION bundle created while
  * `build` runs: those that copy source from /asset-input. The pip layer bundles
  * (python-layer-bundling.ts) are left out on purpose: their `.pyc` files are
- * compiled by the 3.14 image for the 3.14 runtime (a cold-start win), and a
+ * compiled by the 3.15 image for the 3.15 runtime (a cold-start win), and a
  * third-party package may import its own `tests` module.
  */
 function recordPythonBundleScripts(build: () => void): string[] {
@@ -149,9 +149,9 @@ const SHIPPED_DIRECTORY = /(^|\/)(test|tests|\.pytest_cache)\/$/;
 const SHIPPED_FILE = /(^|\/)(test_[^/]*\.py|[^/]*_test\.py|conftest\.py)$/;
 const isTest = (path: string): boolean => SHIPPED_DIRECTORY.test(path) || SHIPPED_FILE.test(path);
 
-const PYC_SUFFIX = '.cpython-314.pyc';
+const PYC_SUFFIX = '.cpython-315.pyc';
 
-/** The `.py` a `<dir>/__pycache__/<name>.cpython-314.pyc` compiles; undefined for any other path. */
+/** The `.py` a `<dir>/__pycache__/<name>.cpython-315.pyc` compiles; undefined for any other path. */
 function sourceOf(pyc: string): string | undefined {
   const parts = pyc.split('/');
   const file = parts.at(-1) ?? '';
@@ -195,7 +195,7 @@ describe.skipIf(!bundlingImageAvailable())('a real Docker-built bundle (briefing
     const cacheDir = join(process.cwd(), 'lambda', 'shared', '__pycache__');
     const createdCacheDir = !existsSync(cacheDir);
     mkdirSync(cacheDir, { recursive: true });
-    const cacheFile = join(cacheDir, 'python-lambda-asset-probe.cpython-314.pyc');
+    const cacheFile = join(cacheDir, 'python-lambda-asset-probe.cpython-315.pyc');
     writeFileSync(cacheFile, '');
     try {
       asset = bundleBriefingWorker();
@@ -215,7 +215,7 @@ describe.skipIf(!bundlingImageAvailable())('a real Docker-built bundle (briefing
     expect(files.filter((path) => path.includes('python-lambda-asset-probe'))).toStrictEqual([]);
   });
 
-  it('holds a cpython-314 .pyc for every shipped module, and none without its module', () => {
+  it('holds a cpython-315 .pyc for every shipped module, and none without its module', () => {
     const modules = files.filter((path) => path.endsWith('.py'));
     const compiled = files.filter((path) => path.endsWith('.pyc'));
     expect(compiled.map(sourceOf).filter((source) => source === undefined || !modules.includes(source))).toStrictEqual([]);

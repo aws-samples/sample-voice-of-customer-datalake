@@ -28,7 +28,7 @@ PRUNE = ("find /asset-output -type d \\( -name 'test' -o -name '__pycache__' \\)
 
 def _fn(script: str | None, source: str = 'lambda') -> Function:
     command = None if script is None else ['bash', '-c', script]
-    return Function('S/Fn', 'python3.14', 'handler.lambda_handler', {}, None, asset_source=source, asset_command=command)
+    return Function('S/Fn', 'python3.15', 'handler.lambda_handler', {}, None, asset_source=source, asset_command=command)
 
 
 @pytest.fixture

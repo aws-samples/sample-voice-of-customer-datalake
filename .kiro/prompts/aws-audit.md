@@ -11,7 +11,7 @@ VoC Data Lake is a **fully serverless** AWS platform for ingesting, processing, 
 ### AWS Services in Use
 | Service | Purpose | Security Considerations |
 |---------|---------|------------------------|
-| Lambda (Python 3.14, ARM64; assistant on Node.js) | Ingestors, Processor, Aggregator, Split API handlers | IAM 20KB policy limit, Powertools |
+| Lambda (Python 3.15, ARM64; assistant on Node.js) | Ingestors, Processor, Aggregator, Split API handlers | IAM 20KB policy limit, Powertools |
 | DynamoDB | Feedback, Aggregates, Watermarks, Projects, Jobs, Conversations | On-demand, KMS encryption, TTL |
 | S3 | Raw data lake (partitioned by source/date) | KMS encryption, lifecycle policies |
 | API Gateway | REST API with split Lambda backends | Throttling, CORS, stage deployment |

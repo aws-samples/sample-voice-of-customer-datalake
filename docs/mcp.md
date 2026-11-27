@@ -43,7 +43,12 @@ The assistant then appears under **Signed-in assistants**. Signing it out there 
      **Read and write** (also create and update project documents; for an administrator, also run autonomous
      agents);
    - **Expires after**: 1, 7, 30 (default) or 90 days;
-   - **Project** (optional): confine the project tools to one project.
+   - **Project** (optional): confine the project tools to one project. A token so pinned gets no feedback forms
+     tools, not even `forms_get_results` for its own project's validation form (the forms are workspace-wide reads,
+     and their responses carry respondents' contact answers). Its feedback reads leave out the stored contact fields
+     only: a form submitter's email and name, a form's contact answers (name, email, phone, company) and an inbox
+     email's sender. Everything else is as the source's PII policy stored it, an email typed into an open answer for
+     one: the policy, not the pin, is the personal-data boundary ([Who a token acts as](#who-a-token-acts-as)).
 2. Select **Create token** and copy the token. It is shown **once**. Store it like a password.
 3. Pick your client in the `mcp.json` card and save the file where the card says (table below). The Claude Code,
    Cursor and Kiro snippets read the token from the `VOC_MCP_TOKEN` environment variable, so the file holds no
@@ -104,9 +109,19 @@ The token can only narrow that:
 
 | Setting | Values | Effect |
 |---|---|---|
-| `scope` | `read` / `write` (required, no default) | `read` sees only the read tools; `write` adds document writes (`documents_create`, `documents_update`, `documents_revise_from_comments`, `documents_mark_comments_addressed`, `documents_draft_prototype_revision`, `documents_apply_prototype_draft`, `documents_discard_prototype_draft`, `documents_set_prototype_walkthrough`, `documents_draft_prototype_walkthrough`), `projects_generate`, `feedback_edit`, `prioritization_score` and `feature_requests_write` |
-| `project_id` | optional pin | Project tools (`projects_get`, `projects_generate`, `projects_get_job`, `documents_get`, `documents_list_prototype_feedback`, `documents_create`, `documents_update`, `documents_revise_from_comments`, `documents_mark_comments_addressed`, `documents_get_prototype_outline`, the three walkthrough tools, the four prototype-draft tools, `prioritization_get`) are confined to that project and default to it; `projects_list` shows only it; `prioritization_get` keeps only its rows; `agents_run` and `prioritization_score` (it reaches rows of every project the minter can see) are not offered and are refused. Workspace-wide reads (feedback, metrics, categories, memory, company context, agents) still answer. The tools' `project_id` schema carries no description; the server's `initialize` instructions say once that a pinned token fills it |
+| `scope` | `read` / `write` (required, no default) | `read` sees only the read tools; `write` adds document writes (`documents_create`, `documents_update`, `documents_revise_from_comments`, `documents_mark_comments_addressed`, `documents_draft_prototype_revision`, `documents_apply_prototype_draft`, `documents_discard_prototype_draft`, `documents_set_prototype_walkthrough`, `documents_draft_prototype_walkthrough`), `projects_generate`, `product_write`, `feedback_edit`, `prioritization_score` and `feature_requests_write` |
+| `project_id` | optional pin | Project tools (`projects_get`, `projects_generate`, `projects_get_job`, `documents_get`, `documents_list_prototype_feedback`, `documents_create`, `documents_update`, `documents_revise_from_comments`, `documents_mark_comments_addressed`, `documents_get_prototype_outline`, the three walkthrough tools, the four prototype-draft tools, `prioritization_get`, `product_get`, `product_write`) are confined to that project and default to it (a call naming another project is refused before any route); `projects_list` shows only it; `prioritization_get` keeps only its rows; `agents_run`, `prioritization_score` (it reaches rows of every project the minter can see) and the five `forms_` tools (7.104.00: workspace-wide reads of the scope's feedback forms, never one project's; a form's responses carry its respondents' contact answers, name, email, phone and company) are not offered and are refused, `forms_get_results` for the token's own project's validation form included. The other workspace-wide reads (feedback, metrics, categories, memory, company context, agents) still answer, but `feedback_search` and `feedback_get`, the only reads that return a stored item's `metadata`, leave out exactly these fields of it (7.104.00): `metadata`'s `submitter_email`, `submitter_name` and `email`; every contact_info answer (`{name, email, phone, company}`) of `metadata.form_answers`; and, for an item from the email inbox (`source_platform` `email_intake`), its top-level `author`, the sender's name or address. Nothing else is removed (below the table: the source's PII policy is the boundary). An unpinned token reads the item whole. The tools' `project_id` schema carries no description; the server's `initialize` instructions say once that a pinned token fills it |
 | `expires_in_days` | 1–90, default 30 (the Connect page offers 1, 7, 30 or 90 days) | Always set; there is no non-expiring global token. Tokens minted by releases before 3.02.00 keep their stored expiry (up to 365 days) |
+
+**The pin is not the personal-data boundary; the source's PII policy is.** A pinned token reads everything of an item
+but the fields above as its source's policy stored it
+([source-policies.md](source-policies.md#pii-handling-at-ingestion)). So an email or phone number a respondent typed
+into an open-text question (an email- or phone-typed input) is in `form_answers` and in the item's `original_text`,
+and `metadata.custom_fields`, `metadata.form_hidden` (a form's hidden values) and an import's top-level `csv_row_id`
+come back as stored. `redact`, the email inbox's default and a workspace source's until the workspace saves a profile
+for it, runs the text, the title, the URLs and every string of `metadata` through the PII redaction and drops `author`
+before anything is stored (a `csv_row_id` is kept as sent under every policy); under `allow` nothing is redacted. Set
+`redact` on a source whose items a pinned token must not read in full.
 
 A token minted inside a workspace sends that workspace's `X-Workspace-Id` to the agents API as to every domain
 (7.80.00): its `agents_list` and `agents_get_run` are that workspace's agents (usually none yet), and it is never
@@ -135,23 +150,25 @@ admin-only tools carried `voc:mcp_agent_run` and the engineering ones `voc:mcp_e
 ## Tools
 
 **Names and descriptions.** Every tool's name starts with its area: `feedback_`, `forms_`, `memory_`, `company_`,
-`projects_`, `documents_`, `library_`, `agents_`, `engineering_`, `feature_requests_`, `radar_`, `prioritization_` (`AREAS` in
-`lambda/shared/mcp_global_tools.py`), and `tools/list` lists them grouped by area, so a client that lists or
-searches tools by name finds an area's tools together. Each description is written for a model choosing a tool:
+`projects_`, `product_`, `documents_`, `library_`, `agents_`, `engineering_`, `feature_requests_`, `radar_`,
+`prioritization_`, `insights_` (`AREAS` in `lambda/shared/mcp_global_tools.py`, from which the server's instructions
+name them too), and `tools/list` lists them grouped by area, so a client that lists or searches tools by name finds an
+area's tools together. Each description is written for a model choosing a tool:
 what it does, its main nouns and verbs (and the words a person might use for them: review, vote, upvote,
-roadmap), when to use it, its key arguments and, for a write, that it needs a write token and the user's
-confirmation. The names changed in 6.10.00 ([Renamed in 6.10.00](#renamed-in-61000)).
+roadmap), when to use it, its key arguments and, for a write, the user's confirmation. Since 7.104.00 no description
+says which token a tool needs: `tools/list` shows a tool only to a token that may call it. The names changed in
+6.10.00 ([Renamed in 6.10.00](#renamed-in-61000)).
 
-**Budget.** The whole list (what an administrator's write token is shown: 43 tools) stays under an estimated
-10,000 tokens (`test_mcp_global_tools_budget.py`), and it is **effectively full**: about 9,994 of the 10,000 since
-7.70.00. It was 9,841 at 7.66.00 (7.63.00's `forms_get_results` took the room `library_get` freed); 7.68.00's
-`validation_plan` and `validation_report` steps and 7.70.00's `insights_get_adoption` took the rest, their
-descriptions and `projects_generate`'s note on the Validate steps shortened to fit. A new tool needs room made first:
-another removed, or descriptions shortened. Clients cache it: a 2026-07-28 client is
+**Budget.** The whole list (49 tools, what an administrator's write token is shown) is about **10,495** estimated
+tokens of a 10,500 budget (`test_mcp_global_tools_budget.py`). The budget was 10,000 from 6.10.00 to 7.71.04; the owner
+raised it to 10,500 on 2026-11-26 (7.104.00) for the four read-only forms tools, after every description was
+shortened. The Product tab's two tools (`product_get`, `product_write`) fit in what was left, with short descriptions
+(owner decision 5: the budget was not raised for them). A new tool needs room made first: another removed, or
+descriptions shortened. Clients cache it: a 2026-07-28 client is
 told so by `tools/list` itself (`ttlMs` 5 minutes, `cacheScope: "private"`, [Protocol](#protocol)), a legacy
 client keeps it for the session, and a client that caches its prompt prefix pays for the list once per
-conversation, not on every turn. Past about 10,000 tokens a client is better served by searching tools on demand,
-which is what the budget keeps it from needing.
+conversation, not on every turn. The limit stays 10,500 estimated tokens: a list much longer is better served by a
+client searching tools on demand.
 
 A board route (`/feature-requests/*`) resolves its caller from the verified `iss` claim and needs a verified
 email (`shared/engagement_identity.py`). For `feature_requests_search` and `feature_requests_write` the delegated claims therefore also carry
@@ -174,8 +191,8 @@ MCP call never sees an archived board.
 
 | Tool | Scope | Route (domain Lambda) |
 |---|---|---|
-| `feedback_search` | read | `GET /feedback/search` (query ≥ 2 chars) or `GET /feedback` (metrics); filters `category`, `sentiment`, `source`, `channel`, `tag`, `dims` (object → `key:value,…`); `urgent: true` adds `urgent=1` to either route, so only high-urgency items are listed and every other filter still applies (`/feedback/urgent` is not used: it has no text search, so `query` and `urgent` could not combine) |
-| `feedback_get` | read | `GET /feedback/{id}` (metrics); `include_similar: true` also reads `GET /feedback/{id}/similar?limit=5` and adds `similar` (≤ 5 rows: id, source, dates, category, sentiment, urgency, rating, title, problem summary, `text` cut at 500 characters). The second read is best effort: a refusal or fault becomes `similar_error`, the item is still returned |
+| `feedback_search` | read | `GET /feedback/search` (query ≥ 2 chars) or `GET /feedback` (metrics); filters `category`, `sentiment`, `source`, `channel`, `tag`, `dims` (object → `key:value,…`); `urgent: true` adds `urgent=1` to either route, so only high-urgency items are listed and every other filter still applies (`/feedback/urgent` is not used: it has no text search, so `query` and `urgent` could not combine). For a project-pinned token each item comes without the contact fields the pin removes, and with everything else as its source's PII policy stored it ([the pin](#who-a-token-acts-as)) |
+| `feedback_get` | read | `GET /feedback/{id}` (metrics); `include_similar: true` also reads `GET /feedback/{id}/similar?limit=5` and adds `similar` (≤ 5 rows: id, source, dates, category, sentiment, urgency, rating, title, problem summary, `text` cut at 500 characters). The second read is best effort: a refusal or fault becomes `similar_error`, the item is still returned. For a project-pinned token the item comes without the contact fields the pin removes, and with everything else as its source's PII policy stored it ([the pin](#who-a-token-acts-as)) |
 | `feedback_get_metrics` | read | `GET /metrics/{summary\|sentiment\|categories\|sources\|personas\|dimensions\|github}` (metrics); `view=entities` reads `GET /feedback/entities`, the filter values in use (categories, sources, personas, channels, tags, dimensions, top issues) with counts; `dimensions` needs `key`; every view takes `source`, `channel`, `tag`, `dims` (`github` always reads the GitHub Issues source) |
 | `feedback_list_categories` | read | `GET /settings/categories` (settings) |
 | `feedback_list_dimensions` | read | `GET /settings/dimensions` (settings): dimension keys and allowed values ([dimensions.md](dimensions.md)) |
@@ -189,6 +206,8 @@ MCP call never sees an archived board.
 | `agents_get_run` | read | `GET /agents/{id}/runs/{run_id}`, or without `run_id` `GET /agents/{id}/runs?limit=` (agents) — follow a run `agents_run` started |
 | `feature_requests_search` | read | `GET /feature-requests/search` (engagement) — feedback-board requests the minter may see; `query` → `q`, `board` / `category` / `status` (comma lists), `days` (0–3650, 0 = all time, not sent), `limit` (1–50, default 25). Only the slim fields reach the client (`request_id`, `board_id`, `title`, `description` ≤ 1000 chars, `status`, `supporters`, `category`, `sentiment`, `problem_summary`, `created_at`; never an email or a name), with `total` and `truncated`. Board requests are a separate source from feedback, cited as `[FR:<request_id>]` ([feature-requests.md](feature-requests.md)). `boards: true` reads `GET /feature-requests/boards` instead: the boards the minter can see, without storage keys |
 | `projects_get_job` | read | `GET /projects/{id}/jobs/{job_id}` (projects) — a job `projects_generate`, `documents_revise_from_comments` or `documents_draft_prototype_revision` started: `job_id`, `status`, `progress`, `current_step`, `job_type`, timestamps, `error`, `result` (a PR/FAQ, PRD or prototype result carries its `methodology` block; a draft's is only `draft_id`); never who started it |
+| `product_get` | read, project | `GET /projects/{id}/product-proposals/latest` (projects; view, 7.104.00): the product form (`context`), who wrote each field (`field_meta`: `person`, `extract` or `assistant`), the sources with their status (a key naming a URL, as every such key, never reaches a client, so a link's `url` and `final_url` are left out; its `filename` and the proposal's source `name` are its address) and the latest extract's `proposal` (each field's `status`, `value`, `citations` with `verified`, `confidence`, `note`, the value it was proposed against as `seen`, `current` and `changed_since`; its `questions`), or `null` ([project-workspace.md → Product tab](project-workspace.md)) |
+| `product_write` | write, project | One Product tab write by `action` (projects, edit, 7.104.00): `add_url` → `POST /projects/{id}/product-docs/urls` `{url}` (the route reads the page); `answer` → `POST …/product-docs/answers` `{mode: typed, answers}` (one interview source); `extract` → `POST …/product-extract` `{}` (a billed job at effort `max`, answering `job_id`: follow it with `projects_get_job`); `accept` → `POST …/product-proposals/{proposal_id}/accept` `{fields: {name: {seen}}}` from `fields` `{name: value seen}` (the value `product_get` answered as `seen`). Every limit is the route's, and its refusal reaches the client as a tool error in the route's words: a link https and public, at most 2,048 characters; 1–12 answers, each a product field, its question ≤ 200 and its answer ≤ 2,000 characters; 400 `no_ready_sources`, 409 `extract_running`, 429 `rate_limited`. An MCP token is an autonomous caller: an `accept` is written only when the minter, and the project's owner when that is someone else, work **AI-driven** (403 `ai_writing_refused` otherwise, tenet 3: [project-workspace.md → Product tab](project-workspace.md#product-tab)), it never replaces a value a person typed (`person_value`; a value with no `field_meta` entry counts as typed), and it writes `field_meta.by` `extract` for what it accepts. **No file upload over MCP**: files are added in the app. No voice: an interview by voice is a person's, in the browser |
 | `radar_read` | read | `GET /radar` (radar) without `brand`: the brands and their totals (the scan settings dropped); with `brand`: `GET /radar/brands/{brand}/reviews?days=&limit=` (`days` 1–365, default 90; `limit` 1–50, default 20). Other brands' reviews, never counted as ours ([radar.md](radar.md)) |
 | `documents_create` | write | `POST /projects/{id}/documents` (projects) — custom markdown documents |
 | `documents_update` | write | `PUT /projects/{id}/documents/{doc}` (projects); a PR/FAQ or PRD only when the minter (and the project owner) work AI-driven, else denied ([ways-of-working.md](ways-of-working.md)). Always recorded as an `edit`: it sends no `revise_job_id`, which only a save of a checked "Revise from comments" proposal carries ([document-review.md → Saving a proposal](document-review.md#saving-a-proposal)) |
@@ -204,7 +223,11 @@ MCP call never sees an archived board.
 | `documents_apply_prototype_draft` | write, project | `POST /projects/{id}/prototypes/{doc}/drafts/{draft_id}/apply` (projects): the draft as the next version (`edit_kind: revise`, `revised_from_id` the base, `revision_feedback` the instruction, `edited_by` the token, `llm_metadata`), answering `success` and the version without storage keys or its signed `prototype_url`. A feedback draft's version says "Incorporated N pins (k done)", and the answer adds `incorporation: {marked, replied, not_written: [{pin_id, reason}]}` (its Done pins marked addressed, its Not done pins given an AI-marked reply with `approved_by` the token, `{sub: 'mcp:<token id>', kind: 'mcp'}`, on every call). Applying again gives the same version; a version saved since the draft's base is the route's 409 (ask again on the newest version) |
 | `documents_discard_prototype_draft` | write, project | `DELETE /projects/{id}/prototypes/{doc}/drafts/{draft_id}` (projects; `document_id` and `draft_id` required): the draft's job deleted, so the draft is gone at once for everyone (its GET and Apply are 404). The route deletes only a draft job of `document_id`'s series, in any state; any other job is a 404, so the tool cannot delete another job. Saved versions are untouched |
 | `library_search` | read | `POST /projects/library/context` (projects; 7.62.00, [documents-library.md](documents-library.md)) with `{query, item_ids?, slugs?, native_slots: 0}`: the best passages (at most 8, 12,000 characters) of the named items (up to 3 ids or slugs) or, without them, of the ready items whose title, slug, tags or source share the query's words; each passage with its item, page and chunk, cited `[#slug p.N]`. Never a file. Library items are not feedback |
-| `forms_get_results` | read | the forms API's Results route, `GET …/{id}/results` (7.63.00, [feedback-forms.md](feedback-forms.md)) with `from` / `to` (YYYY-MM-DD), `include_test=true` and up to 5 `hidden.<id>=<value>`: the form's Results as the page reads them (responses, per question counts, NPS / CSAT / CES, the latest open answers, endings, the funnel when no hidden value narrows it, link checks), never a contact detail. The route's rules apply as for the minter: its category and source access (a caller denied the `feedback_form` source counts no response) and, in a workspace, the editor or admin role (a viewer's token is refused, 403). Never the responses' CSV, the report, its AI summary or a write: no other forms route is a tool |
+| `forms_list` | read, not pinned | the forms API's list route, `GET …?include=stats` (7.104.00, [feedback-forms.md](feedback-forms.md)): the forms of the token's scope (its workspace's, else the deployment's; any member reads them, a viewer too, as on the route), each as `form_id`, `name`, `status` (`live` or `off`), `language`, `languages`, `form_type`, `template`, `tags`, `imported` and its times and, from the route's stats, `responses` (the real ones the minter's category and source access admit), `last_response_at` and `headline` (the form card's figure); `stats_error` when the route could not count them. Never a form's questions, theme, test-link settings or who saved it. A form tagged `voc_app` is the in-app micro-feedback: about VoC itself, never customer evidence (TENETS.md tenet 1) |
+| `forms_get` | read, not pinned | the forms API's form route, `GET …/{id}` (7.104.00): one form's definition, field by field: `revision`, `language`, `languages`, `welcome`, `questions` (each option's category mapping and the logic included), `hidden_fields`, `endings`, its routing (`category`, `subcategory`, `tags`, `dimension_defaults`, `custom_fields`), `form_type`, `template`, `imported`, its validation link (`project_id`, `document_id`), `brand_name`, its times, `response_count`, `has_responses` and `status`. Any member reads it, as on the route; another scope's id is the route's 404. Never the theme, the test-link settings, `updated_by` or whether the caller may delete test responses |
+| `forms_get_results` | read, not pinned | the forms API's Results route, `GET …/{id}/results` (7.63.00, [feedback-forms.md](feedback-forms.md)) with `from` / `to` (YYYY-MM-DD), `include_test=true` and up to 5 `hidden.<id>=<value>`: the form's Results as the page reads them (responses, per question counts, NPS / CSAT / CES, the latest open answers, endings, the funnel when no hidden value narrows it, link checks), never a contact detail. The route's rules apply as for the minter: its category and source access (a caller denied the `feedback_form` source counts no response) and, in a workspace, the editor or admin role (a viewer's token is refused, 403). Never the responses' CSV or a write |
+| `forms_get_responses` | read, not pinned | the forms API's Responses route, `GET …/{id}/responses` (7.104.00) with the filters of `forms_get_results` and `limit` (1–50, default 20; the route allows 100) from `cursor` (the previous page's `next_cursor`, an offset of at most 7 digits): `{form_id, revision, total, next_cursor, responses}`, newest first, a page holding only the responses whose JSON fits one tool result (`MAX_PAGE_TEXT_CHARS`, 198,000 characters of the handler's 200,000 cut; at least one), so a page of long answers is shorter and its `next_cursor` names the first response left out (and comes before the responses, so even one response past the cut keeps it); each response as `response_id`, `feedback_id` (a real one), `is_test`, `created_at`, `revision`, `language`, `ending_id`, `sentiment`, `answers` (by question id; contact answers as the Responses tab shows them: personal data), `hidden` and `path`. The route's rules, as for the minter: in a workspace its editors and admins (a viewer's token is refused, 403), the category and source access on every response, and test responses only with `include_test` (judged as the form files its responses). Never `format=csv`: an argument the schema does not name is never sent |
+| `forms_get_report` | read, not pinned | the forms API's Report route, `GET …/{id}/report` (7.104.00) on a view of the Report page: `days` 0 (all time, the default), 7, 30 or 90 (sent as the page sends its `from`: now less the days), up to 5 `hidden` values, `include_test`, and `group_by` (`hidden.<id>`, a single choice `q_<id>` or a matrix row `q_<id>.<row>`; anything else is the route's 400 `group_by_invalid`): the deterministic report as the route answers it (`kpis`, `matrices`, `segments` of at least 5, `themes` with real quotes, never a contact detail), with the access of Results. Its stored AI summary is kept only on the view it was made for, by the page's own rule (the same range, language, ending and hidden values; the tool narrows by no language or ending): there it comes under a model-text `label`; a summary made for another view answers `{report_id, created_at, other_view: true}` (nothing of that view, neither its filters' names nor their values, nor its text or its quotes); `days` is an integer only (a `7.0` is refused: its view would never match the summary's `7`); one that read a response the minter cannot see stays `{report_id, created_at, withheld: 'access'}`. Never who asked for it, Compare, or a start of the summary |
 | `feedback_get_catalogue` | read | `GET /feedback/catalogue` (metrics): every stored attribute of a feedback item, with type, meaning, setting step, PII class, `redact` / `summary_only` effect and allowed values ([data-catalogue.md](data-catalogue.md)). `sources: true` reads `GET /sources/status` (integrations) instead: each source's schedule (`enabled`, `schedule`) and circuit breaker, never its last error (admins only). Enabling, disabling, resetting and running a source are admin-only routes: no tool |
 | `prioritization_get` | read, project | `GET /projects/prioritization` (projects): the rows whose project the minter can view, the minter's own `scores`, the team `aggregates`, the scoring `axes` and `config_version`. With a project (the argument or the pin) only that project's rows, scores and aggregates |
 | `feedback_edit` | write | `PUT /feedback/{id}/category` (`category` + optional `subcategory`) or `PUT /feedback/{id}/dimensions` (`dimensions` key → value or null, `tags`), never both in one call (feedback edit); the route's category and source access apply |
@@ -229,7 +252,10 @@ administrators' in the app (the web app's AI assistant reads some for an adminis
 that administrator's own sign-in), and so do its signals, go, restart, Stop and answers, the skills' approvals, the
 registry, the connections, the dial, a run's start from a flow (`POST /agents/engineering/runs`) and a run request's
 confirm or decline: no tool. Neither has the assistant's "refresh the knowledge pack" (`propose_knowledge_refresh`,
-an approval card whose Approve starts that route with the administrator's own sign-in).
+an approval card whose Approve starts that route with the administrator's own sign-in). The five `forms_` tools only
+read: a form's create, save, delete, test link and import, the test responses' delete, the responses' CSV, Compare,
+the report's AI summary (a billed model call a person starts on the page) and the AI drafts stay the web app's, where
+a person watches the preview: no tool.
 
 ### Engineering runs (7.53.00)
 
@@ -263,7 +289,9 @@ public (`lambda/shared/mcp_global_tools_engineering.py`). The skill
 
 The catalogue lives in `lambda/shared/mcp_global_tools.py` (the step, Revise from comments, prototype-draft,
 Radar and feedback-edit tools in `lambda/shared/mcp_global_tools_steps.py`, the catalogue, Prioritization and board-write tools in
-`lambda/shared/mcp_global_tools_work.py`, the shared helpers in `lambda/shared/mcp_global_kit.py`). Ids from arguments must
+`lambda/shared/mcp_global_tools_work.py`, the forms tools in `lambda/shared/mcp_global_tools_forms.py`, the Product
+tab tools in `lambda/shared/mcp_global_tools_product.py`, the shared
+helpers in `lambda/shared/mcp_global_kit.py`). Ids from arguments must
 match `^[A-Za-z0-9_-]{1,128}$` before they are put in a route path; results drop
 storage keys and every signed URL. A route's 4xx is a tool error (`isError: true`)
 the model can act on; a 5xx or an invoke fault is JSON-RPC `-32603`.
@@ -607,7 +635,7 @@ test user who is NOT an administrator, then once with an administrator for `agen
   role reads/updates only the `MCPGTOKEN` partition, appends only `MCPAUDIT#…` rows,
   calls `AdminGetUser` + `AdminListGroupsForUser`, and invokes exactly the ten domain
   Lambdas (metrics, settings, memory, projects, agents, engagement, radar, feedback edit, integrations, and since
-  7.63.00 the feedback forms for `forms_get_results`); the token role touches only `MCPGTOKEN`, reads `PROJECT#…` META for the pin
+  7.63.00 the feedback forms for the `forms_` tools); the token role touches only `MCPGTOKEN`, reads `PROJECT#…` META for the pin
   check and queries `MCPAUDIT#…`;
 - each function has ONE API-scoped invoke permission (not two per method) because
   `VocApiStack` is close to CloudFormation's 500-resource limit.
@@ -655,19 +683,28 @@ synthesizes with `-c mcpReservedConcurrency=0` (`aws lambda get-account-settings
 `lambda/api/test/test_global_mcp_e2e.py` drives the handler as an external MCP client
 would — `initialize` → `notifications/initialized` → `tools/list` → `tools/call` over
 the REST proxy event API Gateway delivers — with tokens minted through the real token
-API and every tool delegated in-process to the real projects and agents handlers over
+API and every tool delegated in-process to the real projects, agents and metrics handlers over
 moto tables. It covers a read-only token, a write token creating and updating a
 document, revoked / expired / disabled-minter / tampered tokens, a project-scoped
 token refused outside its project, and `agents_run` for non-admin, admin and demoted
 minters. `test_global_mcp_protocol.py` and `test_global_mcp_tokens_api.py` cover the
 envelope, argument validation and the token API. `lambda/shared/test/test_mcp_global_tools_budget.py`
-keeps the whole `tools/list` under an estimated 10,000 tokens (4,000 before 6.10.00; the list is cached by
-clients, [Tools → Budget](#tools)) and every name prefixed by its area: a new tool or a wordy description fails
+keeps the whole `tools/list` under an estimated 10,500 tokens (10,000 from 6.10.00 to 7.71.04, 4,000 before; the
+list is cached by clients, [Tools → Budget](#tools)) and every name prefixed by its area: a new tool or a wordy description fails
 there first. To stay inside it, a tool publishes only the annotations that differ from the MCP defaults
 (`readOnlyHint`, `openWorldHint: false`, and `destructiveHint: false` on a write tool); the display name is the
 top-level `title`. The same e2e file covers the two review tools with a pinned token (a pass started, threads
 marked and cleared, another project refused, a read token refused) and the names before 6.10.00 (unlisted, still
 answering, audited under the new names); `test_mcp_global_tools_mutation.py` pins the rename table.
+`lambda/api/test/test_mcp_forms_results.py` and `test_mcp_forms_tools.py` run the forms tools through the real
+forms Lambda: each answer, the refusals (a workspace viewer on the Results reads, another workspace's form, the category
+and source access, test responses only when asked), the responses' paging (a page of long answers within one tool
+result, its cursor first), that no tool builds the CSV or a write, the report's AI summary only on its own view
+(another view only said to be one, nothing of it; `days` an integer only), and that a project-pinned token is
+neither offered nor let call any of them (also end to end in `test_global_mcp_e2e.py`, which also reads a form's
+response and an email to the inbox with a pinned token's `feedback_get` and `feedback_search`: no value of the fields
+the pin removes in any answer's decoded text, an address typed into an email-typed open answer returned as stored; and
+with an unpinned one's, both whole).
 `lambda/shared/test/test_mcp_global_tools_steps.py` pins the outline tool and the four prototype-draft tools' routes and arguments, and
 that neither the draft nor the applied version carries a signed URL out.
 `lambda/api/test/test_mcp_global_work_tools.py` covers the catalogue, Prioritization and board-write tools (routes,

@@ -182,7 +182,12 @@ def _ended_task(state: str) -> Any:
     # (7.71.04) A task at a person: its agent's restart or resume is answered with what to do, the run's Resume.
     (_ended_task('needs_human'), {'signal': 'restart', 'restart_from': 'fresh', **AGENT}, RuntimeRefused,
      'ended needing a person.*Resume the run instead'),
-    (_ended_task('needs_human'), {'signal': 'resume', **AGENT}, RuntimeRefused, 'Resume the run instead'),
+    (_ended_task('needs_human'), {'signal': 'resume', **AGENT}, RuntimeRefused,
+     "Resume the run instead. While the run waits at this task's step"),
+    # (Q5, 7.104.00) Every other signal to such a task's agent has moved on, as for any ended task.
+    (_ended_task('needs_human'), {'signal': 'save', **AGENT}, RuntimeRefused, 'moved on'),
+    (_ended_task('needs_human'), {'signal': 'pause', **AGENT}, RuntimeRefused, 'moved on'),
+    (_ended_task('needs_human'), {'signal': 'stop_now', **AGENT}, RuntimeRefused, 'moved on'),
 ])
 def test_the_run_the_agent_and_the_state_are_checked_before_anything_is_written(
         wired: Any, monkeypatch: pytest.MonkeyPatch, change: Any, fields: dict[str, Any], error: type, says: str):

@@ -1,4 +1,5 @@
-"""Voice sessions: talk to a project's personas out loud (7.69.00, ``-c voicePersonas=true``; docs/voice-personas.md).
+"""Voice sessions: talk to a project's personas out loud (7.69.00, ``-c voicePersonas=true``; docs/voice-personas.md),
+or, since 7.104.00, talk the product through with an AI interviewer (shared/voice_subjects.py: a session's subject).
 
 The projects API (shared/voice_session_routes.py) decides everything about a session before it starts and the relay
 (lambda/stream/src/voice/, an AgentCore Runtime) only carries it out:
@@ -17,6 +18,13 @@ The projects API (shared/voice_session_routes.py) decides everything about a ses
   this one session id and this one project, both signed. The browser never holds AWS credentials, and the relay
   accepts the URL once (``status: minted -> live``), until the row's ``connect_by`` (``CONNECT_SKEW_SECONDS`` after
   the URL's minute, for the clocks).
+* **The product interview** (7.104.00) is the same start on the same checks, in the same order, counters and budget,
+  for the project's product instead of a persona: no persona and no evidence pack, the default voice of the project's
+  id, and the questions and the form's known values in the evidence file instead (``product_interview``). Its row
+  and pointer say ``kind: product_interview`` and carry no persona; a session is only answered through its own
+  subject's routes. Its transcript becomes one of the project's sources, so a project that already holds its 20
+  (shared/product_sources.py ``MAX_DOCS_PER_PROJECT``) is refused at the start (400 ``too_many_sources``, before any
+  counter), and its offer says so (``sources_full``): an interview is never held that could not be saved.
 * **The end** (``end``): the relay ends a session itself (End, the time limit, the session's cost cap, the month's
   budget, a disconnect); the person's End also stops the runtime session and marks the row, then the transcript is
   saved by an assist job (shared/voice_transcripts.py). A session whose End never came (a closed tab, an End that
@@ -46,8 +54,8 @@ import boto3
 from botocore.auth import SigV4QueryAuth
 from botocore.awsrequest import AWSRequest
 
-from shared import persona_grounding
-from shared.aws import get_agentcore_client, is_conditional_check_failure
+from shared import persona_grounding, product_sources
+from shared.aws import Counter, count_once, get_agentcore_client, is_conditional_check_failure
 from shared.category_access import CategoryScope
 from shared.company_personas import is_company_container
 from shared.dynamo_paging import query_all
@@ -64,6 +72,15 @@ from shared.logging import logger
 from shared.project_access import Caller
 from shared.project_keys import PROJECT_GATE_STORE, project_pk, require_deployment
 from shared.project_writes import project_meta_key
+from shared.voice_subjects import (
+    PERSONA_INTERVIEW,
+    VoiceSubject,
+    kind_of,
+    matches,
+    product_interview,
+    requested_questions,
+    subject_of,
+)
 from shared.ws_repo import WorkspaceScope
 
 #: The one env var the deployment's voice settings come in (lib/utils/voice-personas.ts ``voiceApiEnvironment``).
@@ -110,8 +127,8 @@ LEFT_SESSIONS: Final = DAILY_SESSIONS
 #: A live-set entry outlives its session's latest end (its ``connect_by`` and its time, 7.71.04) by this much (the
 #: relay removes it at the end; this covers a relay that died).
 LIVE_SLACK_SECONDS: Final = 120
-#: How long the counters are kept: a day's and a minute's for 2 days, a month's usage for 400 days.
-COUNTER_TTL: Final = timedelta(days=2)
+#: How long a month's usage is kept: 400 days (a day's and a minute's counters are shared/aws.py ``count_once``'s,
+#: kept its ``COUNTER_TTL``, 2 days).
 USAGE_TTL: Final = timedelta(days=400)
 
 #: AgentCore's signed query parameters: the session id (one microVM) and the one custom header the runtime forwards.
@@ -189,9 +206,10 @@ def validated_voice_id(value: object) -> str | None:
     return value
 
 
-def default_voice(persona_id: str) -> str:
-    """The persona's default voice: the polyglot pair, picked by the first byte of its id's SHA-256."""
-    return DEFAULT_VOICE_PAIR[hashlib.sha256(persona_id.encode('utf-8')).digest()[0] % len(DEFAULT_VOICE_PAIR)]
+def default_voice(owner_id: str) -> str:
+    """The default voice of a persona (by its id) or of the product interviewer (by the project's id): the polyglot
+    pair, picked by the first byte of the id's SHA-256."""
+    return DEFAULT_VOICE_PAIR[hashlib.sha256(owner_id.encode('utf-8')).digest()[0] % len(DEFAULT_VOICE_PAIR)]
 
 
 def persona_voice(persona: Mapping[str, Any]) -> str:
@@ -299,14 +317,22 @@ class Stores:
     new_id: Callable[[], str] = field(default=lambda: str(uuid.uuid4()))
 
 
-def _project_persona(stores: Stores, project_id: str, persona_id: str) -> dict[str, Any]:
+def _project_persona(stores: Stores, project_id: str, subject: VoiceSubject) -> dict[str, Any] | None:
+    """The subject's persona (None for the product), only in a project: never a company persona nor the library."""
     if is_company_container(project_id):
-        raise ValidationError('Only a project\'s personas can be talked to by voice')
-    key = {'pk': project_pk(project_id, workspace=None), 'sk': f'PERSONA#{persona_id}'}
-    persona = stores.projects.get_item(Key=key).get('Item')
+        raise ValidationError('Only a project\'s personas and product can be talked to by voice')
+    if subject.is_product:
+        return None
+    persona = stores.projects.get_item(
+        Key={'pk': project_pk(project_id, workspace=None), 'sk': f'PERSONA#{subject.persona_id}'}).get('Item')
     if not isinstance(persona, dict):
         raise NotFoundError('Persona not found')
     return persona
+
+
+def _voice_of(project_id: str, persona: Mapping[str, Any] | None) -> str:
+    """The persona's voice, or the product interviewer's: the default pick of the project's id."""
+    return persona_voice(persona) if persona is not None else default_voice(project_id)
 
 
 @dataclass(frozen=True)
@@ -357,37 +383,41 @@ def _require_person(caller: Caller) -> str:
     return caller.subject
 
 
-def offer(stores: Stores, config: VoiceConfig | None, project_id: str, persona_id: str, caller: Caller, *,
+def _sources_full(stores: Stores, project_id: str, subject: VoiceSubject, *, workspace: WorkspaceScope | None) -> bool:
+    """Whether a product interview could not be saved: the project already holds its sources (none for a persona)."""
+    if not subject.is_product:
+        return False
+    return product_sources.is_full(product_sources.list_sources(stores.projects, project_id, workspace=workspace))
+
+
+def _require_source_room(stores: Stores, project_id: str, subject: VoiceSubject, *,
+                         workspace: WorkspaceScope | None) -> None:
+    if _sources_full(stores, project_id, subject, workspace=workspace):
+        raise ValidationError(
+            f'This project already holds {product_sources.MAX_DOCS_PER_PROJECT} sources, the most it can, so the '
+            'interview could not be saved as one. Delete a source first, then talk it through.',
+            code=product_sources.TOO_MANY_SOURCES_CODE)
+
+
+def offer(stores: Stores, config: VoiceConfig | None, project_id: str, subject: VoiceSubject, caller: Caller, *,
           start_finalize: StartFinalize, workspace: WorkspaceScope | None) -> dict[str, Any]:
-    """What a session with this persona would be (the consent dialog's figures), or ``{enabled: false}``; first the
-    caller's sessions of this project that ended without End are saved (``start_finalize`` starts each one's job)."""
+    """What a session with this subject would be (the consent dialog's figures), or ``{enabled: false}``; first the
+    caller's sessions of this project that ended without End are saved (``start_finalize`` starts each one's job).
+    ``sources_full``: a product interview's project holds its sources, so ``mint`` would refuse it."""
     require_deployment(workspace, PROJECT_GATE_STORE)
     if config is None:
         return {'enabled': False}
-    persona = _project_persona(stores, project_id, persona_id)
+    persona = _project_persona(stores, project_id, subject)
     now = stores.now()
-    voice = persona_voice(persona)
+    voice = _voice_of(project_id, persona)
     _save_left_sessions(stores, project_id, caller, start_finalize)
     return {
         'enabled': True, 'voice_id': voice, 'voice_gender': VOICES[voice], 'languages': languages(),
         'session_minutes': config.session_minutes, 'minutes_left': _minutes_left(config, _month_used(stores, now)),
         'sessions_left_today': max(0, DAILY_SESSIONS - _sessions_today(stores, caller.subject, now)),
         'estimated_cents_per_minute': ESTIMATED_CENTS_PER_MINUTE,
+        'sources_full': _sources_full(stores, project_id, subject, workspace=workspace),
     }
-
-
-def _count_once(table: Any, key: Mapping[str, str], limit: int, now: datetime, code: str, message: str) -> None:
-    """``count`` + 1 on ``key`` unless it is already ``limit`` (429 ``code``); the row expires after 2 days."""
-    try:
-        table.update_item(
-            Key=dict(key), UpdateExpression='ADD #count :one SET #ttl = :ttl',
-            ConditionExpression='attribute_not_exists(#count) OR #count < :limit',
-            ExpressionAttributeNames={'#count': 'count', '#ttl': 'ttl'},
-            ExpressionAttributeValues={':one': 1, ':limit': limit, ':ttl': int((now + COUNTER_TTL).timestamp())})
-    except Exception as error:
-        if is_conditional_check_failure(error):
-            raise TooManyRequestsError(message, code=code) from error
-        raise
 
 
 def _uncount(table: Any, key: Mapping[str, str]) -> None:
@@ -479,16 +509,36 @@ class _Start:
     session_seconds: int
     minutes_left: float
     now: datetime
+    talks_to: VoiceSubject
+    #: A product interview's questions as the person asked for them (none: the empty fields).
+    questions: tuple[tuple[str, str], ...] = ()
 
 
-def _write_scratch_and_rows(stores: Stores, config: VoiceConfig, project_id: str, persona: Mapping[str, Any],
+def _subject_input(stores: Stores, project_id: str, persona: Mapping[str, Any] | None, start: _Start,
+                   category_scope: CategoryScope) -> dict[str, Any]:
+    """What the relay's prompt reads of the subject: the persona's profile and evidence pack, or the product
+    interview's questions and what the form already says."""
+    if persona is None:
+        return {'kind': start.talks_to.kind, **product_interview(stores.projects, project_id, start.questions)}
+    return {
+        'kind': PERSONA_INTERVIEW, 'persona': {name: persona[name] for name in PROFILE_FIELDS if name in persona},
+        'evidence': _evidence(stores, project_id, persona, category_scope),
+    }
+
+
+def _subject_attributes(persona: Mapping[str, Any] | None, start: _Start) -> dict[str, Any]:
+    """The row's and the pointer's subject: its kind, and the persona's id for a persona."""
+    return {'kind': start.talks_to.kind, **({} if persona is None else {'persona_id': persona['persona_id']})}
+
+
+def _write_scratch_and_rows(stores: Stores, config: VoiceConfig, project_id: str, persona: Mapping[str, Any] | None,
                             start: _Start, scope: CategoryScope) -> None:
     sid, now = start.session_id, start.now
     usage = usage_key(now)
+    subject = _subject_attributes(persona, start)
     evidence = {
         'version': 1, 'session_id': sid, 'project_id': project_id, 'project_name': _project_name(stores, project_id),
-        'persona': {name: persona[name] for name in PROFILE_FIELDS if name in persona},
-        'evidence': _evidence(stores, project_id, persona, scope),
+        **_subject_input(stores, project_id, persona, start, scope),
         'voice_id': start.voice_id, 'voice_gender': VOICES[start.voice_id], 'language': start.language,
         'session_seconds': start.session_seconds, 'monthly_seconds': config.monthly_minutes * 60,
         'minutes_left': start.minutes_left, 'usage_key': usage['pk'],
@@ -499,7 +549,7 @@ def _write_scratch_and_rows(stores: Stores, config: VoiceConfig, project_id: str
                          Body=json.dumps(plain(evidence)).encode('utf-8'))
     at = now.isoformat()
     stores.projects.put_item(Item={
-        **session_key(sid), 'session_id': sid, 'project_id': project_id, 'persona_id': persona['persona_id'],
+        **session_key(sid), 'session_id': sid, 'project_id': project_id, **subject,
         'starter_sub': start.subject, 'status': STATUS_MINTED, 'created_at': at, 'consent_at': at, 'reason': REASON,
         'connect_by': _connect_by(now), 'voice_id': start.voice_id, 'model_id': config.model_id,
         'language': start.language, 'session_seconds': start.session_seconds,
@@ -507,8 +557,7 @@ def _write_scratch_and_rows(stores: Stores, config: VoiceConfig, project_id: str
         'seconds': 0, 'transcript_parts': 0, 'streams': 0,
     }, ConditionExpression='attribute_not_exists(pk)')
     stores.projects.put_item(Item={
-        **pointer_key(project_id, sid), 'session_id': sid, 'persona_id': persona['persona_id'],
-        'starter_sub': start.subject, 'created_at': at,
+        **pointer_key(project_id, sid), 'session_id': sid, **subject, 'starter_sub': start.subject, 'created_at': at,
     })
     stores.aggregates.update_item(
         Key=usage, UpdateExpression='ADD sessions :one SET #ttl = if_not_exists(#ttl, :ttl)',
@@ -516,29 +565,38 @@ def _write_scratch_and_rows(stores: Stores, config: VoiceConfig, project_id: str
         ExpressionAttributeValues={':one': 1, ':ttl': int((now + USAGE_TTL).timestamp())})
 
 
-def mint(stores: Stores, config: VoiceConfig, project_id: str, persona_id: str, caller: Caller, body: Mapping[str, Any],
-         scope: CategoryScope, *, workspace: WorkspaceScope | None) -> dict[str, Any]:
+def _require_consent(body: Mapping[str, Any], talks_to: VoiceSubject) -> None:
+    if body.get('consent') is not True:
+        said = 'the interviewer is an AI' if talks_to.is_product else 'the voice is synthetic'
+        raise ValidationError(f'Consent is required: the transcript is kept, the audio never is, and {said}',
+                              code='consent_required')
+
+
+def mint(stores: Stores, config: VoiceConfig, project_id: str, talks_to: VoiceSubject, caller: Caller,
+         body: Mapping[str, Any], scope: CategoryScope, *, workspace: WorkspaceScope | None) -> dict[str, Any]:
     """Start a session (the module's checks, in their order) and answer its 60-second URL."""
     require_deployment(workspace, PROJECT_GATE_STORE)
     subject = _require_person(caller)
-    if body.get('consent') is not True:
-        raise ValidationError('Consent is required: the transcript is kept, the audio never is, and the voice is '
-                              'synthetic', code='consent_required')
+    _require_consent(body, talks_to)
     language = _language(body.get('language'))
-    persona = _project_persona(stores, project_id, persona_id)
+    questions = requested_questions(body.get('questions')) if talks_to.is_product else ()
+    persona = _project_persona(stores, project_id, talks_to)
+    _require_source_room(stores, project_id, talks_to, workspace=workspace)
     now = stores.now()
     month = _month_used(stores, now)
     remaining = _seconds_left(config, month)
     if remaining < 60:
         raise ConflictError('This month\'s voice minutes are used up', code='budget_exhausted')
-    _count_once(stores.aggregates, _rate_key(subject, now), CREATES_PER_MINUTE, now, 'rate_limited',
-                'Too many voice sessions started in a minute. Wait a moment and try again.')
+    count_once(stores.aggregates, Counter(_rate_key(subject, now), CREATES_PER_MINUTE, 'rate_limited',
+                                          'Too many voice sessions started in a minute. Wait a moment and try again.'),
+               now)
     day = _day_key(subject, now)
-    _count_once(stores.aggregates, day, DAILY_SESSIONS, now, 'daily_limit',
-                f'You have had today\'s {DAILY_SESSIONS} voice sessions. Try again tomorrow.')
-    start = _Start(session_id=stores.new_id(), subject=subject, voice_id=persona_voice(persona), language=language,
-                   session_seconds=min(config.session_minutes * 60, remaining),
-                   minutes_left=_minutes_left(config, month), now=now)
+    count_once(stores.aggregates, Counter(day, DAILY_SESSIONS, 'daily_limit',
+                                          f'You have had today\'s {DAILY_SESSIONS} voice sessions. Try again tomorrow.'),
+               now)
+    start = _Start(session_id=stores.new_id(), subject=subject, voice_id=_voice_of(project_id, persona),
+                   language=language, session_seconds=min(config.session_minutes * 60, remaining),
+                   minutes_left=_minutes_left(config, month), now=now, talks_to=talks_to, questions=questions)
     try:
         _claim_stream(stores, config, start.session_id, start.session_seconds, now)
     except TooManyRequestsError:
@@ -552,7 +610,8 @@ def mint(stores: Stores, config: VoiceConfig, project_id: str, persona_id: str, 
         raise
     url = connect_url(config, start.session_id, project_id, stores.credentials())
     logger.info('Voice session started', extra={
-        'project_id': project_id, 'persona_id': persona_id, 'session_id': start.session_id})
+        'project_id': project_id, 'kind': talks_to.kind, 'persona_id': talks_to.persona_id,
+        'session_id': start.session_id})
     return {
         'session_id': start.session_id, 'connect_url': url, 'expires_in': CONNECT_SECONDS,
         'minutes_left': start.minutes_left, 'session_minutes': round(start.session_seconds / 60, 1),
@@ -567,24 +626,29 @@ StartFinalize = Callable[[Mapping[str, Any]], str]
 """Start the transcript's assist job for a session row; its job id (the routes' ``assist_jobs.start``)."""
 
 
-def session_row(stores: Stores, project_id: str, persona_id: str, session_id: str) -> dict[str, Any]:
+def session_row(stores: Stores, project_id: str, subject: VoiceSubject, session_id: str) -> dict[str, Any]:
     """The session, only through the project's own pointer (the relay can write a session row, never a pointer), so a
-    session is answered and saved only under the project and persona that started it; 404 otherwise."""
+    session is answered and saved only under the project and the subject (the persona, or the product) that started
+    it; 404 otherwise."""
     pointer = stores.projects.get_item(Key=pointer_key(project_id, session_id), ConsistentRead=True).get('Item')
     row = stores.projects.get_item(Key=session_key(session_id), ConsistentRead=True).get('Item')
-    if (not isinstance(pointer, dict) or not isinstance(row, dict) or pointer.get('persona_id') != persona_id
-            or row.get('project_id') != project_id or row.get('persona_id') != persona_id):
+    if (not isinstance(pointer, dict) or not isinstance(row, dict) or not matches(pointer, subject)
+            or row.get('project_id') != project_id or not matches(row, subject)):
         raise NotFoundError('Voice session not found')
     return row
 
 
 def view(row: Mapping[str, Any]) -> dict[str, Any]:
-    """What a session answers: its state and meter, never its evidence or its transcript."""
+    """What a session answers: its state and meter, never its evidence or its transcript; a persona's saved
+    transcript is a document (``transcript_document_id``), a product interview's a product source (``source_doc_id``;
+    ``over_source_cap``: saved past the project's cap of sources, which it filled during the interview)."""
     return {
-        'session_id': row.get('session_id'), 'persona_id': row.get('persona_id'), 'status': row.get('status'),
+        'session_id': row.get('session_id'), 'kind': kind_of(row), 'persona_id': row.get('persona_id'),
+        'status': row.get('status'),
         'seconds': as_count(row.get('seconds')), 'cost_cents': round(as_count(row.get('cost_microusd')) / 10_000, 2),
         'end_reason': row.get('end_reason'), 'started_at': row.get('connected_at') or row.get('created_at'),
         'ended_at': row.get('ended_at'), 'transcript_document_id': row.get('transcript_document_id'),
+        'source_doc_id': row.get('source_doc_id'), 'over_source_cap': row.get('over_source_cap') is True,
         'job_id': row.get('finalize_job_id'),
     }
 
@@ -630,31 +694,31 @@ def stop_runtime_session(config: VoiceConfig, session_id: str) -> None:
         logger.warning('The voice relay session could not be stopped', extra={'session_id': session_id})
 
 
-def end(stores: Stores, config: VoiceConfig, project_id: str, persona_id: str, session_id: str, caller: Caller,
+def end(stores: Stores, config: VoiceConfig, project_id: str, talks_to: VoiceSubject, session_id: str, caller: Caller,
         start_finalize: StartFinalize, *, stop: Callable[[VoiceConfig, str], None] = stop_runtime_session) -> dict:
     """The person's End: stop the relay if it still runs, mark the session ended, save its transcript."""
     subject = _require_person(caller)
-    row = session_row(stores, project_id, persona_id, session_id)
+    row = session_row(stores, project_id, talks_to, session_id)
     if row.get('starter_sub') != subject and not caller.is_admin:
         raise AuthorizationError('Only the person who started this voice session can end it')
     if row.get('status') in (STATUS_MINTED, STATUS_LIVE):
         stop(config, session_id)
         _mark_ended(stores, session_id, END_BY_PERSON, stores.now())
         release_stream(stores, session_id)
-    return view(_finalize(stores, session_row(stores, project_id, persona_id, session_id), start_finalize))
+    return view(_finalize(stores, session_row(stores, project_id, talks_to, session_id), start_finalize))
 
 
-def status(stores: Stores, project_id: str, persona_id: str, session_id: str, caller: Caller,
+def status(stores: Stores, project_id: str, subject: VoiceSubject, session_id: str, caller: Caller,
            start_finalize: StartFinalize) -> dict[str, Any]:
     """A session's state. A URL never used is ended once the relay would no longer take it (its row's ``connect_by``
     passed, the deadline the relay reads too: 7.71.04); for its starter, an ended session's transcript is saved now
     (End may never have been called: a closed tab)."""
-    row = session_row(stores, project_id, persona_id, session_id)
+    row = session_row(stores, project_id, subject, session_id)
     now = stores.now()
     if row.get('status') == STATUS_MINTED and int(now.timestamp()) > as_count(row.get('connect_by')):
         _mark_ended(stores, session_id, END_NEVER_CONNECTED, now)
         release_stream(stores, session_id)
-        row = session_row(stores, project_id, persona_id, session_id)
+        row = session_row(stores, project_id, subject, session_id)
     if row.get('status') == STATUS_ENDED and caller.subject == row.get('starter_sub'):
         row = _finalize(stores, row, start_finalize)
     return view(row)
@@ -663,14 +727,15 @@ def status(stores: Stores, project_id: str, persona_id: str, session_id: str, ca
 def _save_left_sessions(stores: Stores, project_id: str, caller: Caller, start_finalize: StartFinalize) -> None:
     """Save the caller's sessions of this project whose End never came (a closed tab, an End that failed): the relay
     marked them ended, or their URL expired unused, and nothing asked for their transcript. Through the project's own
-    pointers, the newest ``LEFT_SESSIONS`` of the caller's, each as its starter's read of it (``status``). For a person
-    acting for themselves only; never raises (the offer is answered either way)."""
+    pointers, the newest ``LEFT_SESSIONS`` of the caller's, a persona's or the product's, each as its starter's read of
+    it (``status``). For a person acting for themselves only; never raises (the offer is answered either way)."""
     if caller.delegated or caller.agent_id or not caller.subject:
         return
     try:
         pointers = query_all(stores.projects, {
             'KeyConditionExpression': 'pk = :pk AND begins_with(sk, :voice)', 'FilterExpression': 'starter_sub = :sub',
-            'ProjectionExpression': 'session_id, persona_id, created_at',
+            'ProjectionExpression': 'session_id, persona_id, created_at, #kind', 'ExpressionAttributeNames': {
+                '#kind': 'kind'},
             'ExpressionAttributeValues': {':pk': project_pk(project_id, workspace=None), ':voice': SESSION_PREFIX,
                                           ':sub': caller.subject},
         })
@@ -681,7 +746,7 @@ def _save_left_sessions(stores: Stores, project_id: str, caller: Caller, start_f
     for pointer in newest:
         session_id = str(pointer.get('session_id') or '')
         try:
-            status(stores, project_id, str(pointer.get('persona_id') or ''), session_id, caller, start_finalize)
+            status(stores, project_id, subject_of(pointer), session_id, caller, start_finalize)
         except Exception:  # noqa: BLE001 - one session's failure leaves the others and the offer alone
             logger.warning('A voice session left unsaved could not be saved', extra={'session_id': session_id})
 

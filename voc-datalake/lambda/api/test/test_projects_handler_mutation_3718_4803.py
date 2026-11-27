@@ -44,6 +44,7 @@ from projects_handler import (
     lambda_handler,
 )
 from shared import methodology, project_access, prototype_pins
+from shared.product_proposals import Actor
 from shared.row_ids import MAX_KEY_SEGMENT_ID_LEN
 from shared.test.instrumentation_fixtures import assert_handler_wrapped, assert_tracer_wrapped
 
@@ -198,7 +199,12 @@ class TestTheProductContextRoutesDelegate:
                                           method=method, path=path, body=BODY)
 
         assert (response['statusCode'], answer) == (200, {'ok': delegate})
-        kwargs = {'actor': {'sub': 'test-user-id', 'kind': 'admin'}} if method == 'DELETE' else {}
+        # A write names its caller (the delete's audit, a field's field_meta, a source's created_by); a read does not.
+        # The PUT's caller is the one writer's actor (shared/product_proposal_routes.py writer_of: a person here).
+        caller = {'sub': 'test-user-id', 'kind': 'admin'}
+        if method == 'PUT':
+            caller = Actor(sub='test-user-id', kind='admin', autonomous=False)
+        kwargs = {'actor': caller} if method != 'GET' else {}
         handler.assert_called_once_with(*args, **kwargs)
 
     @pytest.mark.parametrize(('path', 'job_type', 'delegate', 'sent', 'received'), [

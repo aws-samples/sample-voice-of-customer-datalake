@@ -1296,10 +1296,22 @@ language, ending and hidden values); on any other they say "Made for another vie
 no quote, and the button is **Summarize this view**. The stored reports are deleted with their form, are in the workspace's export (the forms
 partition, `feedback_forms`) and are swept with it by a workspace's hard delete.
 
-The global MCP server reads a form's Results through `forms_get_results` (7.63.00, [mcp.md](mcp.md#tools): the
-results route as the token's minter, with `from`, `to`, `include_test` and up to 5 `hidden` values; never the CSV or a
-write). The report, Compare, the AI summary and the drafts have no tool (TENETS.md tenet 4): `forms_get_report` waits
-for room in the `tools/list` token budget (`lambda/shared/test/test_mcp_global_tools_budget.py`).
+The global MCP server reads a form's Results through `forms_get_results` (7.63.00) and, since 7.104.00, the forms list
+(`forms_list`), one form's definition (`forms_get`), its responses as JSON, paged (`forms_get_responses`), and its
+report (`forms_get_report`), each through its route above as the token's minter ([mcp.md](mcp.md#tools)): the same
+workspace roles (any member lists and reads the forms; the Results, Responses and Report reads are the editors' and
+admins'), category and source access and test-response rule. The report's AI summary comes only on the view it was
+made for, by this page's rule; on any other the tool says only that it was made for another view (nothing of that
+view, its text or its quotes). The five tools are workspace-wide reads: a token pinned to a project is neither offered
+them nor let call them, `forms_get_results` for its own project's validation form included, since the forms are the
+scope's, never one project's, and the responses carry respondents' contact answers. Its `feedback_search` and
+`feedback_get` read a form's response without the stored `submitter_email`, `submitter_name` and `email` and every
+contact_info answer, and nothing else is left out: an email or phone number typed into an open-text question (in
+`form_answers` and the item's text), `metadata.custom_fields` and the hidden values (`metadata.form_hidden`) are read as
+the source's PII policy stored them, which is the personal-data boundary, not the pin
+([mcp.md](mcp.md#who-a-token-acts-as)).
+No tool writes or exports: a form's create, save, delete, test link and import, the test responses' delete, the CSV,
+Compare, a start of the AI summary and the drafts stay the web app's (TENETS.md tenet 4).
 
 ## AI drafts
 

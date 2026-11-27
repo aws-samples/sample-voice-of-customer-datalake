@@ -82,7 +82,7 @@ export function createS3ImportLambda(ctx: ApiStackContext, ingestorDeployed: boo
 
   return new lambda.Function(stack, 'S3ImportApi', {
     functionName: ctx.uniqueName('voc-s3-import-api'),
-    runtime: lambda.Runtime.PYTHON_3_14,
+    runtime: lambda.Runtime.PYTHON_3_15,
     architecture: lambda.Architecture.ARM_64,
     handler: 's3_import_handler.lambda_handler',
     code: createApiLambdaCode('s3_import_handler.py'),

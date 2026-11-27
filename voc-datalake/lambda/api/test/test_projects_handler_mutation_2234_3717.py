@@ -57,7 +57,6 @@ from projects_handler import (
     ROW_ID_BYTES,
     _ballot_sk,
     _ballot_transact_items,
-    _cancelled_by_condition,
     _default_row_composition,
     _latest_prototype_id,
     _minted_row_id,
@@ -579,12 +578,8 @@ def _client_error(code):
 CONDITION_FAILED = {'Code': 'ConditionalCheckFailed'}
 
 
-class TestACancellationIsReadOffItsReasons:
-    def test_no_reason_list_is_not_a_condition(self):
-        assert _cancelled_by_condition(_client_error('TransactionCanceledException')) is False
-
-    def test_an_index_past_the_reasons_is_not_a_condition(self):
-        assert _cancelled_by_condition(cancelled_transaction([CONDITION_FAILED]), index=1) is False
+# (7.104.00) A cancellation with no reasons, or an index past them, is not a condition: shared/aws.py's
+# cancelled_by_condition, which the delete and the ballot save call, pinned in shared/test/test_aws.py.
 
 
 def _delete_through(error):

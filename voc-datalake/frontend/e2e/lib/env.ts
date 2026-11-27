@@ -69,6 +69,8 @@ export const MOCK_SPEC_NAMES: readonly string[] = [
   'prototype-walkthrough',
   // 7.55.00: Feedback Forms v2, the owner's test plan (the viewer's permission steps are production only).
   'feedback-forms-v2',
+  // 7.104.00: the Product tab's sources, extract and review (production extracts only with E2E_PRODUCT_EXTRACT=1).
+  'product-sources',
 ]
 
 /** Matches a path of one of `MOCK_SPEC_NAMES` (Playwright `testMatch`). */

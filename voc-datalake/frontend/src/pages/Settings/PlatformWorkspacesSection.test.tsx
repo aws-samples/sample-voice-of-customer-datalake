@@ -9,6 +9,7 @@ import userEvent from '@testing-library/user-event'
 import { QueryClientProvider } from '@tanstack/react-query'
 import { createTestQueryClient } from '../../test/query-client'
 import { stubLocationAssign } from '../../test/location'
+import { submitCreateWorkspace as create } from '../../test/createWorkspaceForm'
 import { defined } from '../../test/defined'
 import { PLATFORM_ACME as ACME } from '../../test/workspaceFixtures'
 
@@ -45,12 +46,6 @@ async function ownListReReadAfterCreate(mine: unknown[]): Promise<boolean> {
 }
 
 const listItem = (name: string) => defined(screen.getAllByRole('listitem').find((item) => item.textContent.includes(name)), name)
-
-async function create(name: string, slug: string) {
-  await userEvent.type(screen.getByLabelText('Name'), name)
-  await userEvent.type(screen.getByLabelText('Address (slug)'), slug)
-  await userEvent.click(screen.getByRole('button', { name: 'Create workspace' }))
-}
 
 beforeEach(() => {
   resetFetchApi()

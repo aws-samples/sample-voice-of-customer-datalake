@@ -213,7 +213,7 @@ function intakeRole(scope: Construct, props: EmailIntakeProps, bucket: s3.Bucket
 function intakeFunction(scope: Construct, props: EmailIntakeProps, bucket: s3.Bucket, queue: sqs.Queue): lambda.Function {
   const fn = new lambda.Function(scope, 'EmailIntakeFunction', {
     functionName: props.names.functionName,
-    runtime: lambda.Runtime.PYTHON_3_14,
+    runtime: lambda.Runtime.PYTHON_3_15,
     architecture: lambda.Architecture.ARM_64,
     handler: HANDLER,
     code: intakeCode(),

@@ -50,6 +50,10 @@
     "personaReviewDone_few": "Dodano {{count, number}} komentarze (zapytane persony: {{personas, number}})",
     "personaReviewDone_many": "Dodano {{count, number}} komentarzy (zapytane persony: {{personas, number}})",
     "personaReviewDone_other": "Dodano {{count, number}} komentarza (zapytane persony: {{personas, number}})",
+    "personaReviewDoneCompany_one": "Persony firmy dodały {{count, number}} komentarz (zapytane persony: {{personas, number}}; ten projekt nie ma własnych)",
+    "personaReviewDoneCompany_few": "Persony firmy dodały {{count, number}} komentarze (zapytane persony: {{personas, number}}; ten projekt nie ma własnych)",
+    "personaReviewDoneCompany_many": "Persony firmy dodały {{count, number}} komentarzy (zapytane persony: {{personas, number}}; ten projekt nie ma własnych)",
+    "personaReviewDoneCompany_other": "Persony firmy dodały {{count, number}} komentarza (zapytane persony: {{personas, number}}; ten projekt nie ma własnych)",
     "personaReviewFailed": "Recenzja person nie powiodła się. Spróbuj ponownie."
   },
   "reviewShare": {

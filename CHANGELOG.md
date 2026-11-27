@@ -17,6 +17,330 @@ the platform package version.
 
 ## [Unreleased]
 
+## [7.104.00] - 2026-11-27
+
+Python 3.15 and aws-cdk-lib 2.278.0 under every Lambda, read-only Feedback Forms tools on `/mcp/global`, a
+project-pinned MCP token kept from the forms tools and from a feedback item's stored contact fields, the engineering
+runs' Resume fixes deferred from 7.71.04, and the Product tab's description drawn from its own sources: files, links
+and answers read as sources, an extract on Claude Sonnet 5.5 that proposes each field with its citations, a review
+that writes nothing until a person accepts, and questions for the gaps, typed or by voice. Platform admins can also
+create a workspace from the workspace picker, and the document page gets a Review menu whose persona review asks the
+company's personas when a project has none.
+
+### Added
+
+- **Four read-only Feedback Forms tools on `/mcp/global`**: `forms_list` (the forms you can see, with the responses
+  you may see), `forms_get` (one form's definition and routing), `forms_get_responses` (the responses as JSON, newest
+  first, a page that always fits one tool result: follow `next_cursor`) and `forms_get_report` (the report on a view
+  of the Report page: `days` 0, 7, 30 or 90, hidden values, test responses, `group_by` segments). The report's stored
+  AI summary comes only on the view it was made for, labelled as model text; for another view the answer says only
+  `other_view: true`. Each tool reads its forms route as the token's minter, with the same workspace roles (any member
+  lists and reads a form; Results, Responses and Report are for editors and admins), category and source access, and
+  test responses only when asked. No tool writes, exports a CSV, deletes test responses, compares or starts an AI
+  summary. A project-pinned token gets none of them (Security). [mcp.md → Tools](docs/mcp.md#tools),
+  [feedback-forms.md](docs/feedback-forms.md).
+- **Product tab → Sources**, in place of the internal documents card: at most 20 a project and 10 links among them (a
+  working-set limit checked before each add: two adds at once may both take the last place; what an extract costs is
+  bounded by what it sends and by the daily counters below), each with its own status (reading, then Ready with the
+  characters and pages read and "cut" when its text was cut, or Failed with its reason). A failed PDF, Word or
+  PowerPoint file offers Retry and a link Fetch again, each off while one is under way; any other failed file offers
+  Delete only, a refused Retry, Fetch again or delete says why on the card, and a list that could not be read says so
+  with Try again. PDF, Word and PowerPoint files up to 25 MB (read on the projects API's assist twin with the
+  Documents Library's extraction, a scanned PDF by the model), Markdown and text up to 10 MB and images as before;
+  public https links (`POST /projects/{id}/product-docs/urls`, one page, never crawled; refused when not public,
+  behind a sign-in, drawn by scripts, over 5 MB or not HTML, PDF or text); typed answers (`POST
+  …/product-docs/answers`, a question at most 200 characters, personal data redacted). A UTC day allows 30 link reads
+  a project and 60 a person, and 60 reads of a PDF, Word or PowerPoint file a person (429 `rate_limited`; 503 `busy`
+  when another request counts them at that moment). Text that reads like instructions to a model is marked as read as
+  data only, never refused. [project-workspace.md → Product tab](docs/project-workspace.md#product-tab).
+- **Extract product description** (`POST /projects/{id}/product-extract`, "Product Description Extract" in Background
+  Jobs): one job reads every ready source (an image itself) and the form, and proposes a value for each of the 12
+  fields with its citations (the source, the page, a quote), on Claude Sonnet 5.5 at effort `max` with adaptive
+  thinking, streamed within 12.5 minutes. A refusal is asked again once on Claude Sonnet 5; a time-out offers **Retry
+  at xhigh** for the person to choose (each off while its start is under way); an extract whose progress stops for as
+  long as the Background Jobs panel takes a job for stale reads as stopped, with Try again, and since the project's
+  extract lock holds it until about 16 minutes after it started, a Try again before then says when to try again. A
+  failure is said in the person's language (a refusal included). One extract at a time a project, 1 a minute and 10 a
+  day a project, 20 a day a person, counted together or not at all (503 `busy` when another request counts them at
+  that moment).
+- **The proposal's review** above the form (`GET …/product-proposals/latest`, `POST …/{id}/accept`, `…/dismiss`):
+  Proposed, Conflicts, Gaps and Unchanged rows, each with the current value and who wrote it, the editable proposed
+  value, the confidence and the citations; a quote is verified only when it is at least 4 words or 20 characters and
+  found in its source as sent, and a value with no verified quote is low confidence. **Accept all proposed** takes
+  the Proposed rows only (a conflict only when selected on its own). An accept writes a field only while it still
+  holds the value the reviewer saw, records who wrote it (`field_meta`: a value the reviewer edited is theirs, `by:
+  person`) and an `AUDIT#product_context` row; nothing is written until a person accepts. A row selected for Accept
+  selected whose field changes meanwhile (someone typed in the form) is unselected until it is selected again. A
+  proposal replaced or dismissed meanwhile says so in its own words, above the review, and one that could not be read
+  says so with Try again. Deleting a source takes its quotes (its citations) out of every proposal, the one an
+  extract reading it then writes included; the proposed values, notes and the source's name stay, the source marked
+  deleted.
+- **The Questions card**: the extract's questions for the gaps (at most one a field), or one default question a
+  field, in nine languages, answered by typing or, with `-c voicePersonas=true`, by voice with a neutral **AI product
+  interviewer** (no tools, within the persona sessions' limits and budget) whose transcript becomes one source of the
+  project, every turn redacted (the person's, and the interviewer's, which repeat what it heard). "Fill with AI
+  assistant" stays. [voice-personas.md → The product interviewer](docs/voice-personas.md#the-product-interviewer).
+- **"What the product does"** (`product_summary`), the twelfth field of the product description, proposed by the
+  extract like the others; PRD and PR/FAQ read it as "What it does" only when it is set.
+- **Settings → AI models: Product description extract**, its own surface on Claude Sonnet 5.5, which neither the model
+  for all surfaces nor the deployment's default replaces (its Automatic says so); capacity fallback Claude Sonnet 5
+  only.
+- **MCP `product_get` and `product_write`**: read the sources, the form and the open proposal; add a link, save typed
+  answers, start an extract, accept fields. Every limit is the route's, and its refusal reaches the client in the
+  route's words; an accept is written only for people working AI-driven (below). No file upload and no voice over MCP.
+  A project-pinned token gets both, for its own project only.
+- **Create a workspace from the workspace picker**: the "Choose a workspace" page, and the "Workspace not found" page
+  of someone who has no workspace yet, offer Create a workspace to platform admins (the people the platform console
+  is shown to: `admins` and `platform-admins`). It is the console's own form (a name and an address, checked by the
+  server's rules before sending, a taken address said in words), and the new workspace then opens at once with its
+  creator as its admin. Everyone else sees these pages as before, and `POST /platform/workspaces` still checks the
+  platform admin live. [multi-workspace.md → Request flow](docs/multi-workspace.md#request-flow)
+- **A Review menu on the document page** (a PR/FAQ or PRD, for whoever may edit the project): **Review**, between
+  Insert and View in the menu bar, offers **Persona review** and **Rewrite from comments** with their icons and the
+  toolbar's state. An entry that cannot run is inert and says why under its name (Rewrite from comments until a
+  thread is answered), a running one shows a spinner; like the toolbar's AI actions, the menu steps aside while an
+  older version is on screen ([docs/document-canvas.md](docs/document-canvas.md#the-toolbar)).
+- **Company personas review a project that has none.** `POST /projects/{id}/documents/{doc}/persona-review` on a
+  project with no personas of its own asks up to 6 company personas (the newest first, one `documents` model call
+  each, as before), always from the project's own scope's library, never another workspace's. The job's result
+  carries `persona_source` (`project` | `company`); the toolbar's tooltip and the Review menu say beforehand that the
+  company's personas will review, and the comment panel says afterwards that they did
+  ([docs/document-review.md](docs/document-review.md#ask-personas-to-review)).
+- **Add personas.** With no persona in the project and none in the company library, the persona review reads
+  **Add personas** (toolbar and Review menu) and opens the project's Personas tab, instead of a disabled button.
+
+### Changed
+
+- **Every Python Lambda and layer runs on Python 3.15, and the three Node Lambdas on Node.js 26** (`voc-chat-stream`,
+  `voc-plan-step`, the CDN signing-key custom resource): the newest runtimes aws-cdk-lib knows
+  ([dependencies.md](docs/dependencies.md)). Python bundles and layers are built with
+  `public.ecr.aws/sam/build-python3.15`. The functions CDK itself creates keep the runtimes aws-cdk-lib picks, and the
+  voice relay stays on AgentCore's `NODE_22`, the newest Node AgentCore's direct code deployment takes.
+- **aws-cdk-lib 2.275.0 -> 2.278.0, the aws-cdk CLI 2.1147.0 -> 2.1149.0 and cdk-nag 3.0.2 -> 3.1.0**, pinned
+  exactly in `voc-datalake/package.json`; constructs stays 10.8.1. cdk-nag 3.1.0 accepts a bare rule id as an
+  acknowledgement of every finding of that rule; the platform's acknowledgements still name the exact finding, and
+  its gate refuses a bare one.
+- **CI tests on the runtimes the Lambdas run**: the Python of `.python-version`, now 3.15, which every workflow's
+  `setup-python` reads (the quality gates' full pytest run and the dependency audit were on 3.12), and Node.js 26 in
+  every workflow's `setup-node` (24 before). A test holds each equal to the stacks' runtime; the voice relay's
+  AgentCore `NODE_22` is the one exception ([dependencies.md](docs/dependencies.md#freshness-check)). ruff and pyright
+  keep Python 3.12, and `engines.node` Node 24.15, as the local floor ([CONTRIBUTING.md](CONTRIBUTING.md)).
+- **PyYAML 6.0.3 -> 6.0.4** in the `engineering-ci-deps` layer, the first with a CPython 3.15 wheel. The dependency
+  audit and the freshness check resolve the layers for CPython 3.15 on arm64 and now cover that layer too
+  ([dependencies.md](docs/dependencies.md)).
+- **The checkout cache's image** (`-c engineeringAgents=true`) is built on `public.ecr.aws/lambda/python:3.15`,
+  pinned by digest.
+- **The `tools/list` budget is 10,500 estimated tokens** (10,000 before), by the owner's decision of 2026-11-26, to
+  fit the forms tools, and every MCP tool description is shorter (about 640 tokens less) with every rule kept; the two
+  product tools fit in what was left (about 10,495 in all). The server's `initialize` / `server/discover` instructions
+  name every tool area (`forms_`, `library_` and `insights_` were missing; `product_` is new).
+  [mcp.md → Tools](docs/mcp.md#tools).
+- **The coordinator's skill is version 9**: a task that a person's Resume posted again is launched, never posted a
+  second time. The run's flow view no longer shows 7.71.04's "a person decided to try this step again" reason: the
+  Resume posts the step's task itself
+  ([autonomous-engineering.md](docs/autonomous-engineering.md#the-flow-a-run-follows)).
+- **An engineering agent's Restart or Resume of a task that went to a person** answers "Resume the run instead. While
+  the run waits at this task's step, its Resume posts the task again for a new agent". Any other signal to that agent
+  (Save, Pause, Shut down, Stop now) answers that the task has moved on, as the run monitor does.
+- **An MCP client, an agent or a plan never replaces a value a person typed** in the product description: on an
+  accept, and on `PUT /projects/{id}/product-context`, which now records who last wrote each field (a person, the
+  assistant's approval card included, or the assistant) and answers such a field in `conflicts` (`person_value`)
+  while the rest applies (409 `conflict` when every field is one). A value with no record of who wrote it (saved
+  before this release) counts as a person's.
+- **An MCP client, an agent or a plan writes the product description only for people working AI-driven** (tenet 3,
+  [ways-of-working.md](docs/ways-of-working.md)): an accept and `PUT /projects/{id}/product-context` by an autonomous
+  caller are refused, 403 `ai_writing_refused`, unless the person it acts as and the project's owner both work
+  AI-driven (the default when no way of working is saved). A person's own accept and edit pass in every way of
+  working. [project-workspace.md → Product tab](docs/project-workspace.md#product-tab).
+- **`GET /projects/{id}/product-docs`** answers each source's kind, its reading (method, pages, cut), a link's address
+  and title, an interview's mode and an `injection_flag`; a PDF or Word upload is accepted instead of "not supported
+  yet".
+- **A failed project job answers `error_code`** (`GET …/jobs`, `GET …/jobs/{id}`, MCP `projects_get_job`): the
+  extract's `refused`, `timed_out`, `cut` or `unreadable`.
+- **The Overview's and the Product header's completeness count 12 fields.**
+- **A voice session's state answers `kind`, `source_doc_id` and `over_source_cap`**, and a product interview's offer
+  `sources_full`: a project that holds its 20 sources refuses the interview at its start, and one that fills up
+  during the interview still gets it, past the cap, and says so.
+- **The workspace export and the project bundle carry a project's product proposals** (not the extract's lock), and
+  an erasure by email reads the new sources' extracted text, a link's address, final address and title, each
+  proposal's values, the values they were proposed against, notes, quotes, questions and source names, and the
+  product description's text fields, listing a proposal or the description that holds the address for review by its
+  route ([source-policies.md](docs/source-policies.md#retention-and-erasure)).
+- **The platform console's create form** (Administration → Workspaces → All workspaces) says a taken address
+  directly under the form instead of under the trial box.
+- **The document toolbar's two AI actions show their names beside their icons**, renamed: **AI review** is now
+  **Persona review** and **AI rewrite** is now **Rewrite from comments**, in all nine languages. Below 768 px they
+  still fold into the ⋯ menu, with their names.
+- **`POST /projects/{id}/documents/{doc}/persona-review` with nobody to ask** (no project persona, no company persona)
+  answers `400` with `code: no_personas` (before: a `400` without a code); `persona_ids` that name none of the
+  reviewers is still a plain `400`.
+- **The Product tab's stores name their scope at every call**, as 7.99.00 and 7.102.00 made every project store do
+  (projects 3h-S1 and S1b, docs/multi-workspace.md): `workspace` is a required keyword-only parameter, with no
+  default, of every function of `shared/product_sources.py`, `shared/product_proposals.py` (the product context's
+  reader and writer, the proposals, the extract's lock), `shared/product_extract.py` and
+  `shared/product_source_worker.py` that takes it, and the four join the keyword guard's `GUARDED`
+  (`lambda/shared/test/test_project_workspace_keyword.py`), the product documents' keys with them (they moved from
+  `api/product_context.py` to `shared/product_sources.py`). Every route, the product interviewer and its transcript
+  pass the deployment, `workspace=None` (the extract its job's scope), and every one of those stores refuses a
+  workspace (`PRODUCT_SOURCES_STORE`), so nothing changes in production. Behind 7.103.00's seam
+  (`shared/project_request_scope.py`) the twelve new routes wait in `api/projects_handler.py` `NOT_YET`, refused by
+  name in a workspace before any read: the sources, the extract and the proposals with the product documents
+  (3h-S3b), the product interview with the persona voice sessions (3h-S3c). The guard's literal-None ratchet goes
+  from 230 calls in 35 modules to 252 in 38: 24 more in the Product tab's routes, the interviewer and its
+  transcript, 2 fewer in `api/product_context.py`.
+
+### Removed
+
+- **Reading an ended engineering run no longer ends its agent's run** (7.71.04 did it on the run monitor's read). The
+  heartbeat records the end at its next tick, every 15 minutes, and a Stop records it at once.
+- **The Product tab's internal documents card** and its "PDF and Word are not read here yet" line.
+
+### Fixed
+
+- **One Resume at a step covers every task of it that went to a person by then**: a gate or a board with two tasks at
+  a person needed two Resumes, and after a map one Resume now retries every shard. A task that ends unfinished after
+  the decision blocks the step again, on its own shard too. A decision is recorded in whole seconds and covers
+  through the end of its second: a task that ends unfinished in the rest of that second, after the Resume, is covered
+  too. The run's agents are held while it waits at the person, and the Resume continues them only an instant before it
+  records the decision ([autonomous-engineering.md](docs/autonomous-engineering.md#the-flow-a-run-follows)).
+- **The Resume posts an agent step's newest task at a person**, each shard on its own after a map. 7.71.04 posted the
+  oldest of two, which the board then refused, and posted nothing for a shard at a person while a sibling shard's task
+  was under way.
+- **A whole-run Resume also posts the task at a person of every other agent step that takes a task now**: a step a
+  person decided before 7.71.04, or a shard an earlier Resume's post left out. Each post is best effort on its own: one
+  the board refuses, or one a store fault stops (a throttled call, a transaction conflict), is logged with its task
+  and the others are still made. The run's tasks are read once, for the plan and for which tasks to post again; each
+  post's flow checks read the board again.
+- **A finished coordinator's task is reopened only by a person's Resume since it finished**, whether the Resume or the
+  checkout fill it handed on launches the new coordinator (to the second: the run's Resume time is kept in whole
+  seconds).
+- **The run's issue comment is looked for among the newest comments on GitHub** (from the last page back, ten pages at
+  most), so a lost answer followed by a failed look no longer posts the comment twice. Only a comment by the
+  connection's GitHub App's own bot counts as the run's; a person commenting through the App does not.
+- **A docs pull request opens only from the docs write's own branch** read back from its push claim (that kind at that
+  version; the two-level branch of 7.52.00 to 7.71.03 is still accepted). Any other branch on a claim opens none.
+- **A trial workspace deactivated during the hourly pause** ends the pause as `not_active`, instead of 409
+  `trial_changed` counted as a failed trial ([multi-workspace.md](docs/multi-workspace.md#trial-workspaces)).
+- **The MCP OAuth token's reader refuses a segment outside base64url's alphabet with 401 "malformed segment"**: on
+  Python 3.15 such a segment decoded (and `+` or `/` did on every version). The token's signature check still refused
+  it, so nothing was accepted that should not have been.
+- **`GET /feedback/catalogue` names the issue sub-fields' type `str | None` again**: since Python 3.14 it served
+  `Union`.
+- **Corrections to 7.71.04's notes** (its section stays as released):
+  - An engineering agent's run does not end when its ended run is read: the heartbeat ends it within 15 minutes, a
+    Stop at once.
+  - The Resume posts an agent step's newest task by its step and shard, not "the newest of each work, by its spec".
+  - There is no `RETRY` reason and the coordinator does not post a ready step's task itself; the Resume posts it, also
+    for a run sent back to `coordinator` under 7.71.03.
+  - There is no `resumed` flag on the coordinator's launch: any launch after a person's Resume reopens a finished
+    coordinator's task.
+  - GitHub's issue comments are read newest first, ten pages at most, with no `since`.
+  - A comment counts as the run's only when the connection's App's own bot wrote it, not by
+    `performed_via_github_app.id` alone.
+  - Docs whose pull request never opened open it only from the docs write's own branch of that kind and version.
+  - The agent's Restart or Resume answer reads "...: Resume the run instead. While the run waits at this task's step,
+    its Resume posts the task again for a new agent", and only a Restart or a Resume gets it.
+  - `ConditionalCheckFailed`'s one home is `lambda/shared/aws.py`, not `shared/persona_save.py`.
+
+### Security
+
+- **A project-pinned MCP token gets no forms tool and reads feedback without its stored contact fields.** It is
+  neither offered nor let call any of the five forms tools, `forms_get_results` for its own project's validation form
+  included: since 7.63.00 a pinned token, a read-only one too, could read any form's Results through
+  `forms_get_results`, other projects' validation forms included. A refused call is audited denied. Its
+  `feedback_search` and `feedback_get` now leave out exactly these fields of a stored item: `metadata`'s
+  `submitter_email`, `submitter_name` and `email`, every contact_info answer (name, email, phone, company) of
+  `metadata.form_answers`, and an email inbox item's top-level `author` (its sender's name or address). Everything
+  else is as the source's PII policy stored it, and that policy, not the pin, is the personal-data boundary: an email
+  or phone number typed into an open-text question (an email- or phone-typed input, also in the item's text),
+  `metadata.custom_fields`, `metadata.form_hidden` and an import's `csv_row_id` reach a pinned token as stored.
+  `redact`, the email inbox's default and a workspace source's until the workspace saves a profile for it, redacts
+  the text, the title, the URLs and every `metadata` string and drops `author` before anything is stored (a
+  `csv_row_id` is kept as sent). An unpinned token is unchanged.
+  [mcp.md → Who a token acts as](docs/mcp.md#who-a-token-acts-as).
+- **Dependabot #226 (GHSA-g3hv-75wg-m249, minimatch < 11.0.1) is closed**: aws-cdk-lib 2.278.0 bundles minimatch
+  11.0.9 (2.275.0 bundled 10.2.6, which npm cannot override), and the dependency-overrides check now holds that
+  bundled copy out of the vulnerable range too.
+- **One public-only guard for a page a person names**: a design reference's capture and a product link start on
+  https, every address and redirect is judged public, every socket is pinned to a vetted address, a page never moves
+  down to http, and a link reads at most 5 MB of one page, decoded in its declared charset only when that is a plain
+  character set, else as UTF-8 (never `punycode`, whose decode of 5 MB would outlast the read)
+  (`shared/url_policy.py`, [source-policies.md → Product source
+  links](docs/source-policies.md#product-source-links)).
+- **Every product source reaches a prompt fenced as untrusted data**, PRD / PR-FAQ and the extract alike: a fence
+  marker inside a source is removed and its name is one neutralised line outside the fence; the model's answer is
+  validated in turn (unknown keys dropped, values capped, each quote checked against its source as sent). A fence
+  marker is matched in any case, spaced out or split by invisible characters, and the names left out for the PRD /
+  PR-FAQ block's budget are neutralised lines too. The product description's fields reach the PRD, PR/FAQ,
+  product-report and prototype prompts in a `product_context` DATA block, never as prompt lines of their own.
+- **A PDF, Word or PowerPoint upload is held to its SHA-256 by S3**: `POST …/product-docs/upload-url` requires it
+  (400 `sha256_required`) and signs it into the presigned PUT as its checksum, so S3 refuses any other body; a record
+  that declares none is never read.
+
+### Upgrade notes
+
+- **Every function of ours moves to its new runtime** (python3.14 -> python3.15, nodejs24.x -> nodejs26.x) with new
+  code (cpython-315 bytecode), and every Python layer publishes a new version, all on the next
+  `npm run deploy:infra`. Each is an in-place update, no replacement. Watch each function's first invocations: an
+  import error on 3.15 shows in its log as an Init error.
+- **The first synth or deploy pulls `public.ecr.aws/sam/build-python3.15:latest`** (arm64) for the Python bundles and
+  layers (`scripts/build-layers.sh` too): the deploying machine needs Docker or Finch, and every Python asset is
+  rebuilt once.
+- **Install the pinned toolchain before deploying**: `npm run install:all` from the root brings aws-cdk-lib 2.278.0,
+  the aws-cdk CLI 2.1149.0 (which reads 2.278.0's cloud assembly) and cdk-nag 3.1.0
+  ([deployment.md](docs/deployment.md#quick-start)). An acknowledgement of a cdk-nag finding must still name the
+  exact finding: the gate refuses a bare rule id.
+- **CI needs Python 3.15 and Node.js 26**: the quality gates and the dependency audit run on `.python-version`, and
+  every workflow sets up Node 26; a fork's runners pick both up through `setup-python` and `setup-node`. Local ruff
+  and pyright stay on Python 3.12, and a local Node 24.15 still works (CONTRIBUTING.md).
+- **Dependabot #226 closes with this release**: nothing to do; `npm audit --omit=dev` in `voc-datalake/` reports
+  nothing once its lockfile is installed.
+- **A project-pinned MCP token no longer has `forms_get_results`** (since 7.63.00), not even for its own project's
+  validation form, or any forms tool, and its feedback reads leave out the stored submitter email and name, a form's
+  contact answers and an inbox email's sender. Anything else personal in an item (an address typed into an open
+  answer, custom or hidden fields, a `csv_row_id`) follows the source's PII policy: set `redact` on a source whose
+  items a pinned token must not read in full. A client sees the forms tools gone once its cached `tools/list`
+  expires, and a call is refused. Use a token with no project pin to read forms or contact details. This is a change
+  an API caller notices, hence the minor release.
+- **An MCP client that cached `tools/list`** sees the four forms tools and the shorter descriptions once its cache
+  expires (5 minutes for a 2026-07-28 client, the session for a legacy one). No stack change: the MCP role has
+  invoked the forms Lambda since 7.63.00.
+- **With `-c engineeringAgents=true`** the checkout cache's container image rebuilds on the new base (a CDK Docker
+  image asset, pushed by the deploy). The voice relay (`-c voicePersonas=true`, still `NODE_22`) gets new code for
+  the product interviewer and still reads a persona session's input without `kind`, so it and the projects API may
+  deploy in either order; a product interview needs both.
+- **Rebuild the four agent images** where agents run on the CLI or Kiro harness: they ship the coordinator's skill,
+  now version 9. An image with version 8 still works (its extra post of a ready step's task is refused). A deployment
+  that stored the coordinator's skill in its skills store keeps that version until a person accepts version 9; its
+  runs still get the Resume's posts.
+- **The GitHub look for the run's issue comment reads one more page** when the thread has more than a hundred
+  comments, at most eleven requests.
+- **A comment of the run's marker made by a person through the GitHub App is not the run's**: turning the App's
+  device flow off is advised; with it on, such a comment is ignored and the run's own is posted once.
+- **The extract needs Claude Sonnet 5.5 invocable** (and Claude Sonnet 5 for a refusal's retry or no capacity),
+  through ConverseStream: the document generator's role gains `bedrock:InvokeModelWithResponseStream` on the
+  allowlisted Claude models and `s3:GetObject` on `projects/*/product_docs/extracted/*` and `…/raw/*` only (one
+  statement; it read nothing under `product_docs/` but extracted text before). Each extract is billed (about 60K tokens
+  in and up to 64K out); the limits above bound it. Settings → AI models shows the new surface on Automatic: nothing
+  to re-save, and a deployment pinned with `-c defaultModelId` keeps the extract on Sonnet 5.5 unless it is picked.
+- **The product sources, proposals and extract limits are the deployment's** until projects move into workspaces (3h,
+  [multi-workspace.md](docs/multi-workspace.md)): their stores take the workspace as a required keyword and refuse
+  one until then, and their routes ride the projects API's access gate (since 7.101.00 it decides a workspace's
+  project from its membership) and its seam (7.103.00: in a workspace each is refused by name until its slice), and
+  stay on the cross-workspace pending list.
+- **An agent, a plan step or an MCP client that writes the product description** (`PUT …/product-context`, an accept)
+  for a person or a project owner whose saved way of working is Human-driven or AI-assisted is now refused, 403
+  `ai_writing_refused`; with no way of working saved (AI-driven) nothing changes.
+- **A client of `POST …/product-docs/upload-url`** must send a PDF's, DOCX's or PPTX's `sha256` and PUT with every
+  header the answer's `headers` names (`x-amz-checksum-sha256` among them); the web app does.
+- **No new AWS resource, flag or fixed cost** (tenet 7): the new routes are under `/projects/{proxy+}`. What is new
+  is data and grants: in voc-projects a project's `PRODUCT_PROPOSAL#…` rows and its `PRODUCT_EXTRACT` lock, and
+  `AUDIT#product_context` rows, written by the projects API's role, which the audit-row guard names as voc-projects'
+  audit writer (`lib/utils/audit-row-guard.ts`); in voc-aggregates the counters `PRODUCTX#…`, `PRODUCTURL#…` and
+  `PRODUCTFILE#…` (2 days' TTL); the document generator's stream grant and its narrowed read above; and the retention
+  worker's deployment Query may also read a source's `url`, `final_url` and `title` and a proposal's `proposal_id`,
+  `fields`, `questions` and `sources`, and the product description's eleven text fields.
+
 ## [7.103.00] - 2026-11-27
 
 The project core routes take their workspace from one seam (slice 3h-S3a of docs/multi-workspace.md's project plan;

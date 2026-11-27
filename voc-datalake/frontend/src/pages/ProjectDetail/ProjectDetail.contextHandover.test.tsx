@@ -84,7 +84,7 @@ describe('ProjectDetail product-context hand-off', () => {
 
     await user.click(screen.getByRole('tab', { name: /overview/i }))
 
-    expect(await screen.findByText('1 of 11 fields filled')).toBeInTheDocument()
+    expect(await screen.findByText('1 of 12 fields filled')).toBeInTheDocument()
     // From the cache the save seeded, not from a third request — which is what
     // makes "hand the value back" different from "invalidate and refetch".
     expect({

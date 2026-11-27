@@ -80,7 +80,7 @@ def _capture(table, s3, cdp: FakeCdp, *, svg_allowed: bool = True, answer: str =
     deps = cw.CaptureDeps(table=table, kit=_kit(cdp, []), summarise_images=MagicMock(return_value=answer),
                           sleep=lambda _s: None, clock=iter(range(1000)).__next__, now=lambda: '2026-10-27T00:00:00+00:00',
                           s3=s3, bucket='raw', logo_fetch=raster, pick_logo=pick_logo)
-    with patch.object(cw, 'validate_url', return_value=(True, '')):
+    with patch('shared.url_policy.validate_url', return_value=(True, '')):
         result = cw.run_capture({'action': 'design_capture', 'ref_id': REF_ID}, deps)
     stored = get_reference(table, REF_ID)
     assert stored is not None

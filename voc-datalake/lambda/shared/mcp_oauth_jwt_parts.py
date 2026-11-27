@@ -10,9 +10,14 @@ from __future__ import annotations
 import base64
 import binascii
 import json
+import re
 from typing import Any, Final
 
 MAX_TOKEN_LENGTH: Final = 8192
+
+#: One unpadded base64url segment: its alphabet only. ``urlsafe_b64decode`` checks no alphabet (it drops what is
+#: not in it) and, since Python 3.15, no padding either, so ``a$b!`` decoded to ``b'i'`` there: the check is ours.
+_B64URL_SEGMENT: Final = re.compile(r'[A-Za-z0-9_-]+')
 
 
 class InvalidToken(Exception):
@@ -20,8 +25,8 @@ class InvalidToken(Exception):
 
 
 def b64url(segment: str) -> bytes:
-    """Strict unpadded base64url (a ``=`` or an empty segment is malformed)."""
-    if not segment or '=' in segment:
+    """Strict unpadded base64url (an empty segment, a ``=`` or any character outside the alphabet is malformed)."""
+    if not _B64URL_SEGMENT.fullmatch(segment):
         raise InvalidToken('malformed segment')
     try:
         return base64.urlsafe_b64decode(segment + '=' * (-len(segment) % 4))

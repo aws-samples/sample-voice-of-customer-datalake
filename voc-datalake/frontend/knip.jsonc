@@ -31,7 +31,8 @@
     "scripts/mock-workspaces.test.mjs",
     "scripts/mock-document-revise.test.mjs",
     "scripts/mock-prototype-feedback.test.mjs",
-    "scripts/mock-forms-events.test.mjs"
+    "scripts/mock-forms-events.test.mjs",
+    "scripts/mock-product-sources.test.mjs"
   ],
   "project": [
     "src/**/*.{ts,tsx,css}!",

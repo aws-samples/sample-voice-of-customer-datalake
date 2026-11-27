@@ -6,6 +6,13 @@ personas, ``PERSONA_CONCURRENCY`` at a time, ONE model call each on the ``docume
 (``shared.converse``; the model comes from ``shared.model_config``). Each persona answers a
 verdict and at most ``MAX_COMMENTS_PER_PERSONA`` comments, each quoting the document.
 
+Who reviews (``reviewers``, since 7.104.00): the project's own personas; a project with none is
+reviewed by the company persona library of the project's OWN scope (``shared.company_personas``:
+the workspace's library for a workspace's project, the deployment's for the deployment's; never
+another workspace's), at most ``MAX_REVIEW_PERSONAS`` of them, newest first, at the same cost.
+The job's result says which (``persona_source``: ``project`` or ``company``); with neither, the
+start is a 400 ``no_personas``.
+
 The server keeps only quotes found VERBATIM (whitespace collapsed) in the document's plain text
 (``shared.document_series.plain_text``) and files them as persona comment threads anchored by that
 quote; the verdict becomes a persona's comment on the whole document. It never edits the
@@ -16,9 +23,11 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass
 from typing import Any, Final
 
 from shared import document_comments as comments
+from shared.company_personas import company_persona_items
 from shared.converse import converse
 from shared.document_series import collapse, plain_text
 from shared.exceptions import ValidationError
@@ -41,6 +50,11 @@ MAX_DOCUMENT_CHARS: Final = 60_000
 CONTEXT_CHARS: Final = 32
 STANCES: Final = ('positive', 'mixed', 'negative')
 SURFACE: Final = 'documents'
+#: Who reviewed (the job result's ``persona_source``): the project's own personas, or its scope's company library.
+SOURCE_PROJECT: Final = 'project'
+SOURCE_COMPANY: Final = 'company'
+#: The 400's code when there is nobody to ask: no persona in the project, none in its scope's company library.
+NO_PERSONAS: Final = 'no_personas'
 
 TYPE_LABELS: Final = {'prfaq': 'PR/FAQ (press release and FAQ)', 'prd': 'product requirements document (PRD)'}
 
@@ -56,7 +70,7 @@ _INSTRUCTIONS: Final = (
 
 
 def validate_persona_ids(body: Mapping[str, Any]) -> list[str] | None:
-    """``{persona_ids?: [≤6 ids]}``; None = the project's first personas."""
+    """``{persona_ids?: [≤6 ids]}``; None = the first personas of whoever reviews (``reviewers``)."""
     if set(body) - {'persona_ids'}:
         raise ValidationError('body must be {persona_ids?}')
     raw = body.get('persona_ids')
@@ -80,6 +94,40 @@ def pick_personas(personas: Sequence[dict[str, Any]], wanted: list[str] | None) 
         return list(personas[:MAX_REVIEW_PERSONAS])
     by_id = {p['persona_id']: p for p in personas}
     return [by_id[pid] for pid in wanted if pid in by_id]
+
+
+@dataclass(frozen=True)
+class Reviewers:
+    """The personas a review asks (at most ``MAX_REVIEW_PERSONAS``) and where they come from (``SOURCE_*``)."""
+
+    source: str
+    personas: list[dict[str, Any]]
+    #: How many personas the source holds (0: nobody to ask, the project and its company library both empty).
+    available: int
+
+
+def reviewers(table: Any, project_id: str, wanted: list[str] | None, *,
+              workspace: WorkspaceScope | None) -> Reviewers:
+    """Who reviews: the project's own personas when it has any (``wanted`` picks among them); else the company
+    library of the project's own scope, ``workspace``'s (the deployment's when None), newest first, ``wanted``
+    picking among those. Never another scope's library: the reads are ``workspace``'s partitions only."""
+    own = project_personas(table, project_id, workspace=workspace)
+    if own:
+        return Reviewers(SOURCE_PROJECT, pick_personas(own, wanted), len(own))
+    company = [row for row in company_persona_items(table, workspace=workspace)
+               if isinstance(row.get('persona_id'), str)]
+    return Reviewers(SOURCE_COMPANY, pick_personas(company, wanted), len(company))
+
+
+def require_reviewers(chosen: Reviewers) -> None:
+    """A 400 unless ``chosen`` asks someone: ``no_personas`` when neither the project nor its company library has a
+    persona, a plain one when ``persona_ids`` named none of them."""
+    if chosen.personas:
+        return
+    if chosen.available == 0:
+        raise ValidationError('This project has no personas to ask yet, and the company has none either. '
+                              'Add personas on the Personas tab first', code=NO_PERSONAS)
+    raise ValidationError('persona_ids names none of the personas who can review this document')
 
 
 def system_prompt(persona: Mapping[str, Any], document_type: str) -> str:
@@ -194,10 +242,11 @@ def _file(table: Any, *, project_id: str, series_id: str, document: Mapping[str,
 
 def run_review(table: Any, *, project_id: str, series_id: str, document: Mapping[str, Any], document_type: str,
                personas: Sequence[Mapping[str, Any]], invoke: Invoke = _default_invoke,
-               workspace: WorkspaceScope | None) -> dict[str, Any]:
-    """Consult ``personas`` on ``document`` and file their comments; the job's ``result``. The threads are read and
-    filed in ``workspace``'s series partition when given (shared/document_comments.py, since 7.37.00), the
-    deployment's otherwise; no assist runs its work in a workspace yet (shared/assist_jobs.py ``ASSIST_WORK_STORE``)."""
+               workspace: WorkspaceScope | None, source: str = SOURCE_PROJECT) -> dict[str, Any]:
+    """Consult ``personas`` on ``document`` and file their comments; the job's ``result``, which names where the
+    personas came from (``source``, ``reviewers``). The threads are read and filed in ``workspace``'s series
+    partition when given (shared/document_comments.py, since 7.37.00), the deployment's otherwise; no assist runs its
+    work in a workspace yet (shared/assist_jobs.py ``ASSIST_WORK_STORE``)."""
     text = plain_text(document.get('content'))[:MAX_DOCUMENT_CHARS]
     if not text:
         raise ValidationError('The document is empty; write something to review first')
@@ -217,4 +266,4 @@ def run_review(table: Any, *, project_id: str, series_id: str, document: Mapping
         results.append({'persona_id': persona['persona_id'], 'name': name, 'ok': True, 'stance': review['stance'],
                         'filed': filed, 'dropped': review['dropped']})
     return {'document_id': document.get('document_id'), 'version': document.get('version'),
-            'personas': results, 'filed': sum(r['filed'] for r in results)}
+            'personas': results, 'filed': sum(r['filed'] for r in results), 'persona_source': source}

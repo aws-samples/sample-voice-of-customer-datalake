@@ -43,9 +43,12 @@ class TestTheList:
             {'Item': {'surfaces': {'web_reviews_search': SOL, 'chat': SOL}}} if Key['pk'] == 'SETTINGS#model' else {})
         _, payload = route('GET', '/settings/model')
         last = payload['surfaces'][-1]
-        assert last == {'key': 'web_reviews_search', 'default_id': LUNA, 'selected': SOL, 'allowlist': 'web_search'}
+        assert last == {'key': 'web_reviews_search', 'default_id': LUNA, 'selected': SOL, 'allowlist': 'web_search',
+                        'own_default': True}
         assert payload['web_search_models'] == WEB_SEARCH_MODELS
         assert {s['allowlist'] for s in payload['surfaces'][:-1]} == {'claude'}
+        # Every Claude surface's Automatic follows the pin but the product extract's (7.104.00).
+        assert [s['key'] for s in payload['surfaces'] if s['own_default']] == ['product_extract', 'web_reviews_search']
         chat = next(s for s in payload['surfaces'] if s['key'] == 'chat')
         assert chat['selected'] is None  # a GPT model stored for a Claude surface is not its pick
         assert not {m['id'] for m in payload['available_models']} & WEB_SEARCH_MODEL_IDS

@@ -32,10 +32,10 @@
 [arg@4.1.3](https://github.com/zeit/arg) - MIT
 [assertion-error@2.0.1](https://github.com/chaijs/assertion-error) - MIT
 [astral-regex@2.0.0](https://github.com/kevva/astral-regex) - MIT
-[aws-cdk-lib@2.236.0](https://github.com/aws/aws-cdk) - Apache-2.0
+[aws-cdk-lib@2.278.0](https://github.com/aws/aws-cdk) - Apache-2.0
 [balanced-match@1.0.2](https://github.com/juliangruber/balanced-match) - MIT
 [brace-expansion@1.1.12](https://github.com/juliangruber/brace-expansion) - MIT
-[cdk-nag@3.0.2](https://github.com/cdklabs/cdk-nag) - Apache-2.0
+[cdk-nag@3.1.0](https://github.com/cdklabs/cdk-nag) - Apache-2.0
 [chai@6.2.2](https://github.com/chaijs/chai) - MIT
 [color-convert@2.0.1](https://github.com/Qix-/color-convert) - MIT
 [color-name@1.1.4](https://github.com/colorjs/color-name) - MIT
@@ -190,7 +190,7 @@ Frontend document canvas, installed but not bundled (voc-datalake/frontend's loc
 [y-protocols@1.0.7](https://github.com/yjs/y-protocols) - MIT
 [yjs@13.6.33](https://github.com/yjs/yjs) - MIT
 
-[PyYAML@6.0.3](https://github.com/yaml/pyyaml) - MIT (the engineering broker's reader of a GitLab project's CI files: voc-datalake/lambda/layers/engineering-ci-deps, used by lambda/engineering/connectors/ci_yaml.py). Its licence, word for word:
+[PyYAML@6.0.4](https://github.com/yaml/pyyaml) - MIT (the engineering broker's reader of a GitLab project's CI files: voc-datalake/lambda/layers/engineering-ci-deps, used by lambda/engineering/connectors/ci_yaml.py). Its licence, word for word:
 
 ```
 Copyright (c) 2017-2021 Ingy döt Net

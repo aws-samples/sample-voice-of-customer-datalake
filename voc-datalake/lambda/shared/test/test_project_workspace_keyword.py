@@ -39,7 +39,8 @@ name a builtin container's method also has fails a test, so the exclusions never
 Since 7.102.00 (3h-S1b) ``GUARDED`` holds every project-adjacent store, not only the gate and the project stores: the
 jobs and their notices, the personas' stores, the voice sessions, the human documents, the decisions, the deleted
 sources' marks, the participants' project gate, the ballots' and the plan waits' wrappers and the product docs'
-extractor.
+extractor; since 7.104.00 the Product tab's stores too (its sources, its context and proposals, its extract and the
+sources' reading).
 
 Not seen (docs/multi-workspace.md, 3h's guard line): a method called on an instance (``store.method(…)``: the
 method's own signature is still held to the first rule); ``import shared`` followed by attribute access
@@ -74,8 +75,8 @@ GUARDED: Final = (
     # The objects and the pins.
     'shared.prototypes', 'shared.avatar', 'shared.prototype_pins', 'shared.prototype_versions',
     'shared.prototype_feedback', 'shared.prototype_drafts', 'shared.prototype_incorporation',
-    # The API's own: a project's product documents, its create and its object prefixes.
-    'api.product_context', 'api.projects',
+    # The API's own: a project's create and its object prefixes.
+    'api.projects',
     # Since 7.102.00 (3h-S1b): the other project-adjacent stores. The jobs and their notices.
     'shared.jobs', 'shared.job_notices', 'shared.assist_jobs',
     # The personas: the company's, the save, the copy (and its routes), the replace, the overlap and the grounding.
@@ -87,6 +88,10 @@ GUARDED: Final = (
     'shared.engagement_identity', 'api.ballots_handler', 'agents.plan_waits',
     # The product docs' extractor (its scope a workspace id: a stdlib-only Lambda, its keys a copy held in lockstep).
     'product_doc_extractor.handler',
+    # Since 7.104.00: the Product tab's stores, a project's product documents among them (their keys moved from
+    # api/product_context.py, which takes no workspace of its own and calls them with the deployment's): the sources,
+    # the product context and its proposals, the extract and the sources' reading on the twin.
+    'shared.product_sources', 'shared.product_proposals', 'shared.product_extract', 'shared.product_source_worker',
 )
 #: The modules that read projects outside the API (docs/multi-workspace.md, 3h): each must be in the scan.
 NON_API_READERS: Final = ('lambda/auth/board_triggers.py', 'lambda/jobs/retention')
@@ -107,6 +112,12 @@ BUILTIN_METHODS: Final = frozenset(name for kind in (dict, list, set, str, bytes
 # GUARDED: 78 production calls took the default before and now spell `workspace=None` out, every one the deployment's
 # (no route or job resolves a workspace for them yet), net +74 because projects_handler.py's four `version_html` calls
 # pass `store.workspace` instead. Per module, the "+n (3h-S1b)" notes below say which calls.
+#
+# 7.104.00 raised it once more, from 230 in 35 modules (after 3h-S3a lowered it) to 252 in 38, as the Product tab's
+# stores (written beside 3h-S1 and S1b, rebased onto them) joined GUARDED: their routes, the product interviewer and
+# its transcript name the deployment in 24 calls, `api/product_context.py` in 2 fewer (its rows moved to those
+# stores), every one the deployment's (their routes wait in api/projects_handler.py ``NOT_YET``, 3h-S3b and 3h-S3c,
+# refused in a workspace before any read). The "(7.104.00)" notes below say which calls.
 LITERAL_NONE: Final[dict[str, int]] = {
     'lambda/agents/artifacts.py': 1,
     # +10 (3h-S1b): the ballots' row, project and session checks (`_existing_row`, `_project_gone`, the
@@ -115,7 +126,10 @@ LITERAL_NONE: Final[dict[str, int]] = {
     # A credential's pin, the deployment's until 3h-S9 (marked on the line).
     'lambda/api/mcp_tokens_handler.py': 1,
     # +1 (3h-S1b): a deleted product doc's citing documents (`mark_citing_documents`).
-    'lambda/api/product_context.py': 17,
+    # -2 (7.104.00): the Product tab's rows are read and written by their own stores (shared/product_sources.py,
+    # shared/product_proposals.py), so the context's read and write, the source rows' listing and the upload's
+    # record name the deployment once each; the delete also names it to `forget_source`.
+    'lambda/api/product_context.py': 15,
     # 3 more since 7.101.00 (3h-S2): the sharing summary and the email redaction take the project's scope, so the list
     # (`list_projects`: its summary and its redaction), `get_project` and `get_project_members` name the deployment,
     # while `_with_sharing_fields` and the create pass theirs on. Lifted with the projects routes' slice.
@@ -164,6 +178,14 @@ LITERAL_NONE: Final[dict[str, int]] = {
     # copies (the copy's company-or-project kind is `source_kind`).
     'lambda/shared/persona_copy_routes.py': 7,
     'lambda/shared/persona_grounding.py': 2,
+    # 7.104.00: the Product tab's extract and proposal routes, the deployment's until the projects routes' slice
+    # resolves their scope (every store they call refuses a workspace, PRODUCT_SOURCES_STORE): the owner's META for an
+    # autonomous writer (`read_gate_meta`), the precheck's ready sources and lock, the start's lock and its job, the
+    # latest proposal's three reads, the accept and the dismiss.
+    'lambda/shared/product_proposal_routes.py': 11,
+    # 7.104.00: the Product tab's source routes, the same: a source's reads, claims and settles, the link's listing,
+    # row key and put, and the typed answers' save.
+    'lambda/shared/product_source_routes.py': 10,
     # +3 (3h-S1b): the evidence pack, its freshness and its refresh.
     'lambda/shared/persona_grounding_routes.py': 3,
     'lambda/shared/project_validation.py': 2,
@@ -178,7 +200,12 @@ LITERAL_NONE: Final[dict[str, int]] = {
     'lambda/shared/voice_session_routes.py': 4,
     # +1 (3h-S1b): the session's evidence pack (`mint` refused a workspace first; its `category_scope` is categories).
     'lambda/shared/voice_sessions.py': 5,
-    'lambda/shared/voice_transcripts.py': 2,
+    # 7.104.00: the product interviewer's read of the product context (`context_state`), the deployment's as every
+    # voice session is (`mint` refused a workspace first).
+    'lambda/shared/voice_subjects.py': 1,
+    # +2 (7.104.00): a product interview's transcript saved as a source (`save_interview_source`, and again past the
+    # cap), the deployment's as the persona interview's document is.
+    'lambda/shared/voice_transcripts.py': 4,
     # The bundle scripts and the backfill are the deployment's by design (they refuse a workspace).
     'scripts/project_bundle/exporter.py': 1,
     'scripts/project_bundle/remap.py': 1,

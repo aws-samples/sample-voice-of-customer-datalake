@@ -258,7 +258,7 @@ class TestGetModelSettings:
         }
         surfaces = {s['key']: s for s in body['surfaces']}
         assert set(surfaces) == {
-            'chat', 'documents', 'prototype', 'enrichment', 'utility',
+            'chat', 'documents', 'product_extract', 'prototype', 'enrichment', 'utility',
             'memory', 'agent_orchestrator', 'agent_worker', 'agent_reviewer', 'agent_persona',
         }
         assert all(s['selected'] is None for s in body['surfaces'])
@@ -268,6 +268,7 @@ class TestGetModelSettings:
         assert surfaces['documents']['default_id'] == 'global.anthropic.claude-sonnet-5-5'
         assert surfaces['prototype']['default_id'] == 'global.anthropic.claude-opus-5-5'
         assert surfaces['enrichment']['default_id'] == 'global.anthropic.claude-haiku-5-5'
+        assert surfaces['product_extract']['default_id'] == 'global.anthropic.claude-sonnet-5-5'
         assert body['model_id'] is None
 
     @patch('settings_handler.aggregates_table')

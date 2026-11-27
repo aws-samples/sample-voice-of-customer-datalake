@@ -7,7 +7,7 @@
  * interview — one question per message, only for the fields still empty — that
  * ends in ONE `update_product_context` approval card. Nothing is saved without it.
  *
- * Every product-context field (`lambda/api/product_context.py` STRING_FIELDS +
+ * Every product-context field (`lambda/shared/product_fields.py` STRING_FIELDS +
  * `current_state`) has exactly one question; `product-interview.test.ts` pins that.
  */
 import { LIFECYCLE_STATES, type PRODUCT_CONTEXT_STRING_FIELDS } from './client/allowlists.js';
@@ -23,6 +23,7 @@ interface InterviewQuestion {
 export const PRODUCT_INTERVIEW_QUESTIONS: readonly InterviewQuestion[] = [
   { field: 'product_name', question: 'What is the product or service called?' },
   { field: 'one_liner', question: 'In one sentence, what does it do and for whom?' },
+  { field: 'product_summary', question: 'In a short paragraph, what does the product do, and how do people use it?' },
   { field: 'target_users', question: 'Who are its target customers or users?' },
   { field: 'problem_solved', question: 'What problem does it solve for them?' },
   {

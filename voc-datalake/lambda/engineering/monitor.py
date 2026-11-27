@@ -71,7 +71,7 @@ from engineering.run_links import run_links
 from engineering.run_objects import RunObjects
 from engineering.runtime.caps import DEFAULT_KIRO_CREDIT_PRICE, KIRO_CREDIT_PRICE_ENV, credit_usd, kiro_credit_price
 from engineering.runtime.interface import MICRO_CREDITS, MICRO_PER_CREDIT, RuntimeRefused
-from engineering.runtime.run_signals import ENDED_AT_A_PERSON
+from engineering.runtime.run_signals import ENDED_AT_A_PERSON, MOVED_ON, TRIES_AGAIN
 from engineering.runtime.runs import ENDED
 from engineering.runtime.sessions import AgentSession
 from engineering.workspace.layout import ID
@@ -536,12 +536,13 @@ class RunMonitor:
             raise MonitorError('not_found', 'no such task in this run')
         holder, epoch = string_attr(task, 'lease_agent'), int(amount_attr(task, 'lease_epoch'))
         state = string_attr(task, 'state')
-        if holder and epoch == signal.attempt and state == NEEDS_HUMAN:
+        if holder and epoch == signal.attempt and state == NEEDS_HUMAN and signal.name in TRIES_AGAIN:
             # (7.71.04) Its agent's session ended with it: the run's own Resume tries its step again (the live
-            # Bug fixer run's restart and resume of its committer's task answered "moved on").
+            # Bug fixer run's restart and resume of its committer's task answered "moved on"). (7.104.00) Only a
+            # Restart or a Resume is told so: a Save, a Pause or a stop of it has moved on, as for any ended task.
             raise MonitorError('conflict', ENDED_AT_A_PERSON)
         if not holder or epoch != signal.attempt or state == OPEN or state in FINAL:
-            raise MonitorError('conflict', 'This task has moved on since you looked: reload the run')
+            raise MonitorError('conflict', MOVED_ON)
         if holder.startswith(PERSON_PREFIX):
             # A person took it (board/store.py take): no agent holds it, so none is signalled through it.
             raise MonitorError('conflict', 'A person holds this task: no agent works on it to signal')

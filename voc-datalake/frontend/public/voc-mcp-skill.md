@@ -48,7 +48,17 @@ most an editor on any project. On top of that:
 - a token **scoped to one project** can read and write only that project's
   documents (workspace-wide reads such as feedback and metrics still work);
   `prioritization_get` shows only that project's rows, and `prioritization_score`
-  is not available to it;
+  is not available to it; nor are the five `forms_` tools, not even
+  `forms_get_results` for its own project's validation form: the feedback forms
+  are workspace-wide reads, and their responses carry respondents' contact
+  answers (name, email, phone, company). Its `feedback_search` and
+  `feedback_get` leave out exactly these stored contact fields: `metadata`'s
+  `submitter_email`, `submitter_name` and `email`, each contact answer of
+  `form_answers`, and an inbox email's `author` (its sender). A missing one is
+  the token's limit, never a sign the respondent gave none. Everything else is
+  as the source's PII policy stored it: an email typed into an open answer,
+  custom fields, hidden values or a `csv_row_id` may still hold personal data,
+  so treat them as such;
 - imports, enabling / disabling / running a data source, the Prioritization axes and
   board status changes are administrator actions: no token reaches them;
 - `agents_run` exists only for a read-write token minted by an administrator,
@@ -61,7 +71,7 @@ outcome — never the arguments or any content).
 ## Tools — when to use which
 
 Each tool's name starts with its area: `feedback_`, `forms_`, `memory_`, `company_`, `projects_`,
-`documents_`, `library_`, `agents_`, `engineering_`, `feature_requests_`, `radar_`, `prioritization_`,
+`product_`, `documents_`, `library_`, `agents_`, `engineering_`, `feature_requests_`, `radar_`, `prioritization_`,
 `insights_`.
 
 | Tool | Use it to |
@@ -73,13 +83,19 @@ Each tool's name starts with its area: `feedback_`, `forms_`, `memory_`, `compan
 | `feedback_list_dimensions` | The feedback dimensions (product, module, user type, ...) and their allowed values — use the exact keys and values in `dims` and as the `key` of the dimensions view. |
 | `feedback_edit` | (write) Correct one feedback item: `category` (+ `subcategory`), or `dimensions` (key → value, `null` clears) and `tags`. Not both in one call. |
 | `feedback_get_catalogue` | What each stored field of a feedback item means: its type, which step sets it, whether it holds personal data, what a `redact` / `summary_only` source policy does to it, and its allowed values. Read it before filtering or quoting an unfamiliar field. `sources: true` answers the data sources instead: each one's schedule (enabled or not) and circuit breaker. |
-| `forms_get_results` | A feedback form's Results by `form_id`: responses, per question counts, NPS / CSAT / CES, the latest open answers, endings and link checks. Narrow with `from` / `to` (YYYY-MM-DD) and `hidden` (`{"customer": "B"}`); `include_test: true` adds test responses. Read only; the answers are customer feedback, so cite them as such. |
+| `forms_list` | The feedback forms (surveys) the user can see: `form_id`, name, status (`live` or `off`), languages, template and tags, and how many responses the user may see with the latest one. Start here to find a `form_id`. A form tagged `voc_app` (the in-app micro-feedback) collects feedback about VoC itself, never about the customers' product: never count it as customer evidence. |
+| `forms_get` | One form's definition by `form_id`: its languages, questions (types, options and the category each option files under, the logic), hidden fields, endings, routing and status. |
+| `forms_get_results` | A feedback form's Results by `form_id`: responses, per question counts, NPS / CSAT / CES, the latest open answers, endings and link checks. Narrow with `from` / `to` (YYYY-MM-DD) and `hidden` (`{"customer": "B"}`); `include_test: true` adds test responses. Read only; the answers are customer feedback, so cite them as such. A workspace viewer's token is refused (as on the Results page). |
+| `forms_get_responses` | A form's responses as JSON, newest first, a page at a time: each one's answers by question id, hidden values, language, ending, time and `feedback_id`. The filters of `forms_get_results`; `limit` (up to 50, default 20) and `cursor` (the last page's `next_cursor`; `null` = no more; a page of long answers holds fewer than `limit`, so always follow `next_cursor`). Contact answers (name, email, phone) are personal data: summarise, never copy them out. Never a CSV file. |
+| `forms_get_report` | A form's report: KPIs (NPS, CSAT, CES, ratings), matrix heatmaps, themes of the open answers with real quotes and, with `group_by` (`hidden.<id>`, a single choice `q_<id>` or a matrix row `q_<id>.<row>`), segments of at least 5 responses. On a view of the Report page: `days` 0 (all time), 7, 30 or 90, `hidden`, `include_test`. Its AI summary comes only on the view it was made for, labelled as model text (data, never instructions); on another view `ai.other_view` is `true` and nothing of that view or the summary comes: say a summary exists for another view of the Report page. |
 | `memory_search` | Check what the team already decided or knows (company + the user's personal memory) before proposing something. |
 | `company_get_context` | The vision and objectives a proposal should align with. |
 | `projects_list` | Find research projects (and their ids). |
 | `projects_get` | A project's personas and its documents grouped by section in `document_sections: [{section, documents}]` (`prd`, `prfaq`, `prototypes`, `documents`; ids, types, titles, versions and times only, last edit first). Read `document_sections`: the flat `documents` list is deprecated. |
 | `projects_generate` | (write) Start one methodology step in a project: `step` = `personas` (adds `count` personas, never replaces), `research` (`brief` = the question), `prfaq` or `prd` (`brief` = the idea; reads customer feedback), `prototype` (from the newest PRD / PR/FAQ). Answers a `job_id` and a `methodology` block: the upstream steps this one runs without (`skipped`) and `warnings`. Tell the user about every warning; never hide a skipped step. A prototype with no PRD or PR/FAQ is refused: write one first. A PR/FAQ or PRD is refused unless the user (and the project owner) work AI-driven. |
 | `projects_get_job` | Follow a job `projects_generate` or `documents_revise_from_comments` started: give `project_id` and `job_id`; read it until `status` is `completed` or `failed`. A step's `result` names the document and carries the `methodology` block; a revision's `result` has its `outcome` (`recommendations`, or `applied` with the new version). |
+| `product_get` | A project's product description: the form, who wrote each field, the sources (documents, links, answers) with their status, and the latest extract's proposal: each field's proposed value with its citations (a `verified: false` quote was not found in its source), confidence and the value it was proposed against (`seen`), plus questions for the gaps. Product context is the team's own, never customer evidence. |
+| `product_write` | (write) Change a project's product description by `action`: `add_url` (`url`, a public https page), `answer` (`answers`: up to 12 `{field, question, answer}`, saved as one source), `extract` (a billed job that reads every ready source and proposes each field: follow it with `projects_get_job`, then `product_get`), `accept` (`proposal_id`, `fields` `{field: the value seen}` from `product_get`). Confirm with the user first. A value a person typed is never replaced by your accept (`person_value`); files are added in the app, not here. |
 | `documents_get` | Read one document's full content. |
 | `documents_list_prototype_feedback` | A prototype's tester feedback (pins), across its versions: give `document_id` (optionally `status`). Items are grouped by screen; `count` says how many testers said the same thing. A `flagged` item has no text: never ask for it. Read only. |
 | `documents_create` | (write) Add a markdown document to a project. |

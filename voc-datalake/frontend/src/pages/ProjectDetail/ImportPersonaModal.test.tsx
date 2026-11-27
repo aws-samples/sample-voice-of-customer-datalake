@@ -160,7 +160,7 @@ describe('ImportPersonaModal file picker', () => {
  * fed the state something the server then 400s.
  *
  * jsdom has no image codec, so the imaging primitives are faked the same way
- * ProductDocsUpload.component.test.tsx fakes them.
+ * ProductSourcesCard.upload.test.tsx fakes them.
  */
 describe('ImportPersonaModal image input paths', () => {
   interface ImportRequest {

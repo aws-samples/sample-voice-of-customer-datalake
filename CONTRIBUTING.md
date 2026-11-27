@@ -49,7 +49,7 @@ GitHub provides additional document on [forking a repository](https://help.githu
 
 
 ## Development setup
-From the repository root (Node.js 24.15+, Python 3.12+ for the local tooling (the Lambdas run Python 3.14), Docker or Finch for layer builds):
+From the repository root (Node.js 24.15+ (CI runs Node 26, the Node Lambdas' runtime), Python 3.12+ for the local tooling (3.12 is ruff's and pyright's target; the Lambdas run Python 3.15, and CI tests on `.python-version`, 3.15), Docker or Finch for layer builds):
 
 ```bash
 npm run install:all                               # root, CDK and frontend packages

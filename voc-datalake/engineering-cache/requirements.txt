@@ -1,6 +1,7 @@
 # voc-engineering-cache's Python packages, every one pinned by version and sha256 (pip --require-hashes): the
 # Powertools of the processing layer, the signing primitive of the signing layer, boto3, and what they need, resolved
-# for linux/arm64 and CPython 3.14 wheels only. Regenerate them all together when a pin moves.
+# for linux/arm64 and CPython 3.15 wheels only (pip download --only-binary=:all: --no-deps in the Dockerfile's base
+# image, 2026-11-26). Regenerate them all together when a pin or the base's Python moves.
 aws-xray-sdk==2.16.0 \
     --hash=sha256:d2ae9400654369cbce65f6402276b211afd8fd0931e208e6199a20dc1e01a5da
 aws-lambda-powertools==3.39.0 \
@@ -10,9 +11,9 @@ boto3==1.44.3 \
 botocore==1.44.3 \
     --hash=sha256:793eac2a7ca167e9376b136cf000e1675e9ffe8d7ec609160cc1ee00b93ace28
 cffi==2.1.1 \
-    --hash=sha256:58acb8ab8e295e6c5ea12f888cbb13cf21511ef2a3303a23f4325c29d17fe5c1
+    --hash=sha256:507a24c282e0f42f8ed737cf048572cbf580468da5555764a8331735e9c736b6
 cryptography==50.0.2 \
-    --hash=sha256:87e9ce85beb6b328ba370cc6e6aea483c92617b4c95b1d33a49297eb662bfb04
+    --hash=sha256:fdd28f912fccfec1846a94e2e1e8f9b0012f557f0c46fe4f3eb0d7a87afcf90b
 jmespath==1.1.0 \
     --hash=sha256:a5663118de4908c91729bea0acadca56526eb2698e83de10cd116ae0f4e97c64
 pycparser==3.12 \
@@ -28,4 +29,4 @@ typing-extensions==4.16.0 \
 urllib3==2.8.0 \
     --hash=sha256:0cf3cae568d36aa9576b28dfb35f11328f1cb974ca7647d9475ebb86c75ac6e3
 wrapt==2.5.2 \
-    --hash=sha256:cfd508866c421687a99bed9ce5b7b4f26fd9b93d3753685d81947ab37d54c496
+    --hash=sha256:217798fb0cfb31479a264f841b0242bc1bed1ffc70d233e8444a876cec57928c

@@ -146,7 +146,8 @@
     "picker": {
       "title": "Wybierz obszar roboczy",
       "intro": "Należysz do więcej niż jednego obszaru roboczego. Wybierz ten, który chcesz otworzyć.",
-      "lastUsed": "Ostatnio używany"
+      "lastUsed": "Ostatnio używany",
+      "create": "Utwórz nowy obszar roboczy"
     },
     "notFound": {
       "title": "Nie znaleziono obszaru roboczego",
@@ -640,7 +641,7 @@
     "expiryDays_one": "{{count, number}} dzień",
     "expiryDays_other": "{{count, number}} dni",
     "projectLabel": "Projekt",
-    "projectHint": "Opcjonalnie: ogranicz narzędzia projektowe do jednego projektu.",
+    "projectHint": "Opcjonalnie: ogranicz narzędzia projektowe do jednego projektu. Tak ograniczony token nie dostaje narzędzi formularzy opinii, nawet dla formularza walidacji własnego projektu. Przy odczycie opinii pomija zapisany e-mail i imię nadawcy, odpowiedzi kontaktowe formularzy i nadawcę e-maila ze skrzynki; wszystko inne, np. e-mail wpisany w odpowiedź otwartą, podlega polityce danych osobowych źródła.",
     "projectAll": "Wszystkie moje projekty",
     "mintFailed": "Nie udało się utworzyć tokenu. Sprawdź pola i spróbuj ponownie.",
     "minting": "Tworzenie…",

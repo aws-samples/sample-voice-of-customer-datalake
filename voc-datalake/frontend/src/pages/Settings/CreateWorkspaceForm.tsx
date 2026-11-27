@@ -1,29 +1,56 @@
 /**
- * @fileoverview Create a workspace (platform console; `POST /platform/workspaces`): a name and a slug, checked here
- * by the server's own rules before sending (`isWorkspaceSlug`: 3 to 40 of a-z, 0-9 and "-", not starting or ending
- * with "-", not a reserved word; a name of 1 to 80 characters). The slug is the workspace's address, `/workspace/{slug}/`,
- * fixed once made; the server answers 409 when another workspace has it.
+ * @fileoverview Create a workspace (`POST /platform/workspaces`, platform admins only), the one form of the platform
+ * console (Administration → Workspaces → All workspaces) and of the workspace gate's picker and no-workspace page
+ * (workspace/WorkspaceChoice.tsx): a name and a slug, checked here by the server's own rules before sending
+ * (`isWorkspaceSlug`: 3 to 40 of a-z, 0-9 and "-", not starting or ending with "-", not a reserved word; a name of 1
+ * to 80 characters). The slug is the workspace's address, `/workspace/{slug}/`, fixed once made; the server answers
+ * 409 when another workspace has it, said in words under the form (`PLATFORM_REFUSALS`). The caller becomes the new
+ * workspace's admin; what follows is the caller's (`onCreated`): the console offers Enter, the gate enters it.
  *
  * @module pages/Settings/CreateWorkspaceForm
  */
 import { useId, useRef, useState } from 'react'
 import { flushSync } from 'react-dom'
+import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import { Plus } from 'lucide-react'
-import { WORKSPACE_NAME_MAX } from '../../api/platformWorkspacesApi'
+import { myWorkspacesKey } from '../../api/workspacesApi'
+import { platformWorkspacesApi, platformWorkspacesKey, WORKSPACE_NAME_MAX } from '../../api/platformWorkspacesApi'
 import type { CreatedWorkspace } from '../../api/platformWorkspacesApi'
+import RefusalAlert from '../../workspace/RefusalAlert'
 import { SLUG_MAX_LENGTH } from '../../workspace/workspacePath'
+import { PLATFORM_REFUSALS } from '../../workspace/workspaceRefusals'
 import { workspaceDraftProblems } from './workspaceDraft'
 import type { DraftProblem } from './workspaceDraft'
 
 interface CreateWorkspaceFormProps {
-  readonly busy: boolean
-  readonly onCreate: (name: string, slug: string) => Promise<CreatedWorkspace>
   readonly onCreated: (workspace: CreatedWorkspace) => void
 }
 
-export default function CreateWorkspaceForm({ busy, onCreate, onCreated }: CreateWorkspaceFormProps) {
+function hadWorkspaces(mine: unknown): boolean {
+  return Array.isArray(mine) && mine.length > 0
+}
+
+function useCreateWorkspace() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ name, slug }: { name: string; slug: string }) => platformWorkspacesApi.create(name, slug),
+    // The new workspace is in the console's list and in the caller's own (they are its admin). The caller's own
+    // list is re-read only when it already held a workspace: from none, a list of one would make the gate redirect
+    // into it with a full page load, losing the console's result and its Enter button (Enter's own load reads it
+    // afresh). On the gate's pages the caller's full page load into the workspace follows either way.
+    onSettled: () => Promise.all([
+      queryClient.invalidateQueries({ queryKey: platformWorkspacesKey() }),
+      hadWorkspaces(queryClient.getQueryData(myWorkspacesKey()))
+        ? queryClient.invalidateQueries({ queryKey: myWorkspacesKey() })
+        : null,
+    ]),
+  })
+}
+
+export default function CreateWorkspaceForm({ onCreated }: CreateWorkspaceFormProps) {
   const { t } = useTranslation()
+  const create = useCreateWorkspace()
   const ids = { title: useId(), name: useId(), slug: useId(), slugHint: useId(), nameError: useId(), slugError: useId() }
   const [name, setName] = useState('')
   const [slug, setSlug] = useState('')
@@ -42,12 +69,12 @@ export default function CreateWorkspaceForm({ busy, onCreate, onCreated }: Creat
       (first === 'name' ? nameRef : slugRef).current?.focus()
       return
     }
-    onCreate(name.trim(), address).then((workspace) => {
+    create.mutateAsync({ name: name.trim(), slug: address }).then((workspace) => {
       setName('')
       setSlug('')
       onCreated(workspace)
     }, () => {
-      // The section shows the refusal (a slug taken meanwhile); the draft stays to correct.
+      // The refusal is said under the form (a slug taken meanwhile); the draft stays to correct.
     })
   }
 
@@ -75,10 +102,11 @@ export default function CreateWorkspaceForm({ busy, onCreate, onCreated }: Creat
           {slugInvalid ? <span id={ids.slugError} className="text-xs text-danger">{t('workspaces.platform.slugInvalid')}</span> : null}
         </div>
       </div>
-      <button type="submit" className="btn btn-primary gap-2 justify-center" disabled={busy}>
+      <button type="submit" className="btn btn-primary gap-2 justify-center" disabled={create.isPending}>
         <Plus size={16} aria-hidden="true" />
         {t('workspaces.platform.create')}
       </button>
+      <RefusalAlert error={create.error} refusals={PLATFORM_REFUSALS} />
     </form>
   )
 }

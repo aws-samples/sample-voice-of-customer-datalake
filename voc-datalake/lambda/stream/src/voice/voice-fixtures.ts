@@ -238,3 +238,15 @@ export function sessionInput(overrides: Record<string, unknown> = {}): Record<st
     ...overrides,
   };
 }
+
+/** A product interview's session input (evidence.json, 7.104.00), with `overrides`. */
+export function productInput(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  const shared = Object.fromEntries(Object.entries(sessionInput()).filter(([key]) => key !== 'persona' && key !== 'evidence'));
+  return {
+    ...shared,
+    kind: 'product_interview',
+    questions: [{ field: 'product_name', question: '' }, { field: 'target_users', question: 'Who buys it first?' }],
+    known: { one_liner: 'Track every parcel in one place.' },
+    ...overrides,
+  };
+}

@@ -47,6 +47,12 @@ export function textBlock(contentName: string, role: 'SYSTEM' | HistoryRole, tex
   ];
 }
 
+/** The prompt's tool settings: none at all for a session without tools (the product interviewer, 7.104.00). */
+function toolSettings(tools: readonly Record<string, unknown>[]): Record<string, unknown> {
+  if (tools.length === 0) return {};
+  return { toolUseOutputConfiguration: { mediaType: 'application/json' }, toolConfiguration: { tools, toolChoice: { auto: {} } } };
+}
+
 /** A stream's opening: the session, the prompt (voice, tools), the system prompt, the history, the microphone. */
 export function openingEvents(setup: StreamSetup): SonicEvent[] {
   return [
@@ -57,8 +63,7 @@ export function openingEvents(setup: StreamSetup): SonicEvent[] {
       promptName: PROMPT_NAME,
       textOutputConfiguration: TEXT_PLAIN,
       audioOutputConfiguration: { ...LPCM, sampleRateHertz: VOICE_OUTPUT_SAMPLE_RATE, voiceId: setup.voiceId },
-      toolUseOutputConfiguration: { mediaType: 'application/json' },
-      toolConfiguration: { tools: setup.tools, toolChoice: { auto: {} } },
+      ...toolSettings(setup.tools),
     }),
     ...textBlock('voc-system', 'SYSTEM', setup.systemPrompt),
     ...setup.history.flatMap((entry, index) => textBlock(`voc-history-${index + 1}`, entry.role, entry.text)),

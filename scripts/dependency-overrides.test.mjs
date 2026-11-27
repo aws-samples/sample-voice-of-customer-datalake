@@ -2,8 +2,9 @@
  * Pins what the npm `overrides` for minimatch (GHSA-g3hv-75wg-m249) and quick-temp's rimraf
  * promise, read from the committed lockfiles (CHANGELOG 6.05.00 of 2026-11-11):
  *
- * - no installed minimatch in any committed lockfile is in the vulnerable range (>= 7.0.0, < 11.0.1),
- *   except the one copy bundled inside aws-cdk-lib, which npm cannot override;
+ * - no installed minimatch in any committed lockfile is in the vulnerable range (>= 7.0.0, < 11.0.1), the copy
+ *   bundled inside aws-cdk-lib included: npm cannot override a bundled dependency, and aws-cdk-lib 2.278.0 bundles
+ *   11.0.9 (alert #226, closed by 7.104.00's upgrade; it was 10.2.6 through 2.277.0);
  * - every glob that resolves to minimatch 11 is glob 14 or newer (glob 10 on minimatch 11 silently
  *   matches nothing);
  * - quick-temp is still the release whose `rimraf.sync` call the rimraf 6 override was checked against.
@@ -26,8 +27,6 @@ const LOCKFILES = [
   'voc-datalake/lambda/stream/package-lock.json',
   'voc-datalake/package-lock.json',
 ];
-/** The one minimatch install npm cannot override (aws-cdk-lib bundles it; alert #226). */
-const BUNDLED_EXCEPTION = 'node_modules/aws-cdk-lib/node_modules/minimatch';
 /** quick-temp releases whose rimraf use (`rimraf.sync(path)`) works on rimraf 6. */
 const AUDITED_QUICK_TEMP = new Set(['0.1.9']);
 
@@ -83,9 +82,8 @@ function resolveFrom(packages, fromPath, name) {
 }
 
 for (const file of LOCKFILES) {
-  test(`${file}: no overridable minimatch is in the vulnerable range`, () => {
+  test(`${file}: no minimatch is in the vulnerable range`, () => {
     const vulnerable = installsOf(packagesOf(file), 'minimatch')
-      .filter(([path]) => path !== BUNDLED_EXCEPTION)
       .filter(([, entry]) => compareVersions(entry.version, '7.0.0') >= 0 && compareVersions(entry.version, '11.0.1') < 0)
       .map(([path, entry]) => `${path}@${entry.version}`);
     assert.deepEqual(vulnerable, []);

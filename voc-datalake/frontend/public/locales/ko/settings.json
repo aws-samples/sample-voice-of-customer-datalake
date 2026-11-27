@@ -66,6 +66,10 @@
         "description": "PRD, PR/FAQ, 페르소나, 리서치 보고서",
         "label": "문서 생성"
       },
+      "product_extract": {
+        "description": "프로젝트의 제품 소스(문서, 링크, 이미지, 답변)를 읽고 제품 설명을 제안합니다",
+        "label": "제품 설명 추출"
+      },
       "enrichment": {
         "description": "수집된 모든 항목의 감성, 카테고리, 긴급도",
         "label": "피드백 보강"

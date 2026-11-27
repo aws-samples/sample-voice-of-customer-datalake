@@ -47,9 +47,9 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspa
 
 from boto3.dynamodb.conditions import Key
 
-from shared import category_access, methodology
+from shared import category_access, methodology, product_extract
 from shared.api import validate_date_basis
-from shared.aws import get_dynamodb_resource, get_s3_client
+from shared.aws import get_bedrock_client, get_dynamodb_resource, get_s3_client
 from shared.company_context import CONFIG_SK, DESIGN_SYSTEM_PK, company_context_block, design_system_block
 from shared.company_logo import (
     LOGO_INSTRUCTION,
@@ -1825,6 +1825,14 @@ def _draft_prototype(ctx, projects_table, project_id: str, job_id: str, doc_conf
     return {'draft_id': job_id}
 
 
+def _product_extract(ctx: JobContext, projects_table, project_id: str, job_id: str, doc_config: dict) -> dict:
+    """One product extract: this bundle's projects table, the raw bucket and the Bedrock client (the extract fences each
+    source with shared/product_sources.py's markers, the PRD / PR-FAQ block's)."""
+    clients = product_extract.Clients(table=projects_table, s3=get_s3_client(), bucket=SCRATCH_BUCKET,
+                                      bedrock=get_bedrock_client())
+    return product_extract.run(ctx, project_id, job_id, doc_config, clients=clients)
+
+
 @job_handler(error_message='Document generation failed')
 def handle_job(ctx: JobContext, project_id: str, job_id: str, doc_config: dict) -> dict:
     """Handle async document generation job (PRD/PRFAQ).
@@ -1871,6 +1879,12 @@ def handle_job(ctx: JobContext, project_id: str, job_id: str, doc_config: dict) 
             'document_id': doc_item.get('document_id'),
             'title': doc_item.get('title'),
         }
+
+    # The Product tab's extract (7.104.00, shared/product_extract.py): the ready sources read, one streamed model
+    # call within this invocation's deadline, the proposal written. Nothing reaches the product context until a
+    # person accepts a field (shared/product_proposals.py).
+    if doc_type == 'product_extract':
+        return _product_extract(ctx, projects_table, project_id, job_id, doc_config)
 
     # Build Prototype — generate a single-file HTML React/Tailwind demo from
     # the source PRD/PR-FAQ. Display via iframe srcdoc; no compile step.

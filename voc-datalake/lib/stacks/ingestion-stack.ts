@@ -466,7 +466,7 @@ export class VocIngestionStack extends VocStack {
 
     const fn = new lambda.Function(this, `Ingestor${capitalize(plugin.id)}`, {
       functionName,
-      runtime: lambda.Runtime.PYTHON_3_14,
+      runtime: lambda.Runtime.PYTHON_3_15,
       architecture: lambda.Architecture.ARM_64,
       handler: 'handler.lambda_handler',
       code: ingestorCode,

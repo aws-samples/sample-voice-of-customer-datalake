@@ -44,7 +44,7 @@ from botocore.exceptions import BotoCoreError, ClientError
 
 from shared import agents_store, methodology
 from shared.agents_store import AGENTS_INDEX, META_SK, iso
-from shared.aws import consistent_item, is_conditional_check_failure
+from shared.aws import CONDITION_FAILED, cancellation_codes, consistent_item, is_conditional_check_failure
 from shared.dynamo_paging import iter_query
 from shared.dynamo_values import plain
 from shared.exceptions import ServiceError
@@ -184,8 +184,7 @@ def _take_slot(table: Any, sub: str, stamp: str) -> dict:
 
 def _cap_refused(exc: ClientError) -> bool:
     """The create transaction was cancelled by its first item, the slot condition."""
-    reasons = exc.response.get('CancellationReasons') or []
-    return bool(reasons) and (reasons[0] or {}).get('Code') == 'ConditionalCheckFailed'
+    return cancellation_codes(exc)[:1] == [CONDITION_FAILED]
 
 
 def create_plan(table: Any, plan: Mapping[str, Any], *, approver: Approver, conversation_id: str | None,

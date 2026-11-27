@@ -21,6 +21,10 @@ const api = vi.hoisted(() => ({
   deleteProductDoc: vi.fn(),
   generateProductReport: vi.fn(),
   getProductDocUploadUrl: vi.fn(),
+  getJobs: vi.fn(),
+  getLatestProductProposal: vi.fn(),
+  acceptProductProposal: vi.fn(),
+  startProductExtract: vi.fn(),
 }))
 vi.mock('../../api/projectsApi', () => ({ projectsApi: api }))
 vi.mock('./CompanyContextStrip', () => import('./product-tab-fixtures').then((m) => m.companyStripModule()))
@@ -34,6 +38,15 @@ const readyDoc: ProductDoc = {
   extracted_chars: 900,
   error: null,
   created_at: new Date().toISOString(),
+  source_kind: 'file',
+  injection_flag: false,
+  method: 'text',
+  pages: null,
+  truncated: false,
+  url: null,
+  final_url: null,
+  title: null,
+  interview_mode: null,
 }
 
 describe('ProductTab for a viewer', () => {
@@ -41,6 +54,8 @@ describe('ProductTab for a viewer', () => {
     vi.clearAllMocks()
     api.getProductContext.mockResolvedValue({ context: { ...emptyProductContext(), product_name: 'VoC' } })
     api.listProductDocs.mockResolvedValue({ docs: [readyDoc] })
+    api.getJobs.mockResolvedValue({ success: true, jobs: [] })
+    api.getLatestProductProposal.mockResolvedValue({ proposal: null, context: emptyProductContext(), field_meta: {}, sources: [readyDoc] })
   })
 
   it('shows the description fields disabled, so no blur can save', async () => {
@@ -73,7 +88,16 @@ describe('ProductTab for a viewer', () => {
     renderWithQueryClient(<ProductTab canEdit={false} projectId="proj-1" />)
     await waitFor(() => expect(screen.getByText('brief.md')).toBeInTheDocument())
 
-    expect(api.updateProductContext).not.toHaveBeenCalled()
-    expect(api.deleteProductDoc).not.toHaveBeenCalled()
+    const writes = [api.updateProductContext, api.deleteProductDoc, api.startProductExtract, api.acceptProductProposal]
+    expect(writes.map((write) => write.mock.calls.length)).toStrictEqual([0, 0, 0, 0])
+  })
+
+  it('offers no Extract, link, answers or voice, and reads the questions only (7.104.00)', async () => {
+    renderWithQueryClient(<ProductTab canEdit={false} projectId="proj-1" />)
+    await waitFor(() => expect(screen.getByText('brief.md')).toBeInTheDocument())
+
+    expect(screen.queryAllByRole('button', { name: /extract|type answers|talk it through|answer in the ai chat/i })).toStrictEqual([])
+    expect(screen.queryByLabelText('Add a link')).not.toBeInTheDocument()
+    expect(screen.getByRole('region', { name: 'Questions' })).toHaveTextContent('In one sentence, what does it do and for whom?')
   })
 })

@@ -669,11 +669,11 @@ def test_the_runs_note_on_its_issue_is_found_by_its_marker_newest_first_ten_page
     api = _with_user(FakeGitLab().on('GET', f'{NOTES}1', answer(200, [{'id': 5, 'body': 'Me too.', **OWN}],
                                                                 {'x-next-page': '2'}))
                      .on('GET', f'{NOTES}2', answer(200, [{'id': 3, 'body': f'Triage\n\n{MARKER}\n', **OWN}])))
-    assert client(api).issue_comment('conn-1', 42, MARKER, 1) == f'https://gitlab.com/{PROJECT}/-/issues/42#note_3'
+    assert client(api).issue_comment('conn-1', 42, MARKER) == f'https://gitlab.com/{PROJECT}/-/issues/42#note_3'
     for page in range(1, 12):
         api.on('GET', f'{NOTES}{page}', answer(200, [{'id': 5, 'body': 'Me too.', **OWN}],
                                                {'x-next-page': str(page + 1)}))
-    assert client(api).issue_comment('conn-1', 42, MARKER, 1) is None
+    assert client(api).issue_comment('conn-1', 42, MARKER) is None
     assert [path for _, path in api.calls()].count(f'{NOTES}11') == 0
 
 
@@ -688,7 +688,7 @@ def test_a_note_with_the_marker_is_the_runs_only_when_the_tokens_users_own_and_e
     # (7.71.04) Anyone who reads the issue may copy the marker into a note: only the token's own user's note, never a
     # system note, that ends with it is the run's.
     api = _with_user(FakeGitLab().on('GET', f'{NOTES}1', answer(200, [{'id': 3, **note}])))
-    assert client(api).issue_comment('conn-1', 42, MARKER, 1) is None
+    assert client(api).issue_comment('conn-1', 42, MARKER) is None
     assert [path for _, path in api.calls()] == ['/api/v4/user', f'{NOTES}1']
 
 
@@ -709,7 +709,7 @@ def test_the_router_hands_an_issues_labels_and_a_pull_requests_draft_flag_to_the
     router = HostRouter(lambda _c: credential(), GitHubHost(lambda _c: app_credential()), client(api))
     assert router.label_issue('gl', 42, ('voc-triage/bug',)) == ('voc-triage/bug',)
     _with_user(api).on('GET', f'{NOTES}1', answer(200, []))
-    assert router.issue_comment('gl', 42, MARKER, 1) is None
+    assert router.issue_comment('gl', 42, MARKER) is None
     router.open_or_update_draft_pr('gl', BRANCH, 'main', 'Fix', 'Body', TREE, draft=False)
     assert [body['title'] for body in api.bodies('POST', f'{P}/merge_requests')] == ['Fix']
 

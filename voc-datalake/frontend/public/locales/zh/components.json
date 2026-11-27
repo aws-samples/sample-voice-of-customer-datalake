@@ -46,6 +46,8 @@
     "personaReviewHint": "此项目中最多 6 个用户画像会阅读此版本，并引用原文留下评论。它们从不修改文档。每个用户画像需调用一次模型。",
     "personaReviewDone_one": "已添加 {{count, number}} 条评论（询问的用户画像：{{personas, number}}）",
     "personaReviewDone_other": "已添加 {{count, number}} 条评论（询问的用户画像：{{personas, number}}）",
+    "personaReviewDoneCompany_one": "公司的用户画像已添加 {{count, number}} 条评论（询问的用户画像：{{personas, number}}；此项目没有自己的用户画像）",
+    "personaReviewDoneCompany_other": "公司的用户画像已添加 {{count, number}} 条评论（询问的用户画像：{{personas, number}}；此项目没有自己的用户画像）",
     "personaReviewFailed": "用户画像审阅失败，请重试。"
   },
   "reviewShare": {

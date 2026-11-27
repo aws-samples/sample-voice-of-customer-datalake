@@ -200,11 +200,9 @@ def test_persona_ids_come_only_from_exact_persona_rows(sort_key, expected):
 def test_the_sweep_prefixes_match_the_writers_key_layout():
     """Lockstep with the code that WRITES those objects, so a layout change in one
     place cannot leave the sweep listing a prefix nothing is under."""
-    import inspect
-
-    import product_context
     from product_doc_extractor import handler as extractor
     from projects import product_docs_project_prefix, prototype_project_prefix
+    from shared.product_sources import product_doc_extracted_key, product_doc_raw_key, product_doc_source_key
     from shared.prototypes import prototype_draft_s3_key, prototype_s3_key
 
     assert prototype_s3_key('p1', 'd1', workspace=None).startswith(prototype_project_prefix('p1', workspace=None))
@@ -212,4 +210,8 @@ def test_the_sweep_prefixes_match_the_writers_key_layout():
     assert prototype_draft_s3_key('p1', 'job_1', workspace=None).startswith(prototype_project_prefix('p1',
                                                                                                      workspace=None))
     assert extractor._extracted_key('p1', 'd1', None).startswith(product_docs_project_prefix('p1', workspace=None))
-    assert "f'projects/{project_id}/product_docs/raw/" in inspect.getsource(product_context)
+    # Every product source's objects (since 7.104.00: a PDF, DOCX or PPTX under source/ too) go with the project.
+    for key in (product_doc_raw_key('p1', 'd1', 'md', workspace=None),
+                product_doc_source_key('p1', 'd1', 'pdf', workspace=None),
+                product_doc_extracted_key('p1', 'd1', workspace=None)):
+        assert key.startswith(product_docs_project_prefix('p1', workspace=None))

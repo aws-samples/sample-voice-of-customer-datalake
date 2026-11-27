@@ -34,7 +34,7 @@ function serve(extra: Record<string, RouteHandler> = {}) {
 
 function renderSession() {
   const onClose = vi.fn()
-  render(<VoiceSessionModal target={{ projectId: 'proj_1', personaId: 'p1', started: STARTED, audio: fakeAudio() }} name="Ada" onClose={onClose} />)
+  render(<VoiceSessionModal target={{ projectId: 'proj_1', subject: { kind: 'persona', personaId: 'p1' }, started: STARTED, audio: fakeAudio() }} name="Ada" onClose={onClose} />)
   const socket = FakeSocket.last()
   act(() => { socket.open() })
   return { socket, onClose }
@@ -161,5 +161,49 @@ describe('VoiceSessionModal', () => {
     expect(screen.getByRole('dialog')).toBeInTheDocument()
     act(() => { socket.close() })
     expect(await screen.findByText('The connection was lost.')).toBeInTheDocument()
+  })
+
+  it('runs the product interviewer: its label, no citation, and the answers saved as a source (7.104.00)', async () => {
+    const productSession = '/projects/proj_1/product-interview/voice-sessions/s1'
+    routeFetchApi({
+      [`POST ${productSession}/end`]: () => ({ success: true, status: 'finalizing', job_id: 'job_1' }),
+      [`GET ${productSession}`]: () => ({ session_id: 's1', kind: 'product_interview', status: 'finalized', seconds: 30, source_doc_id: 'doc_7' }),
+    })
+    const onSourceSaved = vi.fn()
+    const user = userEvent.setup()
+    render(<VoiceSessionModal target={{ projectId: 'proj_1', subject: { kind: 'product', questions: [] }, started: STARTED, audio: fakeAudio() }}
+      name="Parcel Pilot" onClose={vi.fn()} onSourceSaved={onSourceSaved} />)
+    const socket = FakeSocket.last()
+    act(() => { socket.open() })
+    relay(socket, { type: 'caption', role: 'assistant', stage: 'final', text: 'What is it called?', turn: 1 })
+    expect(screen.getByRole('dialog', { name: 'Product interview' })).toHaveTextContent(/AI interviewer.*Interviewer: What is it called\?/)
+    await user.click(screen.getByRole('button', { name: 'End' }))
+    relay(socket, { type: 'ended', reason: 'ended_by_person' })
+    expect(await screen.findByText(/Your answers are saved as a source of this project/)).toBeInTheDocument()
+    expect({ links: screen.queryAllByRole('link').length, saved: onSourceSaved.mock.calls.length > 0 }).toStrictEqual({ links: 0, saved: true })
+  })
+
+  /** A product interview the relay ended, whose saved session reads `finalized` with `saved`. */
+  function endedProductInterview(saved: Record<string, unknown>) {
+    const productSession = '/projects/proj_1/product-interview/voice-sessions/s1'
+    routeFetchApi({
+      [`POST ${productSession}/end`]: () => ({ success: true, status: 'finalizing', job_id: 'job_1' }),
+      [`GET ${productSession}`]: () => ({ session_id: 's1', kind: 'product_interview', status: 'finalized', ...saved }),
+    })
+    render(<VoiceSessionModal target={{ projectId: 'proj_1', subject: { kind: 'product', questions: [] }, started: STARTED, audio: fakeAudio() }}
+      name="Parcel Pilot" onClose={vi.fn()} />)
+    const socket = FakeSocket.last()
+    act(() => { socket.open() })
+    relay(socket, { type: 'ended', reason: 'ended_by_person' })
+  }
+
+  it('says when a product interview had nothing to save', async () => {
+    endedProductInterview({ source_doc_id: null })
+    expect(await screen.findByText('Nothing was said, so nothing was saved.')).toBeInTheDocument()
+  })
+
+  it('says when a product interview was saved past the project\'s cap of sources', async () => {
+    endedProductInterview({ source_doc_id: 'doc_7', over_source_cap: true })
+    expect(await screen.findByText(/saved as a source of this project\. Sources were added during the interview, so the project now holds more than 20/)).toBeInTheDocument()
   })
 })

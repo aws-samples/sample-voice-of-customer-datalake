@@ -46,7 +46,7 @@ describe('the engineering broker', () => {
     const id = brokerId(on);
     expect(on.findResources('AWS::Lambda::Function')[id]?.Properties).toMatchObject({
       Handler: 'engineering/connectors/handler.lambda_handler',
-      Runtime: 'python3.14',
+      Runtime: 'python3.15',
       Architectures: ['arm64'],
       MemorySize: OPTIONAL_FUNCTION_SIZES['voc-engineering-broker'],
       Environment: {

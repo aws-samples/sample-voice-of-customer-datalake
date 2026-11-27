@@ -1,6 +1,6 @@
 /**
- * @fileoverview The document page's menu bar (Document · Edit · Format · Insert · View): a row of WAI-ARIA menu
- * buttons (each its own Tab stop: Enter, Space or the arrows open it; inside, arrows / Home / End move and Escape
+ * @fileoverview The document page's menu bar (Document · Edit · Format · Insert · Review · View): a row of WAI-ARIA
+ * menu buttons (each its own Tab stop: Enter, Space or the arrows open it; inside, arrows / Home / End move and Escape
  * closes it with focus back on its button), plus the menu bar's own keys, handled once on the row:
  * - on a menu's button, ArrowLeft / ArrowRight move to the previous / next button (wrapping);
  * - inside an open menu, ArrowLeft / ArrowRight close it and open the neighbouring menu, on its first item.

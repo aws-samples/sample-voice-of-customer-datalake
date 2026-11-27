@@ -108,11 +108,20 @@ function tabDef(id: AdminTabId): TabDef {
   return TABS.find((tab) => tab.id === id) ?? onePage(id, 'admins')
 }
 
+/**
+ * Whether this viewer is shown the platform console (Workspaces → All workspaces and Deployment brand): an
+ * administrator in `platform-admins`, the two groups `POST /platform/workspaces` requires (the server checks them
+ * again, live). The workspace gate's pages offer its Create a workspace to the same people (workspace/WorkspaceChoice.tsx).
+ */
+export function seesPlatformConsole(viewer: Pick<AdminViewer, 'isAdmin' | 'isPlatformAdmin'>): boolean {
+  return viewer.isAdmin && viewer.isPlatformAdmin
+}
+
 function admits(audience: Audience, viewer: AdminViewer): boolean {
   switch (audience) {
     case 'open': return true
     case 'admins': return viewer.isAdmin
-    case 'platform': return viewer.isAdmin && viewer.isPlatformAdmin
+    case 'platform': return seesPlatformConsole(viewer)
     case 'workspace': return viewer.isAdmin && viewer.inWorkspace
     case 'agents': return viewer.isAdmin && viewer.agentsShown
   }

@@ -46,6 +46,8 @@
     "personaReviewHint": "このプロジェクトのペルソナ最大 6 人がこのバージョンを読み、本文を引用してコメントします。ドキュメントは変更しません。ペルソナ 1 人につきモデル呼び出し 1 回の費用がかかります。",
     "personaReviewDone_one": "{{count, number}} 件のコメントを追加しました (依頼したペルソナ: {{personas, number}})",
     "personaReviewDone_other": "{{count, number}} 件のコメントを追加しました (依頼したペルソナ: {{personas, number}})",
+    "personaReviewDoneCompany_one": "会社のペルソナが {{count, number}} 件のコメントを追加しました (依頼したペルソナ: {{personas, number}}、このプロジェクトには独自のペルソナがありません)",
+    "personaReviewDoneCompany_other": "会社のペルソナが {{count, number}} 件のコメントを追加しました (依頼したペルソナ: {{personas, number}}、このプロジェクトには独自のペルソナがありません)",
     "personaReviewFailed": "ペルソナのレビューに失敗しました。もう一度お試しください。"
   },
   "reviewShare": {

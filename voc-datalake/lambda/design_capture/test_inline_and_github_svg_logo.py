@@ -61,7 +61,7 @@ def _capture(table, s3, cdp):  # noqa: F811 — pytest fixture parameter named l
     deps = cw.CaptureDeps(table=table, kit=_kit(cdp, []), summarise_images=MagicMock(return_value='{"summary": "S"}'),
                           sleep=lambda _s: None, clock=iter(range(1000)).__next__, now=lambda: FETCHED,
                           s3=s3, bucket='raw', logo_fetch=raster, pick_logo=None)
-    with patch.object(cw, 'validate_url', return_value=(True, '')):
+    with patch('shared.url_policy.validate_url', return_value=(True, '')):
         result = cw.run_capture({'action': 'design_capture', 'ref_id': REF_ID}, deps)
     stored = _stored(table)
     assert stored is not None

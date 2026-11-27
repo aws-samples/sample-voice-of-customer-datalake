@@ -34,6 +34,7 @@ from aws_lambda_powertools.event_handler.api_gateway import Router
 from botocore.exceptions import BotoCoreError, ClientError
 
 from shared.agents_store import require_agents_table as _table
+from shared.aws import cancelled_by_condition, is_conditional_check_failure
 from shared.dynamo_values import text_or_none as _text
 from shared.engineering_agents import require_engineering_on as _engineering_on
 from shared.exceptions import (
@@ -123,15 +124,6 @@ def read_setup(table: Any) -> dict[str, Any]:
     return setup_view(table.get_item(Key=SETUP_KEY, ConsistentRead=True).get('Item'))
 
 
-def _cancelled_by_condition(exc: ClientError) -> bool:
-    error = exc.response.get('Error', {})
-    if error.get('Code') == 'ConditionalCheckFailedException':
-        return True
-    reasons = exc.response.get('CancellationReasons') or []
-    return error.get('Code') == 'TransactionCanceledException' and any(
-        reason.get('Code') == 'ConditionalCheckFailed' for reason in reasons)
-
-
 def save_setup(table: Any, *, revision: int, steps: Mapping[str, str], intro: str | None, by: str,
                at: datetime) -> dict[str, Any]:
     """Apply a change made from ``revision`` with its history row, in one transaction; the state as saved. Raises
@@ -164,7 +156,7 @@ def save_setup(table: Any, *, revision: int, steps: Mapping[str, str], intro: st
                      'ConditionExpression': 'attribute_not_exists(sk)'}},   # (D1: create-only)
         ])
     except ClientError as exc:
-        if _cancelled_by_condition(exc):
+        if is_conditional_check_failure(exc) or cancelled_by_condition(exc):
             raise ConflictError(CHANGED) from None
         raise
     return {'steps': merged, 'intro': saved_intro, 'revision': following, 'updated_at': when, 'updated_by': name}

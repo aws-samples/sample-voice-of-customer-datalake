@@ -563,12 +563,12 @@ class RepositoryHost(Protocol):
 
     def post_comment(self, connection_id: str, on: CommentTarget, number: int, body: str) -> str: ...
 
-    def issue_comment(self, connection_id: str, number: int, marker: str, since: int) -> str | None:
+    def issue_comment(self, connection_id: str, number: int, marker: str) -> str | None:
         """The URL of issue ``number``'s comment that is the run's own (7.71.03, ``broker.issue_marker``): since
-        7.71.04 one the connection itself wrote (its GitHub App's, its GitLab token's user's, never a system note)
-        whose body ends with ``marker``, among the comments updated at or after ``since`` (epoch seconds: the earlier
-        call's claim), as far as ``transport.FIND_PAGES`` pages of them reach; None for none. A read: whether an issue
-        comment whose outcome was unknown was made after all."""
+        7.71.04 one the connection itself wrote (its GitHub App's own bot, 7.104.00; its GitLab token's user's, never
+        a system note) whose body ends with ``marker``, among the newest comments, as far as ``transport.FIND_PAGES``
+        pages of them reach; None for none. A read: whether an issue comment whose outcome was unknown was made after
+        all."""
         ...
 
     def label_issue(self, connection_id: str, number: int, labels: tuple[str, ...]) -> tuple[str, ...]:

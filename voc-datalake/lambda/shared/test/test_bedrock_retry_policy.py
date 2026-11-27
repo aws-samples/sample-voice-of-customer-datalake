@@ -264,7 +264,7 @@ class TestThePolicyCostsTheApiHandlersNothingAtColdStart:
     diff with modules that are in both bundles by construction.
 
     Requires Python 3.10+ in the subprocess for `sys.stdlib_module_names`. The
-    runtime is 3.14 and the venv 3.13; on anything older the assertion below
+    runtime is 3.15 and the gates' venv 3.12 or newer; on anything older the assertion below
     reports the subprocess's own stderr rather than a wrong answer.
     """
 

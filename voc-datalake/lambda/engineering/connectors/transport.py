@@ -162,26 +162,28 @@ def items_of(data: object, fields: Mapping[str, tuple[str, ...]]) -> list[dict[s
 
 
 #: (7.71.03) How many pages of an issue's comments, and how many to a page, a look for the run's own comment reads
-#: (``RepositoryHost.issue_comment``): a thousand comments, never an unbounded walk. Since 7.71.04 they are the ones
-#: that can be the run's: on GitHub (oldest first) those updated since the earlier call's claim (``since``), on GitLab
-#: the newest first, so a busy issue's older comments never push the run's past the last page.
+#: (``RepositoryHost.issue_comment``): a thousand comments, never an unbounded walk. They are the newest (7.104.00, on
+#: GitLab since 7.71.04), so a busy issue's older comments never push the run's past the last page read.
 FIND_PAGES: Final = 10
 FIND_PAGE_SIZE: Final = 100
 
 
 def marked_comment(read: Callable[[str], Response], next_page: Callable[[Mapping[str, str]], str | None],
                    marker: str, ours: Callable[[dict[str, object]], bool],
-                   url: Callable[[dict[str, object]], str]) -> str | None:
+                   url: Callable[[dict[str, object]], str], *, start: str = '1',
+                   newest_first: bool = False) -> str | None:
     """The URL (``url``) of the first comment that is the run's own (7.71.04): one the connection itself wrote
     (``ours``) whose body ends with ``marker``, trailing whitespace aside (anyone may write a comment that holds it,
-    and only the run's ends with it), reading pages (``read``, from ``'1'``, the next as ``next_page`` names it) to
-    ``FIND_PAGES`` at most; None when none of them has it."""
-    page: str | None = '1'
+    and only the run's ends with it), reading pages (``read``, from ``start``, the next as ``next_page`` names it) to
+    ``FIND_PAGES`` at most, each page's comments last first with ``newest_first`` (GitHub's pages, read from the last
+    back); None when none of them has it."""
+    page: str | None = start
     for _ in range(FIND_PAGES):
         if page is None:
             break
         response = read(page)
-        for comment in list_of(response):
+        comments = list_of(response)
+        for comment in reversed(comments) if newest_first else comments:
             if isinstance(comment, dict) and str(comment.get('body') or '').rstrip().endswith(marker) and ours(comment):
                 return url(comment)
         page = next_page(response.headers)

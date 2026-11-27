@@ -182,6 +182,18 @@ class TestRoundTrip:
         assert 'DOCSHARE#' not in exported
         assert OTHER_PID not in exported
 
+    def test_export_carries_the_product_proposals_but_not_the_extract_lock(self, world):
+        pk = f'PROJECT#{PID}'
+        world['tables']['src-p'].put_item(Item={'pk': pk, 'sk': 'PRODUCT_PROPOSAL#20261126T120000000000Z#a1b2c3',
+                                                'status': 'open', 'created_by': {'sub': 'sub-src-owner'}})
+        world['tables']['src-p'].put_item(Item={'pk': pk, 'sk': 'PRODUCT_EXTRACT', 'lock_id': 'lock-1'})
+        assert _export(world, PID) == 0
+        exported = (world['bundle'] / 'items.jsonl').read_text()
+        assert 'PRODUCT_PROPOSAL#20261126T120000000000Z#a1b2c3' in exported
+        assert ('PRODUCT_EXTRACT' in exported, 'lock-1' in exported) == (False, False)
+        manifest = json.loads((world['bundle'] / 'manifest.json').read_text())
+        assert manifest['projects'][0]['skipped_credentials'] == 2
+
     def test_import_carries_every_row_type_and_object_with_subs_and_bucket_remapped(self, world):
         _export(world, PID)
         assert _import(world) == 0

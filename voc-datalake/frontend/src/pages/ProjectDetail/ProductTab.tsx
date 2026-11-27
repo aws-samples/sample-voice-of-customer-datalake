@@ -4,7 +4,12 @@
  *
  * One header (what this is, completeness, last saved, "Fill with AI assistant"),
  * the company context it inherits, the form in sections (per-field autosave), and
- * two secondary cards: internal documents and the report.
+ * beside it the Sources card (files, links and answers, and Extract), the gaps
+ * panel (the questions for the fields no source filled) and the report. While an
+ * extract's proposal is open it is reviewed full width above the form, and each
+ * field it proposes shows a "Proposed" badge (7.104.00). Above it, a proposal that
+ * closed under an accept or a dismiss says so, and a failed read of the proposal
+ * says so with Try again.
  *
  * The context is the page's shared query (`productContextQuery`): this tab, the
  * Overview card and the assistant's `update_product_context` approval (which
@@ -13,15 +18,21 @@
  */
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Loader2 } from 'lucide-react'
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { projectsApi } from '../../api/projectsApi'
+import LoadFailed from '../../components/LoadFailed/LoadFailed'
 import CompanyContextStrip from './CompanyContextStrip'
 import ProductContextForm from './ProductContextForm'
-import { DocsUpload } from './ProductDocsUpload'
+import ProductGapsPanel from './ProductGapsPanel'
+import ProductProposalReview from './ProductProposalReview'
 import ProductReportCard from './ProductReportCard'
+import ProductSourcesCard from './ProductSourcesCard'
 import ProductTabHeader from './ProductTabHeader'
 import { countFilledProductContextFields, emptyProductContext } from './productContextFields'
+import { isReviewable, proposedFields } from './productProposalModel'
+import { useProductExtract } from './useProductExtract'
+import { useGapQuestions, useProductProposal } from './useProductProposal'
 import { productContextKey, productContextQuery } from './useProjectData'
 import type { ProductContext } from '../../api/projectTypes'
 
@@ -43,14 +54,15 @@ function normalised(context: Partial<ProductContext> | undefined): ProductContex
 interface ProductTabProps {
   readonly projectId: string
   /**
-   * False for a viewer (`can_edit: false`): the form is shown disabled, the uploaded
-   * docs are listed without upload/delete, and neither the assistant button nor the
-   * report — both of which lead to a write — is offered. Each would otherwise 403.
+   * False for a viewer (`can_edit: false`): the form is shown disabled, the sources,
+   * the proposal and the questions are read-only (no upload, link, Extract, accept or
+   * answers), and neither the assistant button nor the report — both of which lead
+   * to a write — is offered. Each would otherwise 403.
    */
   readonly canEdit: boolean
   /**
-   * A report generation was started. The Background Jobs panel owns the wait;
-   * the document itself lands in the Documents tab when the job completes.
+   * A report generation or an extract was started. The Background Jobs panel owns
+   * the wait; a report lands in the Documents tab, an extract's proposal here.
    */
   readonly onJobStarted?: () => void
 }
@@ -84,21 +96,54 @@ export default function ProductTab({ projectId, canEdit, onJobStarted }: Product
     )
   }
 
+  return <ProductTabBody projectId={projectId} canEdit={canEdit} onJobStarted={onJobStarted} context={context}
+    savingField={savingField} onPersistField={(field, value) => { void persistField(field, value) }} />
+}
+
+function ProductTabBody({ projectId, canEdit, onJobStarted, context, savingField, onPersistField }: ProductTabProps & Readonly<{
+  context: ProductContext
+  savingField: keyof ProductContext | null
+  onPersistField: <K extends keyof ProductContext>(field: K, value: ProductContext[K]) => void
+}>) {
+  const { t } = useTranslation('projectDetail')
+  const proposalState = useProductProposal(projectId)
+  const extract = useProductExtract(projectId, onJobStarted)
+  const latest = proposalState.latest
+  const proposal = latest?.proposal != null && isReviewable(latest.proposal.status) ? latest.proposal : null
+  const questions = useGapQuestions(proposal, context)
+  const [typing, setTyping] = useState(false)
+  const gaps = useRef<HTMLDivElement>(null)
+  const answerQuestions = () => {
+    setTyping(true)
+    gaps.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }
   return (
     <div className="space-y-4 sm:space-y-6">
       <ProductTabHeader context={context} canEdit={canEdit} />
       <CompanyContextStrip />
+      {proposalState.isError
+        ? <LoadFailed message={t('product.review.loadFailed')} onRetry={proposalState.retry} retrying={proposalState.retrying} />
+        : null}
+      {proposalState.closed ? <p role="alert" className="text-xs text-warn">{t('product.review.result.closed')}</p> : null}
+      {latest !== undefined && proposal !== null
+        ? <ProductProposalReview latest={latest} proposal={proposal} state={proposalState} canEdit={canEdit} />
+        : null}
       <div className="grid items-start gap-4 sm:gap-6 lg:grid-cols-3">
         <div className="min-w-0 lg:col-span-2">
           <ProductContextForm
             context={context}
             readOnly={!canEdit}
             savingField={savingField}
-            onPersistField={(field, value) => { void persistField(field, value) }}
+            onPersistField={onPersistField}
+            proposedFields={proposedFields(proposal)}
           />
         </div>
         <div className="min-w-0 space-y-4">
-          <DocsUpload projectId={projectId} canEdit={canEdit} />
+          <ProductSourcesCard projectId={projectId} canEdit={canEdit} extract={extract} onAnswerQuestions={answerQuestions} />
+          <div ref={gaps}>
+            <ProductGapsPanel projectId={projectId} projectName={context.product_name} questions={questions}
+              proposalId={proposal?.proposal_id} canEdit={canEdit} extract={extract} typing={typing} onTypingChange={setTyping} />
+          </div>
           {canEdit && (
             <ProductReportCard
               projectId={projectId}

@@ -34,6 +34,13 @@ Responses API, so its allowlist is ``WEB_SEARCH_MODELS`` alone (``surface_allowl
 GPT model, and it may pick no Claude one. It resolves to its own pick, else its built-in default; the pick for all
 surfaces, the deployment's default and a model profile are Claude models and do not apply to it.
 
+One surface keeps its own default (7.104.00, owner decision 9): ``product_extract``, the Product tab's extract
+(shared/product_extract.py), resolves to its own pick, else its built-in default (Sonnet 5.5): the pick for all
+surfaces and the deployment's default do not replace it silently, a model profile still does (an e2e run is on Haiku
+5.5), and its capacity fallback is Sonnet 5 alone (``_OWN_DEFAULT_SURFACES``), never a Haiku. It picks a Claude model
+only: its request asks for adaptive thinking, an effort (``supports_effort``) and a JSON schema, which a custom model
+does not take.
+
 The deployment's own models (``-c customModels``, 7.65.00, shared/custom_models.py) are a third family: up to four
 Bedrock models, inference profiles or imported models, each offered only on the surfaces it declares, beside the
 Claude allowlist (``surface_allowlist`` is the Claude allowlist plus the custom models of that surface). Only a
@@ -99,6 +106,12 @@ DEPLOYMENT_DEFAULT = "deployment_default"
 #                       refused Flex request costs a failed round trip per call
 #                       (Haiku 4.5 on the memory surface did exactly that).
 #                       Unknown means False: set True only from the model card.
+#   effort_levels     — the `output_config.effort` levels the model takes
+#                       (7.104.00, read through supports_effort()): low…max on
+#                       every 5.x model and Opus 4.8, no `xhigh` on Sonnet 4.6
+#                       (it arrived with Opus 4.7), none on Haiku 4.5, which
+#                       refuses the field. A caller sends an effort only where
+#                       this allows it.
 #   context_window    — input context window in tokens. Read by
 #                       context_window_tokens() so callers that assemble large
 #                       prompts can derive a character budget from the model
@@ -106,6 +119,8 @@ DEPLOYMENT_DEFAULT = "deployment_default"
 #                       one (issue #231). A literal budget tuned for 200 K
 #                       tokens overflows a smaller-window model as a hard
 #                       Bedrock ValidationException.
+#: Every effort level, lowest first (Claude's ``output_config.effort``).
+_EVERY_EFFORT = ("low", "medium", "high", "xhigh", "max")
 ALLOWED_MODELS = [
     {
         "key": "opus55",
@@ -115,6 +130,7 @@ ALLOWED_MODELS = [
         "omit_temperature": True,
         "adaptive_thinking": True,
         "supports_flex": False,
+        "effort_levels": _EVERY_EFFORT,
         # Not verified on the model card yet: 200 K is the conservative choice
         # (an over-estimate would overflow the window as a hard 400).
         "context_window": 200_000,
@@ -127,6 +143,7 @@ ALLOWED_MODELS = [
         "omit_temperature": True,
         "adaptive_thinking": True,
         "supports_flex": False,
+        "effort_levels": _EVERY_EFFORT,
         # 1M per the Bedrock model card. The only consumer today is the
         # persona-generation budget on the 'documents' surface
         # (projects.persona_context_budget), which fills at most
@@ -143,6 +160,7 @@ ALLOWED_MODELS = [
         "omit_temperature": True,
         "adaptive_thinking": True,
         "supports_flex": False,
+        "effort_levels": _EVERY_EFFORT,
         "context_window": 200_000,
     },
     {
@@ -155,6 +173,7 @@ ALLOWED_MODELS = [
         # Opus 4.7+ and Sonnet 5 hard-reject it.
         "adaptive_thinking": False,
         "supports_flex": False,
+        "effort_levels": ("low", "medium", "high", "max"),
         "context_window": 200_000,
     },
     {
@@ -165,6 +184,7 @@ ALLOWED_MODELS = [
         "omit_temperature": True,
         "adaptive_thinking": True,
         "supports_flex": False,
+        "effort_levels": _EVERY_EFFORT,
         "context_window": 200_000,
     },
     {
@@ -175,6 +195,7 @@ ALLOWED_MODELS = [
         "omit_temperature": True,
         "adaptive_thinking": True,
         "supports_flex": False,
+        "effort_levels": _EVERY_EFFORT,
         "context_window": 200_000,
     },
     {
@@ -187,6 +208,7 @@ ALLOWED_MODELS = [
         # Probed: Bedrock refuses the Flex tier for Haiku 5.5, so the memory
         # surface's Flex request is sent as 'default' (converse()).
         "supports_flex": False,
+        "effort_levels": _EVERY_EFFORT,
         # Not verified on the model card yet: 200 K is the conservative choice.
         "context_window": 200_000,
     },
@@ -198,6 +220,7 @@ ALLOWED_MODELS = [
         "omit_temperature": False,
         "adaptive_thinking": False,
         "supports_flex": False,
+        "effort_levels": (),
         "context_window": 200_000,
     },
 ]
@@ -208,6 +231,7 @@ ALLOWED_MODEL_IDS = {m["id"] for m in ALLOWED_MODELS}
 _OMIT_TEMPERATURE_IDS = {m["id"] for m in ALLOWED_MODELS if m["omit_temperature"]}
 _ADAPTIVE_THINKING_IDS = {m["id"] for m in ALLOWED_MODELS if m["adaptive_thinking"]}
 _FLEX_IDS = {m["id"] for m in ALLOWED_MODELS if m["supports_flex"]}
+_EFFORT_LEVELS = {m["id"]: frozenset(m["effort_levels"]) for m in ALLOWED_MODELS}
 _CONTEXT_WINDOWS = {m["id"]: m["context_window"] for m in ALLOWED_MODELS}
 _LABELS = {m["id"]: m["label"] for m in ALLOWED_MODELS}
 
@@ -293,6 +317,9 @@ SURFACE_DEFAULTS = {
     "agent_worker": _SONNET55,
     "agent_reviewer": _OPUS55,
     "agent_persona": _SONNET55,
+    # The Product tab's extract of a product description from its sources (7.104.00, shared/product_extract.py): its
+    # own entry in the picker, resolved to its own pick or this default only (_OWN_DEFAULT_SURFACES).
+    "product_extract": _SONNET55,
     # A review page read from the Amazon Bedrock web search index: an OpenAI GPT model (WEB_SEARCH_MODELS below).
     "web_reviews_search": _GPT56LUNA,
 }
@@ -302,7 +329,7 @@ DEFAULT_SURFACE = "default"
 # short description key the frontend translates under `aiModel.surfaces.<key>`.
 # The last is offered only while a deployed plugin reads with it (web_search_offered()).
 PICKER_SURFACES = (
-    "chat", "documents", "prototype", "enrichment", "utility",
+    "chat", "documents", "product_extract", "prototype", "enrichment", "utility",
     "memory", "agent_orchestrator", "agent_worker", "agent_reviewer", "agent_persona",
     "web_reviews_search",
 )
@@ -341,6 +368,18 @@ _OWN_FAMILY_SURFACES: dict[str, tuple[frozenset[str], tuple[str, ...]]] = {
     WEB_SEARCH_SURFACE: (WEB_SEARCH_MODEL_IDS, WEB_SEARCH_FALLBACK_ORDER),
 }
 
+#: The Product tab's extract (7.104.00, owner decision 9): a Claude surface that resolves to its own pick, else its
+#: built-in default, and never to the pick for all surfaces or the deployment's default; a model profile still applies.
+PRODUCT_EXTRACT_SURFACE = "product_extract"
+#: Such a surface's capacity fallback order (its default first): Sonnet 5.5, then Sonnet 5 only, never a Haiku. Its
+#: allowlist is the Claude one alone: its request takes adaptive thinking, an effort and a JSON schema.
+_OWN_DEFAULT_SURFACES: dict[str, tuple[str, ...]] = {
+    PRODUCT_EXTRACT_SURFACE: (_SONNET55, _SONNET5),
+}
+#: The model a declined request is asked again on, once, per surface (7.104.00, owner decision 11): Bedrock has no
+#: server-side fallbacks, so the caller asks again itself. Only the product extract does.
+REFUSAL_FALLBACKS: dict[str, str] = {PRODUCT_EXTRACT_SURFACE: _SONNET5}
+
 
 def surface_allowlist(surface: str) -> AbstractSet[str]:
     """The model ids ``surface`` may pick: the web search surface's GPT models, else the Claude allowlist plus the
@@ -348,8 +387,18 @@ def surface_allowlist(surface: str) -> AbstractSet[str]:
     family = _OWN_FAMILY_SURFACES.get(surface)
     if family is not None:
         return family[0]
+    if surface in _OWN_DEFAULT_SURFACES:
+        return ALLOWED_MODEL_IDS
     custom = custom_ids_for(surface)
     return ALLOWED_MODEL_IDS | custom if custom else ALLOWED_MODEL_IDS
+
+
+def keeps_own_default(surface: str) -> bool:
+    """Whether ``surface`` on Automatic keeps its own default when the pick for all surfaces or the deployment's default
+    is set (GET /settings/model ``own_default``, the settings page's "Automatic → …"): the web search surface (its own
+    family) and the product extract (``_OWN_DEFAULT_SURFACES``); every other surface runs the pin.
+    ``get_active_model_id`` resolves by the same rule."""
+    return surface in _OWN_FAMILY_SURFACES or surface in _OWN_DEFAULT_SURFACES
 
 
 def web_search_offered() -> bool:
@@ -458,6 +507,8 @@ def fallback_chain(primary: str, surface: str = DEFAULT_SURFACE) -> tuple[str, .
 
     A surface with its own family (the web search surface) walks its own order
     instead (WEB_SEARCH_FALLBACK_ORDER), and a model profile does not apply to it.
+    A surface with its own default (the product extract) walks its own order
+    (``_OWN_DEFAULT_SURFACES``) unless a model profile is in force.
     """
     family = _OWN_FAMILY_SURFACES.get(surface)
     profile = active_profile()
@@ -467,6 +518,8 @@ def fallback_chain(primary: str, surface: str = DEFAULT_SURFACE) -> tuple[str, .
         candidates = [primary, surface_default(surface), *family[1]]
     elif profile_chain is not None:
         candidates = [apply_model_profile(primary), *profile_chain]
+    elif surface in _OWN_DEFAULT_SURFACES:
+        candidates = [primary, surface_default(surface), *_OWN_DEFAULT_SURFACES[surface]]
     else:
         candidates = [primary, surface_default(surface), *MODEL_FALLBACK_ORDER]
     chain: list[str] = []
@@ -475,6 +528,16 @@ def fallback_chain(primary: str, surface: str = DEFAULT_SURFACE) -> tuple[str, .
         if allowed and model and model not in chain:
             chain.append(model)
     return tuple(chain)
+
+
+def refusal_fallback(surface: str, model_id: str) -> str | None:
+    """The model ``surface`` asks again after ``model_id`` declined (under a model profile, the profile's), or None:
+    the surface has none, or it is the model that declined."""
+    fallback = REFUSAL_FALLBACKS.get(surface)
+    if fallback is None:
+        return None
+    fallback = apply_model_profile(fallback)
+    return None if fallback == model_id else fallback
 
 
 def omits_temperature(model_id: str) -> bool:
@@ -487,6 +550,12 @@ def uses_adaptive_thinking(model_id: str) -> bool:
     """True when the model runs adaptive thinking always-on and rejects an
     explicit extended-thinking budget (skip the `thinking` request field)."""
     return model_id in _ADAPTIVE_THINKING_IDS
+
+
+def supports_effort(model_id: str, level: str) -> bool:
+    """True when the model takes ``output_config.effort`` at ``level`` (its ``effort_levels``). Never a custom model
+    or an unknown id: a refused effort costs a failed request, a missing one only the model's own default."""
+    return level in _EFFORT_LEVELS.get(model_id, frozenset())
 
 
 def takes_thinking_budget(model_id: str) -> bool:
@@ -639,7 +708,7 @@ def _allowlisted(model_id, allowlist: AbstractSet[str] = ALLOWED_MODEL_IDS) -> s
 
 
 def _own_family_model(surface: str, allowlist: AbstractSet[str]) -> str:
-    """A surface with its own family: its own pick when it is in ``allowlist``, else its built-in default."""
+    """A surface with its own family or default: its own pick when it is in ``allowlist``, else its built-in default."""
     surfaces = _load_settings().get("surfaces")
     picked = _allowlisted(surfaces.get(surface), allowlist) if isinstance(surfaces, dict) else None
     return picked or surface_default(surface)
@@ -651,7 +720,8 @@ def get_active_model_id(surface: str = DEFAULT_SURFACE) -> str:
     Never raises. Precedence: active model profile (every surface) >
     per-surface override > legacy global override > the deployment's default >
     built-in surface default > BEDROCK_MODEL_ID. The web search surface reads
-    only its own pick, then its default (the rest are Claude models).
+    only its own pick, then its default (the rest are Claude models); the product
+    extract its own pick, then its default, under the active profile's model.
     """
     family = _OWN_FAMILY_SURFACES.get(surface)
     if family is not None:
@@ -659,6 +729,8 @@ def get_active_model_id(surface: str = DEFAULT_SURFACE) -> str:
     forced = profile_model_id()
     if forced:
         return forced
+    if surface in _OWN_DEFAULT_SURFACES:
+        return _own_family_model(surface, ALLOWED_MODEL_IDS)
     settings = _load_settings()
     surfaces = settings.get("surfaces")
     if isinstance(surfaces, dict):

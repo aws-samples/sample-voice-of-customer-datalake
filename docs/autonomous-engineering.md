@@ -489,7 +489,7 @@ decision): the connection's token reads this project alone, so the broker cannot
 - The CI file, `ci_config_path` from the project: an answer without the key is unresolved; an empty value is
   `.gitlab-ci.yml`; a file of another project (`<file>@<namespace>/<project>`), this project by `@`, a URL, or a path
   that climbs out is refused.
-- Each CI file is parsed, not scanned (`connectors/ci_yaml.py`: PyYAML 6.0.3's pure-Python composer, from the
+- Each CI file is parsed, not scanned (`connectors/ci_yaml.py`: PyYAML 6.0.4's pure-Python composer, from the
   broker's own `engineering-ci-deps` layer, held strict; JSON is YAML too). Before it is read, input that is not
   UTF-8, a byte-order mark, a carriage return without its line feed, U+0085, U+2028, U+2029 or U+FFFD refuses; in it,
   a second document, an anchor or an alias, a merge key (`<<`), a tag other than the standard ones and `!reference`
@@ -559,7 +559,7 @@ branch, being refused:
 | Role | Operations |
 |---|---|
 | every agent | read files, history, issues and pull requests through the broker; checkouts come from the checkout cache, which its writer fills with the connection's read-only token; since 7.52.00 the run's connection's accepted tenets (`read` of kind `tenets`, target `accepted`: the store's, never the repository's file) |
-| issue understander, PR reviewer | post a comment on the run's own issue or pull request (from the run's record); on the issue once per run since 7.71.02 (its claim is `issue#<n>#post_comment`, no agent, attempt or digest: a second understander of the run gets the first comment's URL back, where the first live Bug fixer run's two understanders each commented). Since 7.71.03 the issue comment ends with the run's hidden marker (`<!-- voc-engineering-run:<run id> -->`), and a call whose earlier one never answered (a host error, or a crash between its claim and its outcome) waits until that call is over (`broker.STALE_CLAIM_SECONDS`, 5 minutes), then looks for the marker on the issue and posts only when the host has none. Since 7.71.04 the look takes only the connection's own comment (on GitHub one its App posted, `performed_via_github_app.id`; on GitLab one of its token's user, never a system note) whose body ends with the marker, so a comment anyone copies the marker into is never taken for the run's; and it reads only the comments that can be the run's: on GitHub those updated since that call's claim (`since`, a minute before it), on GitLab the newest first, ten pages of a hundred at most |
+| issue understander, PR reviewer | post a comment on the run's own issue or pull request (from the run's record); on the issue once per run since 7.71.02 (its claim is `issue#<n>#post_comment`, no agent, attempt or digest: a second understander of the run gets the first comment's URL back, where the first live Bug fixer run's two understanders each commented). Since 7.71.03 the issue comment ends with the run's hidden marker (`<!-- voc-engineering-run:<run id> -->`), and a call whose earlier one never answered (a host error, or a crash between its claim and its outcome) waits until that call is over (`broker.STALE_CLAIM_SECONDS`, 5 minutes), then looks for the marker on the issue and posts only when the host has none. Since 7.71.04 the look takes only the connection's own comment (on GitHub one its App posted, `performed_via_github_app.id`, and since 7.104.00 by the App's own bot, `user.type` `Bot` and the App's `<slug>[bot]` login, never a person commenting through the App with a user token; on GitLab one of its token's user, never a system note) whose body ends with the marker, so a comment anyone copies the marker into is never taken for the run's; and it reads the newest comments first (on GitHub, since 7.104.00, the first page, then from the last page back; 7.71.04's `since`, from the earlier call's claim, missed a comment once its claim was taken again twice), ten pages of a hundred at most |
 | issue understander | put its triage labels on the run's own issue (7.50.00, `label_issue`: `{number, labels}`, only `voc-triage/bug\|feature\|investigation` and `voc-severity/s1`–`s4`, at most one of each, once per run since 7.71.02, `issue#<n>#label_issue`: a later call gets the first labels back, `{number, labels}`, and since 7.71.04 the tool compares them with the ones it asked: other labels are "labels already set: …" (the run's issue had its labels from an earlier call), the same ones that it labelled the issue (7.71.03's `set_by`, whose call put them, is gone); one whose earlier call never answered is put again 5 minutes on, labels being idempotent on the host; no dial: a label changes no code) |
 | committer | push its submitted patch, as one commit, to the agent's branch (`push_bundle`: `{branch, patch, tree_hash, message}`; since 7.71.02 the harness fills in the patch, the tree and the run's branch, since 7.71.03 `voc-agent/<run id>-fix` (one level under `voc-agent/`: "The run's branch", below), and the model gives the message: [The flow a run follows](#the-flow-a-run-follows)) |
 | PR author | open or update the agent's pull request (ready for review, or a draft when the run's flow says `pr: draft`), from the run's branch, which the harness fills in since 7.71.02; on a fork connection (7.57.00) it goes on to the run's upstream pull request, and `open_upstream_pr` is that step on its own ([Any public repository](#any-public-repository-75700)) |
@@ -603,8 +603,9 @@ The approved docs' pull request has its branch one level under `voc-agent/` too 
 that ruleset protects, so the broker refused its push with 409. A GitLab branch-name push rule must take it too
 (`voc-agent/`, then one name with no `/`, as a run's). A docs pull request recorded from a two-level branch is still
 answered as it was recorded (`already_published`); docs pushed on one before 7.71.04 whose pull request never opened
-have it opened from that branch, the one their push claim names
-([The knowledge docs pull request](#the-knowledge-docs-pull-request-75200)).
+have it opened from that branch, the one their push claim names, once it is matched whole as the docs write's own of
+that kind and version, at one level or two (7.104.00, `write_policy.pushed_docs_branch`: any other branch on a claim
+opens no pull request) ([The knowledge docs pull request](#the-knowledge-docs-pull-request-75200)).
 
 **The target's CI.** A push to an agent branch can start the repository's own pipelines, and those run scripts an
 agent can change. So, on unprotected branches, the repository's pipelines must get nothing worth taking: CI secrets
@@ -1959,8 +1960,9 @@ started from a saved flow follows that flow's steps; the flow is the plan.
   commit reviewer's task (`post_task` refuses one without it), and leaves a task that ended at a person (a review that
   could not review, a gate that stopped) to the person: only a NO-GO or a blocking finding starts a revision.
   `coordinator@8` (7.71.04) leaves it to the person until they decide: their Resume at its step tries it again, and the
-  coordinator launches the task the Resume posted again, or posts it again itself when the flow lists the step ready;
-  it says where the flow ended in the flow's own words (ready for review, or a draft).
+  coordinator launches the task the Resume posted again; it says where the flow ended in the flow's own words (ready
+  for review, or a draft). `coordinator@9` (7.104.00) no longer posts such a task again itself: the Resume's post is the
+  one rule (8 also said to post it when the flow listed the step ready).
 - **The board's check.** In a run that follows a flow, a post names a live step (`flow_step`), for a role that step
   takes, from a poster it allows: the run coordinator for any live step, another agent only on a board step that
   names it a poster (within the board's own rule of who posts for whom), a person for any live step or for a task of
@@ -1993,10 +1995,17 @@ started from a saved flow follows that flow's steps; the flow is the plan.
   step blocked, or one stopped), the supervisor's tick puts the run at `needs_human` with the step named
   (`flow:<step>`) and holds its agents (checkpointed, then paused), as for a spent budget. A person's Resume there is
   their decision on the step, recorded with who and when: it passes a decision point or a stopped step, and gives a
-  blocked one another try. One decision is one more failed task allowed on the step: on a step after a map, that is
-  one more on each of its shards, so one Resume retries every shard that failed once. A run already waiting at the
-  step's decision point is not asked again; its agents stay held. A NO-GO of the quality gate takes its `fail` arrow
-  to a person; nothing reaches the pull request then.
+  blocked one another try. Since 7.104.00 a step is blocked only by a task that ended without being done after its
+  latest decision (the decision's `at` against the task's `updated_at`, which never changes once the task has ended,
+  `conductor.decided_since`). The decision is recorded in whole seconds and covers through the end of its second: a
+  task that ends without being done in the rest of that second, after the Resume, is covered too and does not block
+  the step. That window is accepted because the run's agents are held while it waits at the person, and the Resume
+  continues them only an instant before it records the decision. So one decision covers every failed task the
+  step had when it was decided, on every shard after a map: a gate or a board with two tasks at a person tries both
+  again on one Resume, one Resume retries every shard that failed, and a shard whose task fails again after it blocks
+  the step again. A decision recorded before 7.104.00 is read the same way (until then one decision was one more failed
+  task allowed). A run already waiting at the step's decision point is not asked again; its agents stay held. A NO-GO of the quality gate takes its `fail`
+  arrow to a person; nothing reaches the pull request then.
 - **The gate's verdict is the GO ledger's** (`flow/ledger.py`, the one rule the broker's `has_go` uses too): the
   final-go task that ended last decides, and it is a GO only when it ended done and its own gate record reads as a
   GO (verdict GO, the final go's GO, no stop). The same rule over a different set of tasks: the broker's GO check
@@ -2078,32 +2087,45 @@ of the run is live or moving and its coordinate task ended done, the supervisor'
 flow finished (`Supervisor._coordinator_done`, `RunControl.end_done`: its `RUNLOG#` row the supervisor's), and settling
 then releases it, starts its retrospective (triage end, scorecards) and, with nothing listed, switches the rule off;
 the agents' heartbeat then ends an engineering agent's run completed and frees its lock, at its next tick (every 15
-minutes), or (7.71.04) at once when the run workspace reads the ended run (`agents_handler.get_engineering_run`, as
-a Stop does: the runtime's own role writes nothing of voc-agents' runs). A coordinator that finished on a flow that
+minutes; a Stop ends it at once; the runtime's own role writes nothing of voc-agents' runs, and since 7.104.00 the run
+workspace's read of an ended run writes nothing either). A coordinator that finished on a flow that
 did not sends the run to a person at the next tick: (7.71.04) at the decision point its flow waits at
 (`flow:<step>`), else (a flow still running, or no flow) the coordinator's. 7.71.03's 90-second wait for a flow
 recorded finished after the coordinator's finish is gone: the flow is the board's record, written before its writers'
 sessions end. It waits instead while a person's Resume since that coordinator started may still launch the next one
 (its launch window, `COORDINATOR_LAUNCH_SECONDS`, or the fill chain's when the Resume filled the checkout cache first).
-A person's whole-run Resume of such a run, and only that (7.71.04: never a start's retry or a board launch's fill),
-reopens its coordinate task at the next attempt for a new `coordinator-<n>` (the board store's re-post with
-`reopen`), so the run is planned again; a Resume whose launch waits for a fill hands that on with it (`resumed`).
+A person's whole-run Resume of such a run, and only that (never a start's retry or a board launch's fill), reopens
+its coordinate task at the next attempt for a new `coordinator-<n>` (the board store's re-post with `reopen`), so the
+run is planned again: the launch reopens it only when the run's last Resume (`resumed_at`) is not before the task
+ended done (7.104.00, the rule a step's decision covers its failed tasks by, with the same one-second window:
+`resumed_at` is the run's whole-second `resumed_epoch`, which the launch window reads too, so a Resume in the second
+the task ended counts as after it; 7.71.04 carried a `resumed` flag on the launch event instead), whether the Resume
+launches or the fill it handed on does.
 Before 7.71.02, no code ended a run done: the first live Bug fixer run stayed active, the rule ticking every minute,
 its agent's lock held.
 
 *Built* (7.71.04): a person's Resume at a step whose task went to a person tries the step again. At a flow step's
 decision point (`flow:<step>`) the Resume records the person's decision on the step, and then posts each task of the
-step that ended needing a person again (`runtime/step_retry.py`): the newest task of each of the step's works (its
-spec) that ended `needs_human` with none of that work done or under way, as it was (its role, title, spec with the
-same submitted patch, parent, priority and shard), as a new task the person posted (`human:<subject>`), through the
-board's own checks (the step must be live after the decision; one task at a time for an agent step). The coordinator,
-continued or new, launches it; a refused post is logged and the coordinator posts it itself (the conductor says so on
-a step ready again after a decision, and the coordinator's skill, version 8, says a task at a person is the person's
-until they decide). A task that failed stays the coordinator's to post again. On b- the committer's task of run
+step that ended needing a person again (`runtime/step_retry.py`): for each of the step's works, its newest task when
+it ended `needs_human` with none of that work done or under way, as it was (its role, title, spec with the same
+submitted patch, parent, priority and shard), as a new task the person posted (`human:<subject>`), through the
+board's own checks (the step must be live after the decision; one task at a time for an agent step). A work is an
+agent step's shard (7.104.00: one task at a time, so only its newest is posted again, whatever spec an earlier one
+named), a gate's or a board's spec. After a map each shard is its own work: a shard whose task ended at a person is
+posted again while a sibling shard's task is still under way (its agent held while the run waited, then resumed),
+and a shard with a task under way is left alone; a gate's or a board's tasks run together, so none of them is posted
+again while one is under way. Every whole-run Resume (7.104.00) also posts again, as the resuming person's post
+(they act now; each earlier decision keeps its own decider in its record), the task at a person of each other agent
+step that takes a task now (ready, or after a map running with that shard left), which only a decision allows:
+a step decided before 7.71.04, which a stored coordinator skill of version 7 left alone, or a shard an earlier
+Resume's post left out. The Resume reads the run's tasks once, for the plan and for what to post. The coordinator,
+continued or new, launches it; a refused post is logged (the coordinator's skill, version 9, says a task at a person
+is the person's until they decide). A task that failed stays the coordinator's to post again. On b- the committer's task of run
 01M86YEPB6VFP9XEG1M9HTHABV ended needing a person at `flow:commit`; a Resume reopened its coordinator, which read the
 task as the person's, posted nothing and finished, and the run went straight back to a person. An agent's Restart
 (fresh) or Resume of a task that ended needing a person answers 409 saying so: its agent's session ended with it, and
-the run's Resume is what tries it again.
+the run's Resume, while the run waits at the task's step, is what tries it again; any other signal to that agent (a
+Save, a Pause, a Shut down, a Stop now) answers that the task moved on (7.104.00).
 
 *Planned*: the conductor reading the dial itself (AI-assisted: a person's go after the plan; Human-driven: the flow
 stops at the proposal), the memory steps, the learning loop and self-improvement as flow steps, shard
@@ -2189,7 +2211,7 @@ and the same isolation (a microVM per agent, no credential in it but its own sho
 `bedrock-agentcore` (1.44: `InvokeAgentRuntime`, `InvokeAgentRuntimeCommand`, `StopRuntimeSession`; a test reads the
 model) and of `bedrock-agentcore-control` (its `CreateAgentRuntime` has `resourceConfigurations` and
 `platformVersion`), and the stack's resource is the pinned aws-cdk-lib's `AWS::BedrockAgentCore::Runtime`, whose L1
-has no `ResourceConfigurations` yet (set as a property override). Not yet checked, because no session has run yet (the
+has `ResourceConfigurations` typed since 2.277.0 (a property override before 7.104.00). Not yet checked, because no session has run yet (the
 first run, in a test account, waits for the owner): the answers' shapes (the runner's JSON in an invocation's
 `response`; the command's event stream), whether the CloudFormation resource takes `ResourceConfigurations`, the IAM
 action and ARN names (`bedrock-agentcore:InvokeAgentRuntime`, `…:InvokeAgentRuntimeCommand`,
@@ -2379,7 +2401,7 @@ microVM), from its language's image, with its own sparse checkout from the cache
   Runtime requires all agent runtimes to use MMDSv2 (MicroVM Metadata Service Version 2). The service rejects
   invocations targeting runtimes without `metadataConfiguration` set, or with `requireMMDSV2` set to `false` or
   `null`" ([troubleshooting](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/runtime-troubleshooting.html)).
-  The stacks cannot set it: aws-cdk-lib 2.275.0's `CfnRuntime` has no such property, and CloudFormation's own
+  The stacks cannot set it: aws-cdk-lib 2.278.0's `CfnRuntime` has no such property, and CloudFormation's own
   `AWS::BedrockAgentCore::Runtime` schema in us-west-2 has no `MetadataConfiguration` (a property override would fail
   the deploy's validation). It holds anyway: the `b-` python runtime, made by these stacks, reads
   `metadataConfiguration: {requireMMDSV2: true}` (`get-agent-runtime`, read-only), so the service sets it on the

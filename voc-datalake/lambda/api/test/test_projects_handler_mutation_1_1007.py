@@ -477,7 +477,7 @@ class TestTheDuplicateTarget:
 # ---------------------------------------------------------------------------
 
 JOB_FIELDS = ('status', 'current_step', 'job_type', 'created_at', 'updated_at', 'completed_at',
-              'error', 'result', 'initiated_by')
+              'error', 'error_code', 'result', 'initiated_by')
 
 
 @pytest.fixture

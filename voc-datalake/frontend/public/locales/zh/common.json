@@ -153,7 +153,8 @@
     "picker": {
       "title": "选择工作区",
       "intro": "你是多个工作区的成员。请选择要打开的工作区。",
-      "lastUsed": "上次使用"
+      "lastUsed": "上次使用",
+      "create": "新建工作区"
     },
     "notFound": {
       "title": "未找到工作区",
@@ -635,7 +636,7 @@
     "expiryDays_one": "{{count, number}} 天",
     "expiryDays_other": "{{count, number}} 天",
     "projectLabel": "项目",
-    "projectHint": "可选：将项目工具限定在一个项目内。",
+    "projectHint": "可选：将项目工具限定在一个项目内。如此限定的令牌无法使用反馈表单工具，包括其项目的验证表单。读取反馈时会省略已保存的提交者邮箱和姓名、表单的联系方式回答以及收件箱邮件的发件人；其他内容（例如在开放式回答中填写的邮箱）遵循来源的个人数据政策。",
     "projectAll": "我的所有项目",
     "mintFailed": "无法创建令牌。请检查字段后重试。",
     "minting": "正在创建…",

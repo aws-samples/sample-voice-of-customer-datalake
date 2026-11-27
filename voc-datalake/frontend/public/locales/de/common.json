@@ -153,7 +153,8 @@
     "picker": {
       "title": "Arbeitsbereich auswählen",
       "intro": "Sie sind Mitglied in mehreren Arbeitsbereichen. Wählen Sie den aus, den Sie öffnen möchten.",
-      "lastUsed": "Zuletzt verwendet"
+      "lastUsed": "Zuletzt verwendet",
+      "create": "Neuen Arbeitsbereich anlegen"
     },
     "notFound": {
       "title": "Arbeitsbereich nicht gefunden",
@@ -635,7 +636,7 @@
     "expiryDays_one": "{{count, number}} Tag",
     "expiryDays_other": "{{count, number}} Tagen",
     "projectLabel": "Projekt",
-    "projectHint": "Optional: Projekt-Tools auf ein Projekt beschränken.",
+    "projectHint": "Optional: Projekt-Tools auf ein Projekt beschränken. Ein so beschränktes Token erhält keine Tools für Feedback-Formulare, auch nicht für das Validierungsformular seines Projekts. Seine Feedback-Abfragen lassen die gespeicherte E-Mail-Adresse und den Namen der Absender, die Kontaktantworten von Formularen und den Absender einer E-Mail an den Posteingang weg; alles andere, etwa eine in eine offene Antwort eingegebene E-Mail-Adresse, folgt der Richtlinie der Quelle für personenbezogene Daten.",
     "projectAll": "Alle meine Projekte",
     "mintFailed": "Das Token konnte nicht erstellt werden. Prüfen Sie die Felder und versuchen Sie es erneut.",
     "minting": "Wird erstellt…",

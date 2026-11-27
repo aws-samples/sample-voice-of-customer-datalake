@@ -234,7 +234,7 @@ The bases are listed below.
 
 | Resource | Base name / value |
 |----------|-------------------|
-| Lambda | `voc-ingestor-<id>`, Python 3.14, arm64, handler `handler.lambda_handler`, manifest timeout and memory, the `ingestion-deps` layer (`requests`, `aws-lambda-powertools`, `beautifulsoup4`, app-review scrapers) |
+| Lambda | `voc-ingestor-<id>`, Python 3.15, arm64, handler `handler.lambda_handler`, manifest timeout and memory, the `ingestion-deps` layer (`requests`, `aws-lambda-powertools`, `beautifulsoup4`, app-review scrapers) |
 | Bundle | `plugins/<id>/ingestor/*` at the root, plus `plugins/_shared/` as `_shared` and `lambda/shared/` as `shared`; tests and caches pruned |
 | Log group | `/aws/lambda/voc-ingestor-<id>`, 30-day retention |
 | Schedule | `voc-ingest-<id>-schedule`, created disabled; 2 delivery retries, events older than 1 hour dropped to `voc-ingest-schedule-dlq` |
@@ -302,7 +302,7 @@ beyond the capabilities above needs a change to the stack code.
 
 | Resource | Value |
 |----------|-------|
-| Lambda | `voc-webhook-<id>`, Python 3.14, arm64, 30-second timeout, the manifest's `infrastructure.webhook.memory` (default 256 MB; `github_issues` 512 MB), the API layer |
+| Lambda | `voc-webhook-<id>`, Python 3.15, arm64, 30-second timeout, the manifest's `infrastructure.webhook.memory` (default 256 MB; `github_issues` 512 MB), the API layer |
 | Bundle | `plugins/<id>/webhook/*` plus `_shared` and `shared`, like an ingestor |
 | Route | `/webhooks/<id>` and `/webhooks/<id>/{ws}` (a workspace's endpoint, below) for each manifest method, no authorizer, no CORS preflight |
 | Throttle | 10 requests per second, burst 20, per route (the `{ws}` route is one more bucket, shared by every workspace) |

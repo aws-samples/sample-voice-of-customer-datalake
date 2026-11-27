@@ -279,6 +279,75 @@ class TestIsConditionalCheckFailure:
             assert is_conditional_check_failure(error) is False, response
 
 
+class TestCancellationCodes:
+    """(7.104.00, F5) The one reader of a cancelled transaction's codes, in place of four copies that rendered an
+    entry with no code as None, 'None' or '': a fine entry and one with no code are both None, in the entries'
+    order, and an error with no list of reasons has none."""
+
+    @staticmethod
+    def _cancelled(reasons: Any) -> Exception:
+        from botocore.exceptions import ClientError
+        response: Any = {'Error': {'Code': 'TransactionCanceledException', 'Message': 'cancelled'}}
+        if reasons is not ...:
+            response['CancellationReasons'] = reasons
+        return ClientError(response, 'TransactWriteItems')
+
+    def test_each_entry_is_its_code_and_a_fine_one_or_one_without_a_code_is_none(self):
+        from shared.aws import CONDITION_FAILED, TRANSACTION_CONFLICT, cancellation_codes
+
+        error = self._cancelled([{'Code': 'ConditionalCheckFailed'}, {'Code': 'None'}, {'Code': 'TransactionConflict'},
+                                 None, {}, {'Code': ''}, {'Code': 5}, 'ThrottlingError', {'Code': 'ThrottlingError'}])
+        assert cancellation_codes(error) == [CONDITION_FAILED, None, TRANSACTION_CONFLICT, None, None, None, None,
+                                             None, 'ThrottlingError']
+
+    def test_an_empty_or_non_text_code_reads_as_a_fine_entry_which_two_callers_rely_on(self):
+        # (7.104.00 review, Q2) DynamoDB names a code on every entry ('None' for a fine one), so '' and a code that is
+        # not text never come from it; a double's '' reads as fine, None, and so differs from the readers it replaced
+        # in two callers. shared/document_versions.py _transient: a cancellation whose every entry is '' has no code
+        # read, so it is transient, as one with no reasons is (the old reader took '' for a code: not transient).
+        # engineering/runtime/sessions.py's cost write: an own-row entry '' then the agent's failed condition reads
+        # [None, CONDITION_FAILED], the agent row missing (the old reader took '' for not fine and raised).
+        from botocore.exceptions import ClientError
+
+        from shared.aws import CONDITION_FAILED, cancellation_codes
+        from shared.document_versions import _transient
+
+        def transient(reasons: Any) -> bool:
+            error = self._cancelled(reasons)
+            assert isinstance(error, ClientError)
+            return _transient(error)
+
+        assert cancellation_codes(self._cancelled([{'Code': ''}, {'Code': CONDITION_FAILED}]))[:2] == [
+            None, CONDITION_FAILED]
+        assert cancellation_codes(self._cancelled([{'Code': 7}])) == [None]
+        assert transient([{'Code': ''}, {'Code': ''}]) is True
+        assert transient(...) is True
+        assert transient([{'Code': ''}, {'Code': CONDITION_FAILED}]) is False
+
+    def test_an_error_with_no_list_of_reasons_has_no_codes(self):
+        from botocore.exceptions import ClientError
+
+        from shared.aws import cancellation_codes
+
+        for reasons in (..., None, 'garbled', {'Code': 'ConditionalCheckFailed'}):
+            assert cancellation_codes(self._cancelled(reasons)) == [], reasons
+        assert cancellation_codes(ClientError({'Error': {'Code': 'ConditionalCheckFailedException'}}, 'PutItem')) == []
+        assert cancellation_codes(RuntimeError('boom')) == []
+        malformed = _ErrorWithResponse('boom')
+        malformed.response = 'not a dict'
+        assert cancellation_codes(malformed) == []
+
+
+    def test_a_condition_cancels_only_where_it_failed(self):
+        from shared.aws import cancelled_by_condition
+
+        error = self._cancelled([{'Code': 'None'}, {'Code': 'ConditionalCheckFailed'}, {'Code': 'TransactionConflict'}])
+        assert [cancelled_by_condition(error, index) for index in (None, 0, 1, 2, 3, -1)] == [
+            True, False, True, False, False, False]
+        conflict = self._cancelled([{'Code': 'None'}, {'Code': 'TransactionConflict'}])
+        assert (cancelled_by_condition(conflict), cancelled_by_condition(self._cancelled(...), 0)) == (False, False)
+
+
 class TestTheExtractorsCopyStaysInStep:
     """`product_doc_extractor/handler.py` keeps its OWN copy of the predicate.
 
@@ -323,3 +392,94 @@ class TestTheExtractorsCopyStaysInStep:
             'drifted. The extractor cannot import shared/ (see its module '
             'docstring), so the copy is permanent — change both, or neither.'
         )
+
+
+class TestCountOnce:
+    """shared/aws.py ``count_once`` (7.104.00 round 1, F4 and Q4): the rate-limit counters of the product extract, the
+    product sources' reads and the voice sessions, on moto (the older counters keep their own code)."""
+
+    @staticmethod
+    def _table() -> Any:
+        from shared.test.moto_tables import create_pk_sk_table
+        return create_pk_sk_table('count-once')
+
+    def test_one_counter_counts_up_to_its_limit_then_refuses_with_its_code(self):
+        from datetime import UTC, datetime
+
+        import moto
+        import pytest
+
+        from shared.aws import COUNTER_TTL, Counter, count_once
+        from shared.exceptions import TooManyRequestsError
+        now = datetime(2026, 11, 26, 12, tzinfo=UTC)
+        with moto.mock_aws():
+            table = self._table()
+            counter = Counter({'pk': 'C#a', 'sk': 'COUNT'}, 2, 'daily_limit', 'Two a day.')
+            count_once(table, counter, now)
+            count_once(table, counter, now)
+            with pytest.raises(TooManyRequestsError) as refused:
+                count_once(table, counter, now)
+            row = table.get_item(Key={'pk': 'C#a', 'sk': 'COUNT'})['Item']
+        assert (refused.value.code, refused.value.message, row['count']) == ('daily_limit', 'Two a day.', 2)
+        assert int(row['ttl']) == int((now + COUNTER_TTL).timestamp()) == int(now.timestamp()) + 2 * 86_400
+
+    def test_several_counters_count_all_or_none_and_name_the_one_at_its_limit(self):
+        from datetime import UTC, datetime
+
+        import moto
+        import pytest
+
+        from shared.aws import Counter, count_once
+        from shared.exceptions import TooManyRequestsError
+        now = datetime(2026, 11, 26, 12, tzinfo=UTC)
+        with moto.mock_aws():
+            table = self._table()
+            table.put_item(Item={'pk': 'C#b', 'sk': 'COUNT', 'count': 1})
+            counters = [Counter({'pk': 'C#a', 'sk': 'COUNT'}, 5, 'first', 'A.'),
+                        Counter({'pk': 'C#b', 'sk': 'COUNT'}, 1, 'second', 'B.')]
+            with pytest.raises(TooManyRequestsError) as refused:
+                count_once(table, counters, now)
+            untouched = table.get_item(Key={'pk': 'C#a', 'sk': 'COUNT'}).get('Item')
+            count_once(table, [*counters[:1], Counter({'pk': 'C#c', 'sk': 'COUNT'}, 1, 'third', 'C.')], now)
+            counted = [table.get_item(Key={'pk': pk, 'sk': 'COUNT'})['Item']['count'] for pk in ('C#a', 'C#c')]
+        assert (refused.value.code, untouched, counted) == ('second', None, [1, 1])
+
+    @staticmethod
+    def _cancelled(*codes: str) -> Any:
+        from botocore.exceptions import ClientError
+        table = MagicMock()
+        table.name = 'aggregates'
+        table.meta.client.transact_write_items.side_effect = ClientError(
+            {'Error': {'Code': 'TransactionCanceledException', 'Message': 'x'},
+             'CancellationReasons': [{'Code': code} for code in codes]}, 'TransactWriteItems')
+        return table
+
+    @classmethod
+    def _count_cancelled(cls, *codes: str) -> None:
+        """Two counters counted against a transaction cancelled with ``codes``, one an entry."""
+        from datetime import UTC, datetime
+
+        from shared.aws import Counter, count_once
+        counters = [Counter({'pk': 'a', 'sk': 'COUNT'}, 1, 'x', 'X'), Counter({'pk': 'b', 'sk': 'COUNT'}, 1, 'y', 'Y')]
+        count_once(cls._cancelled(*codes), counters, datetime(2026, 11, 26, tzinfo=UTC))
+
+    def test_contention_is_a_503_busy_never_a_limit_nor_a_500(self):
+        # Review Q5 (7.104.00 round 2): another request counting on the same rows at once cancelled the transaction
+        # with TransactionConflict, which propagated as a 500; product_proposals answers the same contention 503 busy.
+        import pytest
+
+        from shared.exceptions import ServiceUnavailableError
+        with pytest.raises(ServiceUnavailableError) as busy:
+            self._count_cancelled('None', 'TransactionConflict')
+        assert (busy.value.status_code, busy.value.code) == (503, 'busy')
+
+    def test_a_limit_reached_wins_over_contention_and_any_other_cancellation_propagates(self):
+        import pytest
+        from botocore.exceptions import ClientError
+
+        from shared.exceptions import TooManyRequestsError
+        with pytest.raises(TooManyRequestsError) as refused:
+            self._count_cancelled('TransactionConflict', 'ConditionalCheckFailed')
+        assert refused.value.code == 'y'
+        with pytest.raises(ClientError):
+            self._count_cancelled('None', 'ThrottlingError')

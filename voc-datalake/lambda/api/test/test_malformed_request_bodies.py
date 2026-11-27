@@ -119,6 +119,8 @@ ROUTES = [
         ('PUT', '/documents/doc-1'),
         ('PUT', '/product-context'),
         ('POST', '/product-docs/upload-url'),
+        ('POST', '/product-docs/urls'),
+        ('POST', '/product-docs/answers'),
         ('POST', '/prfaq-autofill'),
         ('POST', '/research/suggest-questions'),
         ('POST', '/documents/suggest-brief'),

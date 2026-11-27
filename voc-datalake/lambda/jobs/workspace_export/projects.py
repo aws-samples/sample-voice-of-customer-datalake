@@ -17,7 +17,9 @@ project's partitions are the ones shared/project_keys.py ``project_partitions`` 
 * ``projects_documents``: the project's own partition (kind ``project``), only the row kinds ``DOCUMENT_KINDS`` lists,
   each read by its own key condition: its ``META``, its documents (PR/FAQs, PRDs, research, custom documents,
   product reports, prototypes), its product documents' records (``PRODUCT_DOC#``: their uploads and extracted text
-  are objects under ``ws/{ws}/projects/{id}/product_docs/``, which the objects phase copies) and its product context;
+  are objects under ``ws/{ws}/projects/{id}/product_docs/``, which the objects phase copies), its product context
+  and its product proposals (``PRODUCT_PROPOSAL#``, 7.104.00: each extract's proposed fields, citations and review
+  marks); never its extract lock (``PRODUCT_EXTRACT``, a running extract's, meaningless outside its run);
 * ``personas``: the same partition's ``PERSONA#`` rows;
 * ``document_versions``: its document versions and saved revisions (kind ``versions``,
   ``WS#{ws}#DOCUMENT_VERSIONS#PROJECT#{id}``: the revisions hold customer text);
@@ -68,6 +70,7 @@ from shared.project_keys import (
     COMMENT_SERIES_PREFIX,
     PRODUCT_CONTEXT_SK,
     PRODUCT_DOC_SK_PREFIX,
+    PRODUCT_PROPOSAL_SK_PREFIX,
     SERIES_ID_RE,
     comments_pk,
     project_partitions,
@@ -114,7 +117,8 @@ _BEGINS: Final = SK_BEGINS
 #: The row kinds of the project's own partition that ``projects_documents`` reads, each by its own key condition (an
 #: allowlist: a kind a later release adds is never read until it is listed here).
 DOCUMENT_KINDS: Final = ((_EQUALS, 'META'), (_EQUALS, PRODUCT_CONTEXT_SK),
-                         *((_BEGINS, prefix) for prefix in (*DOCUMENT_SORT_KEY_PREFIXES, PRODUCT_DOC_SK_PREFIX)))
+                         *((_BEGINS, prefix) for prefix in (*DOCUMENT_SORT_KEY_PREFIXES, PRODUCT_DOC_SK_PREFIX,
+                                                            PRODUCT_PROPOSAL_SK_PREFIX)))
 PERSONA_KIND: Final = (_BEGINS, 'PERSONA#')
 #: A project job's rows in voc-jobs (shared/jobs.py ``_job_key``).
 _JOB_KIND: Final = (_BEGINS, 'JOB#')

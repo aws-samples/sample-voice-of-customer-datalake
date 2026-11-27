@@ -79,6 +79,16 @@ function claudeRoleGrantsOfTemplate(stack: string, template: unknown): ClaudeRol
   return [...byRole].map(([role, statements]) => ({ where: `${stack}/${role}`, statements }));
 }
 
+/**
+ * The statements of `grant` that do not allow `bedrock:InvokeModelWithResponseStream`, or `['no statement']` for a
+ * grant with none: `[]` for a role that may stream every model it may invoke (the settings Lambda's model Test, the
+ * document generator's product extract).
+ */
+export function statementsWithoutStream(grant: ClaudeRoleGrant): readonly unknown[] {
+  if (grant.statements.length === 0) return ['no statement'];
+  return grant.statements.filter((s) => !s.actions.includes('bedrock:InvokeModelWithResponseStream'));
+}
+
 /** {@link claudeRoleGrantsOfTemplate} over every stack of a whole-app synth. */
 export function claudeRoleGrants(result: SynthResult): ClaudeRoleGrant[] {
   return result.stackNames.flatMap((stack) => claudeRoleGrantsOfTemplate(stack, result.template(stack)));

@@ -131,8 +131,8 @@ class GitHost:
     def post_comment(self, connection_id: str, on: CommentTarget, number: int, body: str) -> str:
         raise AssertionError(f'no comment in this flow ({connection_id}, {on} {number}, {len(body)} characters)')
 
-    def issue_comment(self, connection_id: str, number: int, marker: str, since: int) -> str | None:
-        raise AssertionError(f'no comment in this flow ({connection_id}, issue {number}, {marker}, {since})')
+    def issue_comment(self, connection_id: str, number: int, marker: str) -> str | None:
+        raise AssertionError(f'no comment in this flow ({connection_id}, issue {number}, {marker})')
 
     def branch_tree_hash(self, connection_id: str, branch: str) -> str | None:
         assert connection_id == 'conn-1'

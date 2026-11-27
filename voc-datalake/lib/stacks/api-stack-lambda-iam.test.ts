@@ -11,7 +11,7 @@ import { z } from 'zod';
 
 import { IamPolicySchema, managedPolicies, statementActions } from '../test-support/iam-statements';
 import type { IamStatement } from '../test-support/iam-statements';
-import { claudeRoleGrantOf, missingModelGrants } from '../test-support/bedrock-grants';
+import { claudeRoleGrantOf, missingModelGrants, statementsWithoutStream } from '../test-support/bedrock-grants';
 import { MODELS_PER_POLICY } from '../utils/claude-model-grant';
 import { ALLOWED_MODEL_IDS, IMAGE_MODEL_MARKETPLACE_PRODUCT_ID, imageModelArn } from '../utils/model-allowlist';
 import { allowedActions as allowedActionsOf, roleStatements as readRoleStatements } from '../test-support/iam-statements';
@@ -477,9 +477,7 @@ describe('the settings Lambda can test models and read their quotas', () => {
     // shared/model_capacity.py _streamed_tool_call: without InvokeModelWithResponseStream every tools check of a
     // model that may serve chat answers no_access. The custom models' statements are the same policies' (the stream
     // variant keeps its actions on them: lib/utils/claude-model-grant.test.ts).
-    const grant = claudeRoleGrantOf('Api', apiTemplate().toJSON(), ROLE);
-    expect(grant.statements.length).toBeGreaterThan(0);
-    expect(grant.statements.filter((s) => !s.actions.includes('bedrock:InvokeModelWithResponseStream'))).toStrictEqual([]);
+    expect(statementsWithoutStream(claudeRoleGrantOf('Api', apiTemplate().toJSON(), ROLE))).toStrictEqual([]);
   });
 
   it('holds ListServiceQuotas on * and GetServiceQuota on Bedrock quotas only, no other Service Quotas action', () => {

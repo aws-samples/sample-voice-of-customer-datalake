@@ -16,6 +16,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 from moto import mock_aws
 from moto_helpers import pk_sk_table
+from projects_handler_tables import handler_on_tables
 
 from shared.indexes import PROJECTS_BY_TYPE_INDEX
 
@@ -80,7 +81,6 @@ def call(tables, api_gateway_event, lambda_context, monkeypatch, feedback_read):
     """One request through lambda_handler as ``claims`` with every job side effect doubled."""
     import projects
     import projects_handler
-    from shared import jobs
 
     projects_table, jobs_table, aggregates_table = tables
     # Both async executors are configured, so the routes take their job path
@@ -92,12 +92,7 @@ def call(tables, api_gateway_event, lambda_context, monkeypatch, feedback_read):
         event = api_gateway_event(method=method, path=path, body=body, claims=claims,
                                   path_params={'project_id': path.split('/')[2]})
         with (
-            patch.object(projects_handler, 'get_projects_table', return_value=projects_table),
-            patch.object(projects_handler, 'get_aggregates_table', return_value=aggregates_table),
-            patch.object(projects, 'projects_table', projects_table),
-            patch.object(jobs, 'get_jobs_table', return_value=jobs_table),
-            patch.object(projects_handler, 'get_jobs_table', return_value=jobs_table),
-            patch.object(projects_handler, 'invoke_lambda_async') as invoke,
+            handler_on_tables(projects_table, jobs_table, aggregates_table) as invoke,
             patch.object(projects_handler.boto3, 'client', return_value=MagicMock()) as sfn,
             patch.object(projects, 'feedback_exists', feedback_read),
         ):

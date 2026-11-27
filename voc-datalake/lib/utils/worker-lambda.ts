@@ -1,6 +1,6 @@
 /**
  * Shared shape of the memory and autonomous-agent worker Lambdas
- * (VocProcessingStack): Python 3.14 on Graviton, the processing layer, a
+ * (VocProcessingStack): Python 3.15 on Graviton, the processing layer, a
  * 30-day log group, its own least-privilege role.
  *
  * The bundle keeps the worker tree's directory structure and puts `shared/`
@@ -112,7 +112,7 @@ function sharedWorkerCode(scope: Construct, tree: WorkerTree): lambda.Code {
 export function createWorkerFunction(scope: Construct, id: string, spec: WorkerFunctionSpec): lambda.Function {
   return new lambda.Function(scope, id, {
     functionName: spec.functionName,
-    runtime: lambda.Runtime.PYTHON_3_14,
+    runtime: lambda.Runtime.PYTHON_3_15,
     architecture: lambda.Architecture.ARM_64,
     handler: spec.handler,
     code: sharedWorkerCode(scope, spec.tree),
@@ -228,7 +228,7 @@ export function createDailyJob(scope: Construct, id: string, props: DailyJobProp
   props.kmsKey.grantEncryptDecrypt(role);
   const fn = new lambda.Function(worker, spec.fnId, {
     functionName,
-    runtime: lambda.Runtime.PYTHON_3_14,
+    runtime: lambda.Runtime.PYTHON_3_15,
     architecture: lambda.Architecture.ARM_64,
     handler: `jobs/${spec.job}/handler.lambda_handler`,
     code: jobLambdaCode(spec.job),

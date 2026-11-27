@@ -34,7 +34,7 @@ from typing import Any, Final
 from botocore.exceptions import ClientError
 
 from shared import dynamo_paging
-from shared.aws import is_conditional_check_failure
+from shared.aws import CONDITION_FAILED, TRANSACTION_CONFLICT, cancellation_codes, is_conditional_check_failure
 from shared.feedback import DATE_BASIS_REVIEW, basis_date
 from shared.radar_reads import SortRange, partition_query
 from shared.scoped_keys import scoped_pk
@@ -182,20 +182,15 @@ def store_item(table: Any, brand: str, stored: Mapping[str, Any]) -> bool:
     return False
 
 
-def _reasons(error: ClientError) -> list[str]:
-    return [str(reason.get('Code') or '') for reason in error.response.get('CancellationReasons') or []]
-
-
 def _marker_existed(error: ClientError) -> bool:
     """A cancelled transaction whose FIRST action (the marker put) failed its condition."""
     if is_conditional_check_failure(error):
         return True
-    reasons = _reasons(error)
-    return bool(reasons) and reasons[0] == 'ConditionalCheckFailed'
+    return cancellation_codes(error)[:1] == [CONDITION_FAILED]
 
 
 def _contended(error: ClientError) -> bool:
-    return any(code in ('TransactionConflict', 'ThrottlingError') for code in _reasons(error))
+    return any(code in (TRANSACTION_CONFLICT, 'ThrottlingError') for code in cancellation_codes(error))
 
 
 def sum_counter(table: Any, pk: str, start: date, end: date, attribute: str = 'count', *,

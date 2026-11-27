@@ -239,7 +239,7 @@ describe('the registry in the Lambda environment', () => {
     const app = new cdk.App({ context });
     const stack = new cdk.Stack(app, 'Env', { env: { account: ACCOUNT, region: 'us-west-2' } });
     const fn = (id: string) => new lambda.Function(stack, id, {
-      runtime: lambda.Runtime.PYTHON_3_14, handler: 'h.handler', code: lambda.Code.fromInline('def handler(e, c): pass'),
+      runtime: lambda.Runtime.PYTHON_3_15, handler: 'h.handler', code: lambda.Code.fromInline('def handler(e, c): pass'),
     });
     const caller = fn('Caller');
     const claudeOnly = fn('ClaudeOnly');

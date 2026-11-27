@@ -72,7 +72,7 @@ describe('the signing layer (cryptography)', () => {
   it('throws when a listed function does not exist, so a rename cannot drop the layer silently', () => {
     const stack = new cdk.Stack(new cdk.App({ context: { 'aws:cdk:bundling-stacks': [] } }), 'Bare');
     new lambda.Function(stack, 'ProjectsApi', {
-      runtime: lambda.Runtime.PYTHON_3_14, handler: 'h.handler', code: lambda.Code.fromInline('x = 1'),
+      runtime: lambda.Runtime.PYTHON_3_15, handler: 'h.handler', code: lambda.Code.fromInline('x = 1'),
     });
     expect(() => attachSigningLayer(stack)).toThrow(/has no function 'ProjectsAssistWorker'/);
   });
@@ -87,7 +87,7 @@ describe('the signing layer (cryptography)', () => {
   });
 
   it('pins the engineering broker\'s YAML reader exactly, in a layer of its own', () => {
-    expect(requirements(ENGINEERING_CI_LAYER_DIR)).toStrictEqual(['PyYAML==6.0.3']);
+    expect(requirements(ENGINEERING_CI_LAYER_DIR)).toStrictEqual(['PyYAML==6.0.4']);
   });
 });
 

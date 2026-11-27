@@ -2,7 +2,8 @@
  * @fileoverview Spec support for the ProductTab specs.
  *
  * Every ProductTab spec mocks the same slice of `projectsApi` — the context
- * read and write, the upload list and the report job — and
+ * read and write, the sources list, the report job and (7.104.00) the jobs list
+ * and the latest proposal, which answer none by default — and
  * differs only in which of them it drives. The mocks live here once; each spec
  * pulls the ones it reads under its own local name.
  *
@@ -19,6 +20,8 @@ export const productTabMocks = {
   updateProductContext: unknownFn(),
   listProductDocs: unknownFn(),
   generateProductReport: unknownFn(),
+  getJobs: vi.fn<(...args: unknown[]) => unknown>(() => Promise.resolve({ success: true, jobs: [] })),
+  getLatestProductProposal: vi.fn<(...args: unknown[]) => unknown>(() => Promise.resolve({ proposal: null, context: {}, field_meta: {}, sources: [] })),
 }
 
 /**
@@ -38,6 +41,8 @@ export function productTabApiModule() {
       updateProductContext: (...args: unknown[]) => productTabMocks.updateProductContext(...args),
       listProductDocs: (...args: unknown[]) => productTabMocks.listProductDocs(...args),
       generateProductReport: (...args: unknown[]) => productTabMocks.generateProductReport(...args),
+      getJobs: (...args: unknown[]) => productTabMocks.getJobs(...args),
+      getLatestProductProposal: (...args: unknown[]) => productTabMocks.getLatestProductProposal(...args),
       getProductDocUploadUrl: vi.fn(),
     },
   }

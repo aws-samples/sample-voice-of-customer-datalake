@@ -11,6 +11,10 @@
  *   `keepalive` as the page goes away, so the request outlives it;
  * - `GET  /projects/voice/usage` → this month's voice minutes for the deployment (administrators).
  *
+ * The same four session routes run the Product tab's interviewer (7.104.00) under `/projects/{id}/product-interview/`:
+ * the person answers an AI interviewer's questions about their own product, and at the end the transcript becomes one
+ * interview source of the project (`source_doc_id`), never a document. Its start sends the questions to ask.
+ *
  * Every answer is parsed leniently: a field the server drops or a later release adds never breaks the page.
  *
  * @module api/voiceSessionsApi
@@ -38,6 +42,8 @@ const offerSchema = z.object({
   minutes_left: count,
   sessions_left_today: count,
   estimated_cents_per_minute: count,
+  /** A product interview's project already holds its 20 sources, so the start would be refused (7.104.00). */
+  sources_full: z.boolean().catch(false),
 })
 
 export type VoiceOffer = z.infer<typeof offerSchema>
@@ -62,11 +68,16 @@ const optionalText = z.string().nullish().catch(null).transform((value) => value
 
 const sessionSchema = z.object({
   session_id: z.string().catch(''),
+  /** A product interview's transcript is saved as a source (`source_doc_id`), a persona's as a document. */
+  kind: z.enum(['persona_interview', 'product_interview']).catch('persona_interview'),
   status: z.enum(VOICE_SESSION_STATUSES).catch('ended'),
   seconds: count,
   cost_cents: count,
   end_reason: z.enum(VOICE_END_REASONS).nullish().catch(null).transform((value) => value ?? null),
   transcript_document_id: optionalText,
+  source_doc_id: optionalText,
+  /** The product interview was saved past the project's cap of sources, which filled up during it (7.104.00). */
+  over_source_cap: z.boolean().catch(false),
   job_id: optionalText,
 })
 
@@ -94,32 +105,51 @@ const usageSchema = z.object({
 
 export type VoiceUsage = z.infer<typeof usageSchema>
 
-function sessionsPath(projectId: string, personaId: string): string {
-  return `/projects/${encodeURIComponent(projectId)}/personas/${encodeURIComponent(personaId)}/voice-sessions`
+/** One question of a product interview's start (the gaps panel's: the extract's, or the defaults for empty fields). */
+export interface VoiceQuestion {
+  readonly field: string
+  readonly question: string
 }
 
-const sessionPath = (projectId: string, personaId: string, sessionId: string): string =>
-  `${sessionsPath(projectId, personaId)}/${encodeURIComponent(sessionId)}`
+/** Who a session talks to: a project persona, or the Product tab's AI interviewer (with the questions to ask). */
+export type VoiceSubject =
+  | { readonly kind: 'persona'; readonly personaId: string }
+  | { readonly kind: 'product'; readonly questions: readonly VoiceQuestion[] }
 
-/** The persona's offer (`['voice-offer', …]`), a session's status (`['voice-session', …]`), the month (`['voice-usage']`). */
+function sessionsPath(projectId: string, subject: VoiceSubject): string {
+  const project = `/projects/${encodeURIComponent(projectId)}`
+  return subject.kind === 'product'
+    ? `${project}/product-interview/voice-sessions`
+    : `${project}/personas/${encodeURIComponent(subject.personaId)}/voice-sessions`
+}
+
+const sessionPath = (projectId: string, subject: VoiceSubject, sessionId: string): string =>
+  `${sessionsPath(projectId, subject)}/${encodeURIComponent(sessionId)}`
+
+/** The start's body: consent, the UI language and, for the product interviewer, its questions. */
+const startBody = (subject: VoiceSubject, language: string) =>
+  subject.kind === 'product' ? { consent: true, language, questions: subject.questions } : { consent: true, language }
+
+/** The subject's offer (`['voice-offer', …]`), a session's status (`['voice-session', …]`), the month (`['voice-usage']`). */
 export const voiceKeys = {
-  offer: (projectId: string, personaId: string) => ['voice-offer', projectId, personaId] as const,
+  offer: (projectId: string, subject: VoiceSubject) =>
+    ['voice-offer', projectId, subject.kind === 'product' ? 'product' : subject.personaId] as const,
   session: (sessionId: string) => ['voice-session', sessionId] as const,
   usage: () => ['voice-usage'] as const,
 }
 
 export const voiceSessionsApi = {
-  getOffer: async (projectId: string, personaId: string): Promise<VoiceOffer> =>
-    offerSchema.parse(asRecord(await fetchApi<unknown>(sessionsPath(projectId, personaId))) ?? {}),
+  getOffer: async (projectId: string, subject: VoiceSubject): Promise<VoiceOffer> =>
+    offerSchema.parse(asRecord(await fetchApi<unknown>(sessionsPath(projectId, subject))) ?? {}),
 
-  start: async (projectId: string, personaId: string, language: string): Promise<StartedVoiceSession> =>
-    startedSchema.parse(asRecord(await fetchApi<unknown>(sessionsPath(projectId, personaId), post({ consent: true, language }))) ?? {}),
+  start: async (projectId: string, subject: VoiceSubject, language: string): Promise<StartedVoiceSession> =>
+    startedSchema.parse(asRecord(await fetchApi<unknown>(sessionsPath(projectId, subject), post(startBody(subject, language)))) ?? {}),
 
-  getSession: async (projectId: string, personaId: string, sessionId: string): Promise<VoiceSessionStatus> =>
-    sessionSchema.parse(asRecord(await fetchApi<unknown>(sessionPath(projectId, personaId, sessionId))) ?? {}),
+  getSession: async (projectId: string, subject: VoiceSubject, sessionId: string): Promise<VoiceSessionStatus> =>
+    sessionSchema.parse(asRecord(await fetchApi<unknown>(sessionPath(projectId, subject, sessionId))) ?? {}),
 
-  end: async (projectId: string, personaId: string, sessionId: string, keepalive = false): Promise<z.infer<typeof endedSchema>> =>
-    endedSchema.parse(asRecord(await fetchApi<unknown>(`${sessionPath(projectId, personaId, sessionId)}/end`, { method: 'POST', keepalive })) ?? {}),
+  end: async (projectId: string, subject: VoiceSubject, sessionId: string, keepalive = false): Promise<z.infer<typeof endedSchema>> =>
+    endedSchema.parse(asRecord(await fetchApi<unknown>(`${sessionPath(projectId, subject, sessionId)}/end`, { method: 'POST', keepalive })) ?? {}),
 
   getUsage: async (): Promise<VoiceUsage> =>
     usageSchema.parse(asRecord(await fetchApi<unknown>('/projects/voice/usage')) ?? {}),

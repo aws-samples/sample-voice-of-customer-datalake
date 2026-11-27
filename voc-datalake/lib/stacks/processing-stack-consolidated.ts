@@ -177,7 +177,7 @@ export class VocProcessingStack extends VocStack {
 
     this.processingLambda = new lambda.Function(this, 'FeedbackProcessor', {
       functionName: this.uniqueName(FEEDBACK_PROCESSOR_FUNCTION_BASE_NAME),
-      runtime: lambda.Runtime.PYTHON_3_14,
+      runtime: lambda.Runtime.PYTHON_3_15,
       architecture: lambda.Architecture.ARM_64,
       handler: 'handler.lambda_handler',
       code: processorCode,
@@ -237,7 +237,7 @@ export class VocProcessingStack extends VocStack {
 
     this.aggregationLambda = new lambda.Function(this, 'AggregationProcessor', {
       functionName: this.uniqueName(AGGREGATOR_FUNCTION_BASE_NAME),
-      runtime: lambda.Runtime.PYTHON_3_14,
+      runtime: lambda.Runtime.PYTHON_3_15,
       architecture: lambda.Architecture.ARM_64,
       handler: 'handler.lambda_handler',
       code: aggregatorCode,
@@ -473,7 +473,7 @@ export class VocProcessingStack extends VocStack {
 
     const researchStepLambda = new lambda.Function(this, 'ResearchStepLambda', {
       functionName: this.uniqueName('voc-research-step'),
-      runtime: lambda.Runtime.PYTHON_3_14,
+      runtime: lambda.Runtime.PYTHON_3_15,
       architecture: lambda.Architecture.ARM_64,
       handler: 'research_step_handler.lambda_handler',
       code: researchCode,
@@ -597,7 +597,7 @@ export class VocProcessingStack extends VocStack {
 
     return new lambda.Function(this, 'CategoryReprocessWorker', {
       functionName,
-      runtime: lambda.Runtime.PYTHON_3_14,
+      runtime: lambda.Runtime.PYTHON_3_15,
       architecture: lambda.Architecture.ARM_64,
       handler: 'handler.lambda_handler',
       code,

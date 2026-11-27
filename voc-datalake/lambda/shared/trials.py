@@ -38,9 +38,9 @@ from typing import Any, Final
 from botocore.exceptions import ClientError
 
 from shared.audit_rows import put_new_audit_row
+from shared.aws import CONDITION_FAILED, TRANSACTION_CONFLICT, cancellation_codes
 from shared.dynamo_values import plain, text_field
 from shared.exceptions import ConflictError, NotFoundError
-from shared.persona_save import cancellation_codes
 from shared.platform_workspaces import LISTING_PK, listing_sort_key
 from shared.timestamps import now_iso, parse_iso
 from shared.trial_state import (
@@ -138,7 +138,7 @@ def save_trial(table: Any, ws: str, meta: Mapping[str, Any], trial: Mapping[str,
         table.meta.client.transact_write_items(TransactItems=items)
     except ClientError as exc:
         codes = cancellation_codes(exc)
-        if 'ConditionalCheckFailed' in codes or 'TransactionConflict' in codes:
+        if CONDITION_FAILED in codes or TRANSACTION_CONFLICT in codes:
             raise ConflictError(TRIAL_CHANGED, code='trial_changed') from exc
         raise
     return saved

@@ -42,6 +42,7 @@ import DocumentReviewView from '../../../pages/ProjectDetail/DocumentReviewView'
 import { featureRequestIdsOf, linkFeatureRequestCitations } from '../../../pages/ProjectDetail/featureRequestCitations'
 import { useDocumentComments } from '../../../pages/ProjectDetail/useDocumentComments'
 import { useProjectPlace } from '../../../pages/ProjectDetail/useProjectPlace'
+import { tabPlace } from '../../../pages/ProjectDetail/projectPaths'
 import AssistantDiffOnCanvas from '../actions/AssistantDiffOnCanvas'
 import { READING_COLUMN_CLASS, READING_TEXT_CLASS } from '../../Document/readingColumn'
 import DocumentActionsBar from '../actions/DocumentActionsBar'
@@ -141,10 +142,12 @@ function useOpening(openOn: DocumentPageProps['openOn'], onOpened: (() => void) 
 
 /** The page's three zones under its header: the outline, the reading column (with the comments panel or the
  * evidence beside it) and, under the text, what it was made from. */
-function PageText({ project, document, documents, state, markdown, view, autoFocus, onSelectDoc, onActions }: Readonly<{
+function PageText({
+  project, document, documents, state, markdown, view, autoFocus, onSelectDoc, onActions, onAddPersonas,
+}: Readonly<{
   project: Project; document: ProjectDocument; documents: ProjectDocument[]; state: CanvasDocumentState
   markdown: string; view: PageView; autoFocus: boolean; onSelectDoc: (doc: ProjectDocument) => void
-  onActions: (actions: ReviewActions | null) => void
+  onActions: (actions: ReviewActions | null) => void; onAddPersonas: () => void
 }>) {
   const [outline, setOutline] = useState<readonly OutlineItem[]>([])
   const commentable = view.comments !== undefined
@@ -161,8 +164,8 @@ function PageText({ project, document, documents, state, markdown, view, autoFoc
       <div className="min-w-0">
         {commentable ? (
           <DocumentReviewView projectId={project.project_id} document={document} markdown={markdown}
-            hasPersonas={project.persona_count > 0} editable={editable} onChange={state.onChange}
-            handleRef={state.handleRef} onOutlineChange={setOutline} evidence={evidence(false)} canvas={state}
+            hasPersonas={project.persona_count > 0} onAddPersonas={onAddPersonas} editable={editable}
+            onChange={state.onChange} handleRef={state.handleRef} onOutlineChange={setOutline} evidence={evidence(false)} canvas={state}
             railHidden={!view.comments.on} onRevealRail={view.revealComments} autoFocus={autoFocus} onActions={onActions} />
         ) : (
           <div className="xl:grid xl:grid-cols-[minmax(0,1fr)_16rem] xl:gap-8">
@@ -216,7 +219,9 @@ function usePagePlace(project: Project, document: ProjectDocument, handleRef: Re
     else if (choice.kind === 'older') here({ version: choice.number })
     else here({ documentId: choice.documentId, version: null })
   }
-  return { focus, viewed, backToLatest, chooseVersion }
+  // "Add personas" (a persona review with nobody to ask): the project's Personas tab, a move the person makes.
+  const openPersonas = useCallback(() => { go(tabPlace('personas')) }, [go])
+  return { focus, viewed, backToLatest, chooseVersion, openPersonas }
 }
 
 /**
@@ -266,12 +271,12 @@ function PageHeading({ project, document, state, markdown, titleRef, selectOnOpe
 
 /** The page's own version under its header: the title, the assistant's pending edit, the coaching, the text. */
 function OwnVersion({
-  project, document, documents, canEdit, state, markdown, view, opening, titleRef, onSelectDoc, onActions,
+  project, document, documents, canEdit, state, markdown, view, opening, titleRef, onSelectDoc, onActions, onAddPersonas,
 }: Readonly<{
   project: Project; document: ProjectDocument; documents: ProjectDocument[]; canEdit: boolean
   state: CanvasDocumentState; markdown: string; view: PageView; opening: DocumentPageProps['openOn']
   titleRef: RefObject<HTMLInputElement | null>; onSelectDoc: (doc: ProjectDocument) => void
-  onActions: (actions: ReviewActions | null) => void
+  onActions: (actions: ReviewActions | null) => void; onAddPersonas: () => void
 }>) {
   return (
     <>
@@ -285,7 +290,8 @@ function OwnVersion({
           hasContent={document.content.trim() !== ''} />
       ) : null}
       <PageText project={project} document={document} documents={documents} state={state} markdown={markdown}
-        view={view} autoFocus={opening === 'text'} onSelectDoc={onSelectDoc} onActions={onActions} />
+        view={view} autoFocus={opening === 'text'} onSelectDoc={onSelectDoc} onActions={onActions}
+        onAddPersonas={onAddPersonas} />
     </>
   )
 }
@@ -310,7 +316,8 @@ export default function DocumentPage({
   const { handleRef } = state
   const { headerRef, focusCanvas } = useFocusCanvas(handleRef)
   const focusButtonRef = useRef<HTMLButtonElement>(null)
-  const { focus, viewed, backToLatest, chooseVersion } = usePagePlace(project, document, handleRef, focusCanvas, focusButtonRef)
+  const { focus, viewed, backToLatest, chooseVersion, openPersonas } = usePagePlace(
+    project, document, handleRef, focusCanvas, focusButtonRef)
   const { t } = useTranslation('projectDetail')
   // The AI flows of a PR/FAQ or PRD, as its review view reports them (none while an older version is on screen).
   const [reviewActions, setReviewActions] = useState<ReviewActions | null>(null)
@@ -339,7 +346,7 @@ export default function DocumentPage({
       }}>
       <OwnVersion project={project} document={document} documents={documents} canEdit={canEdit} state={state}
         markdown={markdown} view={view} opening={opening} titleRef={titleRef} onSelectDoc={onSelectDoc}
-        onActions={setReviewActions} />
+        onActions={setReviewActions} onAddPersonas={openPersonas} />
     </DocumentSurface>
   )
 }

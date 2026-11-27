@@ -15,6 +15,9 @@ import {
 } from './projectDetailSchema'
 import type { DocumentVersion } from './projectDetailSchema'
 import { asRecord } from './wireRecord'
+import {
+  normalizeAcceptResult, normalizeProductDocAnswer, normalizeProductDocs, normalizeProductProposalLatest,
+} from './productSourcesSchema'
 import { isAssistJobType, runAssistJob } from './assistJobs'
 import {
   parseDocumentBrief, parsePrfaqAnswers, parseRegeneratedAvatar, parseResearchSuggestions,
@@ -39,6 +42,12 @@ import type {
   ProjectJob,
   ProductContext,
   ProductDoc,
+  ProductDocUploadBody,
+  ProductAnswersBody,
+  ProductExtractBody,
+  ProductProposalLatest,
+  AcceptProductProposalBody,
+  AcceptProductProposalResult,
   ProjectVisibility,
   ProjectMemberRole,
   ProjectMembersResponse,
@@ -543,14 +552,10 @@ export const projectsApi = {
       message: string
     }>(`/projects/${projectId}/product-report`, post(body)),
 
-  listProductDocs: (projectId: string) =>
-    fetchApi<{ docs: ProductDoc[] }>(`/projects/${projectId}/product-docs`),
+  listProductDocs: async (projectId: string): Promise<{ docs: ProductDoc[] }> =>
+    normalizeProductDocs(await fetchApi<unknown>(`/projects/${projectId}/product-docs`)),
 
-  createProductDocUploadUrl: (projectId: string, body: {
-    filename: string;
-    content_type: string;
-    size_bytes: number
-  }) =>
+  createProductDocUploadUrl: (projectId: string, body: ProductDocUploadBody) =>
     fetchApi<{
       doc_id: string;
       presigned_url: string;
@@ -559,6 +564,40 @@ export const projectsApi = {
 
   deleteProductDoc: (projectId: string, docId: string) =>
     fetchApi<{ success: boolean }>(`/projects/${projectId}/product-docs/${docId}`, del()),
+
+  // The Product tab's sources, extract and proposals (7.104.00, docs/project-workspace.md → Product tab). Viewers
+  // may make the GETs; every POST needs EDIT. A refusal's `code`: `not_uploaded` / `upload_mismatch` (409,
+  // …/uploaded); `no_ready_sources` (400), `extract_running` (409), `rate_limited` (429) for …/product-extract;
+  // a 409 from …/accept when every field conflicts.
+
+  /** The PUT of a PDF, DOCX or PPTX landed: the source is read (202). Idempotent. */
+  markProductDocUploaded: async (projectId: string, docId: string): Promise<{ doc: ProductDoc }> =>
+    normalizeProductDocAnswer(await fetchApi<unknown>(`/projects/${projectId}/product-docs/${docId}/uploaded`, post())),
+
+  /** A public https page as a source (201). */
+  addProductDocUrl: async (projectId: string, body: { url: string }): Promise<{ doc: ProductDoc }> =>
+    normalizeProductDocAnswer(await fetchApi<unknown>(`/projects/${projectId}/product-docs/urls`, post(body))),
+
+  /** A link read again, or a failed or stale file (202). */
+  refreshProductDoc: async (projectId: string, docId: string): Promise<{ doc: ProductDoc }> =>
+    normalizeProductDocAnswer(await fetchApi<unknown>(`/projects/${projectId}/product-docs/${docId}/refresh`, post())),
+
+  /** Typed answers as one `interview` source (201). */
+  saveProductAnswers: async (projectId: string, body: ProductAnswersBody): Promise<{ doc: ProductDoc }> =>
+    normalizeProductDocAnswer(await fetchApi<unknown>(`/projects/${projectId}/product-docs/answers`, post(body))),
+
+  /** One extract of the ready sources (202): an `extract_product_description` job in the Background Jobs panel. */
+  startProductExtract: (projectId: string, body: ProductExtractBody) =>
+    fetchApi<{ job_id: string }>(`/projects/${projectId}/product-extract`, post(body)),
+
+  getLatestProductProposal: async (projectId: string): Promise<ProductProposalLatest> =>
+    normalizeProductProposalLatest(await fetchApi<unknown>(`/projects/${projectId}/product-proposals/latest`)),
+
+  acceptProductProposal: async (projectId: string, proposalId: string, body: AcceptProductProposalBody): Promise<AcceptProductProposalResult> =>
+    normalizeAcceptResult(await fetchApi<unknown>(`/projects/${projectId}/product-proposals/${encodeURIComponent(proposalId)}/accept`, post(body))),
+
+  dismissProductProposal: (projectId: string, proposalId: string) =>
+    fetchApi<{ proposal_id: string; status: 'dismissed' }>(`/projects/${projectId}/product-proposals/${encodeURIComponent(proposalId)}/dismiss`, post()),
 }
 
 // 🔑 The pin on `generateDocument`'s request-body parameter: it must admit EXACTLY

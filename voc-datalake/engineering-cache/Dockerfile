@@ -4,7 +4,7 @@
 # with the modules it imports. The CDK builds it from voc-datalake/ (lib/stacks/engineering-cache.ts, a Docker image
 # asset for linux/arm64, only with -c engineeringAgents=true) and pushes it to the bootstrap's asset repository.
 # It runs no repository code: git only fetches, with hooks, the system config and credential helpers off.
-FROM --platform=linux/arm64 public.ecr.aws/lambda/python:3.14@sha256:6c41adfe09281f878ba6eef693deb33b9d7bef91adba28433f03e41a2cfcb28f
+FROM --platform=linux/arm64 public.ecr.aws/lambda/python:3.15@sha256:ff118eaa5fb0e4a322ae28c5b8a7337f5396eaca5f34d613b904b444f8a32dc0
 
 # git from the distro, one exact build (git-core: the git binary and its helpers, no Perl, no documentation).
 # Once this build leaves the distro's repository, dnf finds no match and the image build fails loudly (never a silent

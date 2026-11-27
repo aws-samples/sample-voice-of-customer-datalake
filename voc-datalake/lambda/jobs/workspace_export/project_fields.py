@@ -34,10 +34,18 @@ exported.
   ``model_id``, ``voice_gender``, ``session_seconds``, ``monthly_seconds``, ``session_cost_cap_microusd``,
   ``monthly_cost_cap_microusd`` (the cost caps, 7.71.00 review round 1), ``minutes_left``, ``usage_key``,
   ``evidence_key``, ``persona``, ``seconds``, ``streams``, ``transcript_parts``, ``end_reason``, ``ended_at``,
-  ``finalize_job_id``, ``finalized_at``, ``transcript_document_id``, ``live``, ``sessions``: a session's state and
-  meter, not the project's content (its transcript is a ``persona_interview`` document, exported as one). The scratch
+  ``finalize_job_id``, ``finalized_at``, ``transcript_document_id``, ``source_doc_id`` (7.104.00: a product
+  interview's saved source, exported as that source), ``over_source_cap`` (7.104.00: that source was saved past the
+  project's cap of sources), ``live``, ``sessions``: a session's state and meter, not the
+  project's content (its transcript is a ``persona_interview`` document or a product source, exported as one). The scratch
   evidence object's own ``evidence`` (an S3 field, never a project row's attribute) shares its name with the
   ``evidence`` count of a hand-written validation plan's methodology block (7.68.00), so it is ``EXPORTED`` there;
+* the product extract's lock (7.104.00, shared/product_proposals.py ``PRODUCT_EXTRACT``): ``lock_id``,
+  ``started_at``, ``started_epoch``, ``started_by``, ``released_at``, a running extract's state (the export does not
+  read its row either); and the words of the extract's JSON schema (shared/product_extract.py ``proposal_schema``:
+  ``type``, ``properties``, ``required``, ``items``), which the static view reads as names and no row stores;
+* a product source's read in flight (7.104.00, shared/product_source_routes.py): ``extract_token`` (the claim a read
+  holds) and ``claimed_at`` (its time), meaningless outside that read;
 * the verification fixtures' plumbing (``verification_*``, ``fixture_id``, ``baseline_row``, ``capability``,
   ``operation``, ``row_ids``, ``schema``, ``scorable_prd``, ``slot``, ``tested_sha``: lambda/api/
   verification_fixture_provider.py, the deployment's own test fixtures, never in a workspace).
@@ -60,7 +68,11 @@ EXCLUDED: Final = frozenset({
     'session_id', 'starter_sub', 'connect_by', 'consent_at', 'language', 'model_id', 'voice_gender', 'session_seconds',
     'monthly_seconds', 'minutes_left', 'usage_key', 'evidence_key', 'persona', 'seconds', 'streams', 'transcript_parts',
     'end_reason', 'ended_at', 'finalize_job_id', 'finalized_at', 'transcript_document_id', 'live', 'sessions',
-    'session_cost_cap_microusd', 'monthly_cost_cap_microusd',
+    'session_cost_cap_microusd', 'monthly_cost_cap_microusd', 'source_doc_id', 'over_source_cap',
+    # The product extract's lock and its JSON schema's words (7.104.00, shared/product_proposals.py, product_extract.py).
+    'lock_id', 'started_at', 'started_epoch', 'started_by', 'released_at', 'type', 'properties', 'required', 'items',
+    # A product source's read in flight (7.104.00, shared/product_source_routes.py).
+    'extract_token', 'claimed_at',
 })
 
 EXPORTED: Final = frozenset({
@@ -107,6 +119,16 @@ EXPORTED: Final = frozenset({
     'card_in_prototype', 'results',
     # A persona's voice and the voice session a persona_interview came from (7.69.00, shared/voice_transcripts.py).
     'voice_id', 'voice_session',
+    # A product proposal (7.104.00, shared/product_proposals.py): what an extract proposed for each field, from which
+    # sources and quotes, with which model and effort, and which fields were accepted; and who wrote each field of the
+    # product context (field_meta).
+    'proposal_id', 'fields', 'questions', 'skipped_sources', 'created_by', 'citations', 'note', 'value', 'source_ids',
+    'effort', 'requested_id', 'structured', 'usage', 'input_tokens', 'output_tokens', 'field_meta',
+    # A product source (7.104.00, shared/product_sources.py and product_source_worker.py): its kind, who added it, a
+    # link's address, final address and read time, how its text was read (method, pages, cut, the injection note),
+    # a file's declared digest, and an interview's mode.
+    'source_kind', 'url', 'final_url', 'fetched_at', 'method', 'truncated', 'injection_flag', 'extracted_at',
+    'failed_at', 'sha256', 'pages', 'interview_mode',
 })
 
 #: A project ``META``'s ``members`` entry (api/projects.py: who was added, with which role, by whom and when); an

@@ -6,7 +6,8 @@
  * - Insert: Link (the Mod+K popover), Image (the "/" menu's dialog), Table, Divider, Callout.
  * - View: Comments (the comments panel; a PR/FAQ or PRD), Contents (the outline), Full width, Full screen (the
  *   focus view).
- * The editor's entries run through its handle (CanvasEditorHandle `run` / `can`), read when the menu opens.
+ * The editor's entries run through its handle (CanvasEditorHandle `run` / `can`), read when the menu opens. The Review
+ * menu's entries are the toolbar's AI flows (toolbarItems.ts `reviewMenuEntries`).
  *
  * @module components/DocumentCanvas/actions/canvasMenus
  */

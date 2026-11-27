@@ -381,7 +381,7 @@ export const api = {
   getModelSettings: async () => {
     const raw = await fetchApi<{
       available_models: Array<{ key: string; id: string; label: string; description: string }>
-      surfaces: Array<{ key: string; default_id: string; selected: string | null; allowlist?: unknown }>
+      surfaces: Array<{ key: string; default_id: string; selected: string | null; allowlist?: unknown; own_default?: unknown }>
       web_search_models?: unknown
       custom_models?: unknown
       model_id: string | null
@@ -391,7 +391,11 @@ export const api = {
     }>('/settings/model')
     return {
       ...raw,
-      surfaces: raw.surfaces.map((surface) => ({ ...surface, allowlist: readSurfaceAllowlist(surface.allowlist) })),
+      // `own_default` (7.104.00): true when Automatic keeps the surface's own default under a pin (the product
+      // extract, the web search surface); absent on an older API, where every Claude surface runs the pin.
+      surfaces: raw.surfaces.map((surface) => ({
+        ...surface, allowlist: readSurfaceAllowlist(surface.allowlist), own_default: surface.own_default === true,
+      })),
       web_search_models: normalizeWebSearchModels(raw.web_search_models),
       custom_models: normalizeCustomModels(raw.custom_models),
       image_model: normalizeImageModelInfo(raw.image_model),

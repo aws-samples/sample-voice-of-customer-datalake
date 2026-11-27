@@ -58,6 +58,9 @@ DATA_BLOCK_TAGS = (
     # testers' results (their "What was missing?" answers among them) a report's summary reads.
     'validation_script',
     'validation_results',
+    # A project's product description (api/product_context.py ``build_product_context_block``, 7.104.00): the fields a
+    # person typed or accepted from an extract of the product sources, in the PRD, PR/FAQ and prototype prompts.
+    'product_context',
 )
 
 _TAG_RE = re.compile(

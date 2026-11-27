@@ -159,6 +159,15 @@ export function productDoc(
     error: null,
     extracted_chars: 400,
     created_at: '2026-05-01T00:00:00Z',
+    source_kind: 'file',
+    injection_flag: false,
+    method: 'model',
+    pages: null,
+    truncated: false,
+    url: null,
+    final_url: null,
+    title: null,
+    interview_mode: null,
     ...overrides,
   }
 }

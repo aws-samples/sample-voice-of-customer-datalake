@@ -22,6 +22,7 @@ from engineering.board.store import COORDINATE_TASK, LEASE_S, BoardError, BoardS
 from engineering.bus.publish import EventBridgePublisher, new_event_id
 from engineering.bus.schema import Message, Party, fit_summary
 from engineering.connectors.identity import WORKSPACE
+from engineering.flow.conductor import decided_since, decided_until
 from engineering.quality_gate.text import redact
 from engineering.runtime.ports import Lease
 from shared.logging import logger
@@ -105,7 +106,8 @@ class BoardLeases:
 
     def coordinator_to_start(self, run_id: str, session: Callable[[str], SessionState], *, actor: str,
                              launchable: Callable[[], None] = lambda: None,
-                             unfinished: Callable[[], bool] = lambda: False) -> tuple[str, int] | None:
+                             unfinished: Callable[[], bool] = lambda: False,
+                             resumed_at: int = 0) -> tuple[str, int] | None:
         """The run coordinator the runtime is to start, and its task's attempt, or None when the run has one (or no
         coordinate task, or one that ended). ``session(agent)`` says whether that agent's session ``failed``, has
         ``none`` yet, or is ``kept`` as it is. ``launchable()`` raises what the launch would refuse (no skill, no
@@ -122,15 +124,19 @@ class BoardLeases:
         A coordinate task that ended done while the run's flow did not finish (``unfinished()``: its coordinator
         finished early, and the supervisor sent the run to a person) is open again at the next attempt for a new
         ``coordinator-<n>`` (7.71.03; 7.71.04: the store's re-post with ``reopen``), so a person's Resume has the run
-        planned again; one that ended otherwise (failed, a person's) stays ended. Only a whole-run Resume passes
-        ``unfinished`` (7.71.04): a start's retry or a board launch's fill reopens nothing (the default: never)."""
+        planned again; one that ended otherwise (failed, a person's) stays ended. Only once a person resumed the run
+        after it ended done (7.104.00: ``resumed_at``, the run's last Resume in whole epoch seconds, at or after the
+        task's ``updated_at``: ``conductor.decided_since``, the rule a step's decision covers its failed tasks by; a
+        whole second covers all of it, so a Resume in the second the task ended counts as after it, ``decided_until``),
+        whoever launches: the Resume itself or the fill it handed on, and never a start's retry or a board launch's
+        fill since (7.71.04's ``resumed`` flag on the launch event is gone)."""
         try:
             task = self.store.task(WORKSPACE, run_id, COORDINATE_TASK)
         except BoardError as error:
             if error.kind == 'not_found':
                 return None
             raise
-        if task.state == DONE and unfinished():
+        if task.state == DONE and decided_since(decided_until(resumed_at), task.updated_at) and unfinished():
             launchable()
             task = self.store.repost(WORKSPACE, run_id, COORDINATE_TASK, attempt=task.attempt, actor=actor,
                                      reopen=True, reason=f'{task.lease_agent or "the coordinator"} finished on a '

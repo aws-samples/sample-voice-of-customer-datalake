@@ -3,9 +3,11 @@
 Before this, ALLOWED_CONTENT_TYPES took pdf/docx/md/txt while nothing extracted
 any of them: every upload succeeded, every record sat at `status: 'pending'`
 forever, and the UI badge read "Extracting…" for the life of the record. The
-boundary now accepts images plus .md/.txt, refuses pdf/docx with an explicit
-"not yet", caps images at what the Bedrock Converse API will carry, and makes the
-declared size binding on S3 instead of advisory.
+boundary then accepted images plus .md/.txt, refused pdf/docx with an explicit
+"not yet", capped images at what the Bedrock Converse API will carry, and made the
+declared size binding on S3 instead of advisory. Since 7.104.00 it also takes PDF,
+DOCX and PPTX (up to 25 MB), keyed under product_docs/source/ for the assist twin
+to read (shared/product_source_worker.py), outside the S3 extractor's raw/ keys.
 
 `create_upload_url` and `ALLOWED_CONTENT_TYPES` had no coverage at all, so
 everything here is new.
@@ -67,17 +69,58 @@ def _reject(body: dict, table: MagicMock | None = None):
     return exc.value, table
 
 
-class TestDeferredTypesAreRefusedWithoutLeavingARecord:
-    """pdf/docx are refused, and refused BEFORE anything is written.
+PPTX_MIME = 'application/vnd.openxmlformats-officedocument.presentationml.presentation'
+SHA = 'ab' * 32
 
-    Asserting only the error would pass even if a record leaked — which is the
-    exact failure mode this rung exists to remove, so the put_item assertion is
-    the one that matters.
-    """
 
-    def test_pdf_writes_no_record(self):
-        _, table = _reject({'filename': 'spec.pdf', 'content_type': 'application/pdf',
-                            'size_bytes': 1000})
+class TestPdfDocxAndPptxAreReadOnTheTwin:
+    """Since 7.104.00 a PDF, DOCX or PPTX is a product source: accepted up to 25 MB and keyed under
+    product_docs/source/, where the S3-triggered extractor never looks (its RAW_KEY_PATTERN is raw/)."""
+
+    @pytest.mark.parametrize(('content_type', 'ext'), [
+        ('application/pdf', 'pdf'), (DOCX_MIME, 'docx'), (PPTX_MIME, 'pptx'),
+    ])
+    def test_the_upload_is_keyed_under_source_not_raw(self, content_type, ext):
+        result, table, s3 = _create({'filename': f'spec.{ext}', 'content_type': content_type,
+                                     'size_bytes': 1000, 'sha256': SHA})
+        item = table.put_item.call_args.kwargs['Item']
+        assert item['s3_raw_key'] == f"projects/proj-1/product_docs/source/{result['doc_id']}.{ext}"
+        assert s3.generate_presigned_url.call_args.kwargs['Params']['Key'] == item['s3_raw_key']
+        assert (item['status'], item['source_kind']) == ('pending', 'file')
+
+    def test_a_pdf_of_25_mb_is_accepted_and_one_byte_more_refused(self):
+        from shared.product_sources import MAX_SOURCE_FILE_BYTES
+
+        assert MAX_SOURCE_FILE_BYTES == 25 * 1024 * 1024
+        result, _, _ = _create({'filename': 'big.pdf', 'content_type': 'application/pdf',
+                                'size_bytes': MAX_SOURCE_FILE_BYTES, 'sha256': SHA})
+        assert result['doc_id']
+        error, table = _reject({'filename': 'big.pdf', 'content_type': 'application/pdf',
+                                'size_bytes': MAX_SOURCE_FILE_BYTES + 1})
+        assert error.message == 'PDF, Word and PowerPoint files must be between 1 byte and 25.0 MB.'
+        table.put_item.assert_not_called()
+
+    def test_a_text_file_keeps_its_10_mb_cap(self):
+        """The 25 MB is the twin's, not every type's: a text file over 10 MB is still refused."""
+        import product_context
+
+        error, _ = _reject({'filename': 'big.txt', 'content_type': 'text/plain',
+                            'size_bytes': product_context.MAX_FILE_BYTES + 1})
+        assert error.message == 'Files must be between 1 byte and 10.0 MB.'
+
+    def test_the_declared_sha256_is_stored_lower_case_for_the_twin_to_check(self):
+        _, table, _ = _create({'filename': 'spec.pdf', 'content_type': 'application/pdf', 'size_bytes': 10,
+                               'sha256': SHA.upper()})
+        assert table.put_item.call_args.kwargs['Item']['sha256'] == SHA
+
+    @pytest.mark.parametrize('sha256', ['abc', 'g' * 64, 5, ['ab' * 32], None])
+    def test_a_sha256_that_is_not_one_is_refused_before_any_write(self, sha256):
+        # None: no digest at all, which a PDF, DOCX or PPTX must declare since review S7 (7.104.00 round 1).
+        body = {'filename': 'spec.pdf', 'content_type': 'application/pdf', 'size_bytes': 10}
+        if sha256 is not None:
+            body['sha256'] = sha256
+        error, table = _reject(body)
+        assert (error.message, error.code) == ('sha256 must be 64 hexadecimal characters', 'sha256_required')
         table.put_item.assert_not_called()
 
     @pytest.mark.parametrize('field', ['filename', 'content_type'])
@@ -90,40 +133,11 @@ class TestDeferredTypesAreRefusedWithoutLeavingARecord:
         assert error.status_code == 400
         table.put_item.assert_not_called()
 
-    def test_pdf_message_says_not_yet_and_names_what_is_accepted(self):
-        error, _ = _reject({'filename': 'spec.pdf', 'content_type': 'application/pdf',
-                            'size_bytes': 1000})
-        assert 'PDF' in error.message
-        assert 'not supported yet' in error.message
-        # (7.63.00: the Documents Library reads a PDF, so the refusal sends the person there)
-        assert 'Documents Library (/library)' in error.message
-        assert '.png' in error.message
-        assert '.txt' in error.message
-
-    def test_docx_writes_no_record(self):
-        _, table = _reject({'filename': 'brief.docx', 'content_type': DOCX_MIME,
-                            'size_bytes': 1000})
-        table.put_item.assert_not_called()
-
-    def test_docx_message_says_not_yet_and_names_what_is_accepted(self):
-        error, _ = _reject({'filename': 'brief.docx', 'content_type': DOCX_MIME,
-                            'size_bytes': 1000})
-        assert 'not supported yet' in error.message
-        assert '.md' in error.message
-
-    def test_deferred_is_distinguishable_from_never_supported(self):
-        """"we will never take this" and "not yet" must read differently."""
-        deferred, _ = _reject({'filename': 'a.pdf', 'content_type': 'application/pdf',
-                               'size_bytes': 10})
-        never, _ = _reject({'filename': 'a.exe', 'content_type': 'application/x-msdownload',
-                            'size_bytes': 10})
-        assert 'not supported yet' in deferred.message
-        assert 'not supported yet' not in never.message
-        assert 'Unsupported file type' in never.message
-
-    def test_an_unsupported_type_also_writes_no_record(self):
-        _, table = _reject({'filename': 'a.exe', 'content_type': 'application/x-msdownload',
-                            'size_bytes': 10})
+    def test_an_unsupported_type_writes_no_record_and_names_every_accepted_extension(self):
+        error, table = _reject({'filename': 'a.exe', 'content_type': 'application/x-msdownload',
+                                'size_bytes': 10})
+        assert error.message == ('Unsupported file type. Accepted: .docx, .gif, .jpg, .md, .pdf, .png, .pptx, .txt, '
+                                 '.webp.')
         table.put_item.assert_not_called()
 
 
@@ -502,7 +516,7 @@ class TestRejectionHappensBeforeAnyWrite:
 
     @pytest.mark.parametrize('body', [
         {'filename': '', 'content_type': 'image/png', 'size_bytes': 10},
-        {'filename': 'a.pdf', 'content_type': 'application/pdf', 'size_bytes': 10},
+        {'filename': 'a.pdf', 'content_type': 'application/pdf', 'size_bytes': 10, 'sha256': 'not-hex'},
         {'filename': 'a.zip', 'content_type': 'application/zip', 'size_bytes': 10},
         {'filename': 'a.png', 'content_type': 'image/png', 'size_bytes': 0},
         {'filename': 'a.png', 'content_type': 'image/png', 'size_bytes': 99_000_000},
@@ -523,10 +537,10 @@ class TestRejectionHappensBeforeAnyWrite:
         s3.generate_presigned_url.assert_not_called()
 
     def test_the_per_project_cap_also_rejects_before_writing(self):
-        import product_context
+        from shared.product_sources import MAX_DOCS_PER_PROJECT
 
         full = [{'doc_id': f'd{i}', 'status': 'ready', 'created_at': '2026-01-01T00:00:00+00:00'}
-                for i in range(product_context.MAX_DOCS_PER_PROJECT)]
+                for i in range(MAX_DOCS_PER_PROJECT)]
         _, table = _reject({'filename': 'one-more.png', 'content_type': 'image/png',
                             'size_bytes': 100}, table=_table(full))
         table.put_item.assert_not_called()
@@ -699,20 +713,16 @@ class TestAllowedContentTypes:
             'text/plain': 'txt',
         }
 
-    def test_pdf_and_docx_are_deferred_not_allowed(self):
+    def test_pdf_docx_and_pptx_are_the_twins_and_never_the_extractors(self):
+        """The extractor's set (ALLOWED_CONTENT_TYPES, its lockstep test's) and the twin's never overlap: one type,
+        one reader."""
         import product_context
+        from shared.product_sources import SOURCE_CONTENT_TYPES
 
-        assert 'application/pdf' not in product_context.ALLOWED_CONTENT_TYPES
-        assert DOCX_MIME not in product_context.ALLOWED_CONTENT_TYPES
-        assert set(product_context.DEFERRED_CONTENT_TYPES) == {'application/pdf', DOCX_MIME}
-
-    def test_deferred_and_allowed_never_overlap(self):
-        """An overlap would make the deferred branch shadow an accepted type,
-        refusing something we can process."""
-        import product_context
-
-        assert not (set(product_context.DEFERRED_CONTENT_TYPES)
-                    & set(product_context.ALLOWED_CONTENT_TYPES))
+        assert dict(SOURCE_CONTENT_TYPES) == {'application/pdf': 'pdf', DOCX_MIME: 'docx', PPTX_MIME: 'pptx'}
+        assert not set(SOURCE_CONTENT_TYPES) & set(product_context.ALLOWED_CONTENT_TYPES)
+        assert product_context.UPLOAD_CONTENT_TYPES == {**product_context.ALLOWED_CONTENT_TYPES,
+                                                        **SOURCE_CONTENT_TYPES}
 
     def test_the_image_half_is_single_sourced_from_shared(self):
         import product_context
@@ -721,3 +731,35 @@ class TestAllowedContentTypes:
         assert set(IMAGE_CONTENT_TYPE_EXTENSIONS) == product_context.IMAGE_CONTENT_TYPES
         for content_type, ext in IMAGE_CONTENT_TYPE_EXTENSIONS.items():
             assert product_context.ALLOWED_CONTENT_TYPES[content_type] == ext
+
+
+class TestASourceReadOnTheTwinWaitsTheTwinsWindow:
+    """A link, or a PDF, DOCX or PPTX, is read on the assist twin (900 s): it is failed on read only after
+    TWIN_STALL_SECONDS (960) from its claim, or from its creation while its upload was never announced."""
+
+    def test_the_twins_window_outlasts_the_twins_timeout(self):
+        from shared.product_sources import TWIN_STALL_SECONDS
+
+        assert TWIN_STALL_SECONDS == 960
+        assert TWIN_STALL_SECONDS > 900
+
+    def test_a_pdf_pending_past_the_s3_window_but_inside_the_twins_is_left_alone(self):
+        docs, table = _list([_doc(content_type='application/pdf', created_at=_iso_ago(400))])
+        assert docs[0]['status'] == 'pending'
+        table.update_item.assert_not_called()
+
+    def test_a_link_read_since_its_claim_past_the_window_fails_under_its_token(self):
+        import product_context
+
+        docs, table = _list([_doc(source_kind='url', status='extracting', content_type='', extract_token='tok-1',
+                                  created_at=_iso_ago(5000), claimed_at=_iso_ago(961))])
+        assert (docs[0]['status'], docs[0]['error']) == ('failed', product_context.STALLED_ON_TWIN_MESSAGE)
+        kwargs = table.update_item.call_args.kwargs
+        assert kwargs['ConditionExpression'] == '#status = :expected AND #token = :token'
+        assert kwargs['ExpressionAttributeValues'][':token'] == 'tok-1'
+
+    def test_a_link_claimed_again_recently_is_left_alone_however_old_it_is(self):
+        docs, table = _list([_doc(source_kind='url', status='extracting', extract_token='tok-2',
+                                  created_at=_iso_ago(50_000), claimed_at=_iso_ago(30))])
+        assert docs[0]['status'] == 'extracting'
+        table.update_item.assert_not_called()

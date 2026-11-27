@@ -23,6 +23,7 @@ from typing import Any, Final
 
 from botocore.exceptions import ClientError
 
+from shared.aws import CONDITION_FAILED, TRANSACTION_CONFLICT, cancellation_codes
 from shared.engagement_common import (
     conditional_write,
     new_id,
@@ -50,7 +51,6 @@ from shared.participants_keys import (
 )
 from shared.participants_store import PERSON_NOT_FOUND
 from shared.participants_tables import (
-    cancellation_codes,
     delete_many,
     rows_by_id_in,
     scoped_rows,
@@ -192,12 +192,12 @@ def add_member(table: Any, list_id: str, person_id: str, added_by: str, *,
             break
         except ClientError as error:
             codes = cancellation_codes(error)
-            if len(codes) > 2 and codes[2] == 'ConditionalCheckFailed':
+            if len(codes) > 2 and codes[2] == CONDITION_FAILED:
                 raise NotFoundError(PERSON_NOT_FOUND) from error
-            if codes[:1] == ['ConditionalCheckFailed']:
+            if codes[:1] == [CONDITION_FAILED]:
                 return False
             # A cancel for a concurrent write (TransactionConflict) is tried again, a bounded number of times.
-            if 'TransactionConflict' not in codes or attempt == ADD_ATTEMPTS - 1:
+            if TRANSACTION_CONFLICT not in codes or attempt == ADD_ATTEMPTS - 1:
                 raise
     _count(table, list_id, 1, workspace)
     _track_membership(table, person_id, list_id, member=True, workspace=workspace)

@@ -66,7 +66,7 @@ export function createRadarLambda(ctx: ApiStackContext): lambda.Function {
 
   return new lambda.Function(stack, 'RadarApi', {
     functionName: ctx.uniqueName(RADAR_API_FUNCTION_BASE_NAME),
-    runtime: lambda.Runtime.PYTHON_3_14,
+    runtime: lambda.Runtime.PYTHON_3_15,
     architecture: lambda.Architecture.ARM_64,
     handler: 'radar_handler.lambda_handler',
     code: apiCode('radar_handler.py'),

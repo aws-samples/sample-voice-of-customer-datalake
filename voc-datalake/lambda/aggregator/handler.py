@@ -248,7 +248,7 @@ from boto3.dynamodb.types import DYNAMODB_CONTEXT
 from botocore.exceptions import BotoCoreError, ClientError
 
 from shared.app_feedback_tag import is_app_feedback
-from shared.aws import get_dynamodb_resource, is_conditional_check_failure
+from shared.aws import CONDITION_FAILED, TRANSACTION_CONFLICT, get_dynamodb_resource, is_conditional_check_failure
 from shared.batch import batch_lambda_handler
 from shared.data_version import BatchBump, bump_data_version
 from shared.dimension_config import DIMENSION_KEY_RE, DIMENSION_VALUE_RE, MAX_DIMENSIONS, MAX_TAGS
@@ -579,8 +579,8 @@ _TRANSIENT_READ_ERRORS = frozenset({
 # a plain request, the reason code inside a cancelled transaction. Neither is
 # derivable from the other, so both are named, and this one is a constant because
 # matching it wrongly is silent — an unmatched reason simply never retries, which
-# looks exactly like a system under no contention.
-TRANSACTION_CONFLICT_REASON = 'TransactionConflict'
+# looks exactly like a system under no contention. Its one home is `shared/aws.py`
+# (`TRANSACTION_CONFLICT`, 7.104.00), beside `CONDITION_FAILED`.
 
 # The reason code DynamoDB uses for an item that caused no failure. Every cancelled
 # transaction's reasons list has one entry per item, so most entries are this — which
@@ -613,7 +613,7 @@ NO_CANCELLATION_REASON = 'None'
 # A `ValidationError` is deliberately NOT here: it will fail identically on the next
 # attempt, so re-sending it only spends the invocation and delays the record.
 _RETRYABLE_CANCELLATION_REASONS = frozenset({
-    TRANSACTION_CONFLICT_REASON,
+    TRANSACTION_CONFLICT,
     'ThrottlingError',
     'ProvisionedThroughputExceeded',
 })
@@ -1636,7 +1636,9 @@ def _cancellation_reasons(error: ClientError) -> list | None:
 
     None whenever the response is not a cancellation or its reasons cannot be
     read; both predicates built on this answer False in that case (see each for
-    why that is the safe direction).
+    why that is the safe direction). The raw entries, not `shared.aws.cancellation_codes`,
+    on purpose: `_conflicted` tells an unreadable entry (a veto) from a fine one
+    (`NO_CANCELLATION_REASON`), which that reader folds together.
     """
     response = _error_response(error)
     if response is None:
@@ -1674,7 +1676,7 @@ def _claim_was_refused(error: ClientError) -> bool:
     if reasons is None:
         return False
     first = reasons[0]
-    return isinstance(first, Mapping) and first.get('Code') == 'ConditionalCheckFailed'
+    return isinstance(first, Mapping) and first.get('Code') == CONDITION_FAILED
 
 
 def _conflicted(error: ClientError) -> bool:
@@ -2982,7 +2984,7 @@ def _refused_claims(error: ClientError, claims: int) -> set[int]:
     """
     reasons = _cancellation_reasons(error) or []
     return {index for index, reason in enumerate(reasons[:claims])
-            if isinstance(reason, Mapping) and reason.get('Code') == 'ConditionalCheckFailed'}
+            if isinstance(reason, Mapping) and reason.get('Code') == CONDITION_FAILED}
 
 
 def _arrival_applied(plan: _PlannedArrival) -> None:

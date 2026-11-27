@@ -166,7 +166,7 @@ class TestPieces:
             read_requirements(root / 'r.txt')
 
 
-IMAGE = 'public.ecr.aws/lambda/python:3.14'
+IMAGE = 'public.ecr.aws/lambda/python:3.15'
 _PROBE = '''
 import importlib.metadata as m, json
 out = {}

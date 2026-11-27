@@ -25,7 +25,7 @@ from botocore.exceptions import BotoCoreError, ClientError
 
 from shared import agent_run_decisions as decisions
 from shared import agents_store as store
-from shared.aws import is_conditional_check_failure, update_unless_condition_fails
+from shared.aws import CONDITION_FAILED, cancellation_codes, is_conditional_check_failure, update_unless_condition_fails
 from shared.exceptions import ServiceError
 from shared.logging import logger
 
@@ -143,9 +143,7 @@ def _resume_items(table: Any, agent: Mapping[str, Any], run: Mapping[str, Any], 
 
 def _refusal(exc: ClientError) -> str:
     """Which side of the transaction refused it (the agent lock first)."""
-    reasons = exc.response.get('CancellationReasons') or []
-    codes = [reason.get('Code') for reason in reasons]
-    return AGENT_BUSY if codes[:1] == ['ConditionalCheckFailed'] else RUN_DECIDED
+    return AGENT_BUSY if cancellation_codes(exc)[:1] == [CONDITION_FAILED] else RUN_DECIDED
 
 
 def resume_run(table: Any, agent: Mapping[str, Any], run: Mapping[str, Any], record: Mapping[str, Any], *,

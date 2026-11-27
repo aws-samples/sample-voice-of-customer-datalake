@@ -16,6 +16,7 @@ from typing import Any
 
 from botocore.exceptions import ClientError
 
+from shared.aws import CONDITION_FAILED, cancellation_codes
 from shared.dynamo_paging import iter_query
 from shared.engagement_common import rows_by_id
 from shared.exceptions import ServiceError
@@ -83,7 +84,7 @@ def unlist_if_empty(table: Any, workspace: WorkspaceScope, index_key: Mapping[st
         except ClientError as error:
             if error.response.get('Error', {}).get('Code') != 'TransactionCanceledException':
                 raise
-            if 'ConditionalCheckFailed' in cancellation_codes(error):
+            if CONDITION_FAILED in cancellation_codes(error):
                 return False
             continue
         return True
@@ -103,8 +104,3 @@ def transact(table: Any, workspace: WorkspaceScope | None, entries: Sequence[Map
     return table.meta.client.transact_write_items(TransactItems=named)
 
 
-def cancellation_codes(error: ClientError) -> list[str | None]:
-    """The per-entry codes of a cancelled TransactWriteItems (empty for any other error), in the entries' order."""
-    if error.response.get('Error', {}).get('Code') != 'TransactionCanceledException':
-        return []
-    return [reason.get('Code') for reason in error.response.get('CancellationReasons') or []]

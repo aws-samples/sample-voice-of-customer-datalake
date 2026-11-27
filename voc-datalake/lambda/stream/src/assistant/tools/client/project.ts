@@ -164,8 +164,9 @@ const updateProductContext = defineClientTool({
   name: 'update_product_context',
   pack: 'project',
   description: 'Fill in or change the project\u2019s product context. Allowed keys in `updates` (all strings): '
-    + 'product_name, one_liner, target_users, problem_solved, key_features, differentiators, known_limitations, '
-    + 'non_goals, success_metrics, free_form_notes; and current_state (idea|mvp|beta|ga|mature).',
+    + 'product_name, one_liner, product_summary (what the product does), target_users, problem_solved, key_features, '
+    + 'differentiators, known_limitations, non_goals, success_metrics, free_form_notes; and current_state '
+    + '(idea|mvp|beta|ga|mature).',
   properties: {
     project_id: PROJECT_ID,
     updates: { type: 'object', description: 'Fields to set (see the allowed keys).' },

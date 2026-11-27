@@ -351,7 +351,7 @@ describe('canonicalTemplate', () => {
     const app = new cdk.App({ outdir });
     const stack = new cdk.Stack(app, 'CanonProbeStack', { env: { account: SYNTH_ACCOUNT, region: SYNTH_REGION } });
     const fn = new lambda.Function(stack, 'ProbeApi', {
-      runtime: lambda.Runtime.PYTHON_3_14,
+      runtime: lambda.Runtime.PYTHON_3_15,
       handler: 'index.handler',
       memorySize,
       code: lambda.Code.fromInline(code),

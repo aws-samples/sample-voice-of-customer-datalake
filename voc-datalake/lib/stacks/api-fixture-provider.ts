@@ -79,7 +79,7 @@ export function createVerificationFixtureProvider(ctx: ApiStackContext): void {
       'VerificationFixtureProvider',
       {
         functionName: ctx.uniqueName('voc-fixture-provider'),
-        runtime: lambda.Runtime.PYTHON_3_14,
+        runtime: lambda.Runtime.PYTHON_3_15,
         architecture: lambda.Architecture.ARM_64,
         handler: 'verification_fixture_provider.lambda_handler',
         code: createApiLambdaCode('verification_fixture_provider.py'),

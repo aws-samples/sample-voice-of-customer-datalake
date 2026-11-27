@@ -51,7 +51,7 @@ describe('the GitHub Issues settings function (VocProcessingStack)', () => {
     const on = template('on');
     const properties = on.findResources('AWS::Lambda::Function')[configId(on)]?.Properties;
     expect(properties).toMatchObject({
-      Handler: 'engineering/connectors/issues_config.lambda_handler', Runtime: 'python3.14', Architectures: ['arm64'],
+      Handler: 'engineering/connectors/issues_config.lambda_handler', Runtime: 'python3.15', Architectures: ['arm64'],
       MemorySize: OPTIONAL_FUNCTION_SIZES[CONFIG_FUNCTION], Timeout: 15,
       Environment: { Variables: { ISSUES_SETTINGS_ARN: SHARED_SECRET } },
     });

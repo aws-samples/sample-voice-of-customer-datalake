@@ -475,6 +475,24 @@ OPEN_BY_DECISION: tuple[OpenGroup, ...] = (
           'End by its starter or an admin; the month\'s usage is require_admin_caller',
           'voice_session_routes.py', 'POST /projects/<project_id>/personas/<persona_id>/voice-sessions',
           'POST /projects/<project_id>/personas/<persona_id>/voice-sessions/<session_id>/end'),
+    _open('the Product tab\'s sources (7.104.00, shared/product_source_routes.py): per-project access, edit for every '
+          'route (a viewer reads them only); a link is public https only, at most 20 sources (10 links) a project and '
+          '30 link reads a day; typed answers redacted before they are saved',
+          'product_source_routes.py', 'POST /projects/<project_id>/product-docs/<doc_id>/uploaded',
+          'POST /projects/<project_id>/product-docs/urls', 'POST /projects/<project_id>/product-docs/<doc_id>/refresh',
+          'POST /projects/<project_id>/product-docs/answers'),
+    _open("the Product tab's extract and proposals (7.104.00, shared/product_proposal_routes.py): edit on the project "
+          'for each; an extract is limited (one at a time, 1 a minute and 10 a day per project, 20 a day per person); '
+          'an autonomous caller never replaces a value a person typed',
+          'product_proposal_routes.py', 'POST /projects/<project_id>/product-extract',
+          'POST /projects/<project_id>/product-proposals/<proposal_id>/accept',
+          'POST /projects/<project_id>/product-proposals/<proposal_id>/dismiss'),
+    _open('a voice interview about the project\'s product (7.104.00, the same flag and checks as a persona\'s, '
+          'shared/voice_session_routes.py): edit on the project, a person acting for themselves, consent, the same '
+          'minutes, starts a minute and sessions a day; End by its starter or an admin; its transcript becomes a '
+          'product source',
+          'voice_session_routes.py', 'POST /projects/<project_id>/product-interview/voice-sessions',
+          'POST /projects/<project_id>/product-interview/voice-sessions/<session_id>/end'),
     _open('copy personas into a project: edit on the target project, and the source is the library or a '
           'project the caller owns or is a member of (since 5.60.00)',
           'persona_copy_routes.py', 'POST /projects/<project_id>/personas/copy'),

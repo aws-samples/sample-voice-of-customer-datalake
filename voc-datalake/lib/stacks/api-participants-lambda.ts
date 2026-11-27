@@ -69,7 +69,7 @@ export function createParticipantsLambda(ctx: ApiStackContext): lambda.Function 
 
   return new lambda.Function(stack, 'EngagementApi', {
     functionName,
-    runtime: lambda.Runtime.PYTHON_3_14,
+    runtime: lambda.Runtime.PYTHON_3_15,
     architecture: lambda.Architecture.ARM_64,
     handler: 'engagement_handler.lambda_handler',
     code: apiCode('engagement_handler.py'),

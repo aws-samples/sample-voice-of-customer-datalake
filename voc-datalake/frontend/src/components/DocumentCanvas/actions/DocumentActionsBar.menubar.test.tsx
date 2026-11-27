@@ -1,7 +1,8 @@
 /**
  * The document page's menu bar (menuBar.ts, canvasMenus.ts): Document · Edit · Format · Insert · View on an editable
- * canvas, Document and View for a viewer; each entry dispatches the canvas's own action (the editor's commands
- * through its handle, the View switches, Rename); the menus are WAI-ARIA menu buttons and the bar's arrow keys walk
+ * canvas, Document and View for a viewer, and Review (before View) while the AI flows are offered; each entry
+ * dispatches the canvas's own action (the editor's commands through its handle, the View switches, Rename, the AI
+ * flows with the toolbar's state and reasons); the menus are WAI-ARIA menu buttons and the bar's arrow keys walk
  * them; the toolbar's Comments button toggles the panel and counts the open threads.
  */
 import { render, screen, within } from '@testing-library/react'
@@ -17,6 +18,7 @@ import DocumentActionsBar from './DocumentActionsBar'
 import type { CanvasCommand } from '../../Document/edit/editor/commands'
 import type { CanvasEditorHandle } from '../../Document/edit/editor/CanvasEditor'
 import type { CanvasViewControls } from './canvasMenus'
+import type { ReviewActions } from './toolbarItems'
 import type { ProjectDocument } from '../../../api/types'
 
 vi.mock('../../../api/projectsApi', () => ({ projectsApi: { getDocumentVersions: vi.fn(), restoreDocumentVersion: vi.fn() } }))
@@ -41,7 +43,18 @@ function viewControls(overrides: Partial<CanvasViewControls> = {}): CanvasViewCo
   }
 }
 
-function renderBar({ editable = true, canEdit = true, view = viewControls(), openThreads = 2, titleEditable = true } = {}) {
+interface BarOptions {
+  readonly editable?: boolean
+  readonly canEdit?: boolean
+  readonly view?: CanvasViewControls
+  readonly openThreads?: number
+  readonly titleEditable?: boolean
+  readonly review?: ReviewActions | null
+}
+
+function renderBar({
+  editable = true, canEdit = true, view = viewControls(), openThreads = 2, titleEditable = true, review = null,
+}: BarOptions = {}) {
   const focus = { active: false, toggle: vi.fn() }
   const onRename = vi.fn()
   const state = canvasState({ editable, titleEditable, handleRef: { current: handle } })
@@ -49,10 +62,20 @@ function renderBar({ editable = true, canEdit = true, view = viewControls(), ope
     <QueryClientProvider client={createTestQueryClient()}>
       <DocumentActionsBar project={project} document={custom} canEdit={canEdit} state={state} share={null} threads={null}
         onDeleteDoc={vi.fn()} isDeleting={false} focus={focus} focusButtonRef={createRef()} view={view}
-        openThreads={openThreads} onRename={onRename} viewing={null} onChooseVersion={vi.fn()} review={null} />
+        openThreads={openThreads} onRename={onRename} viewing={null} onChooseVersion={vi.fn()} review={review} />
     </QueryClientProvider>,
   )
   return { focus, onRename, view, user: userEvent.setup() }
+}
+
+/** The AI flows as the review view reports them: the project's personas, a rewrite ready to start. */
+function reviewActions({ review = {}, rewrite = {} }: {
+  review?: Partial<ReviewActions['review']>; rewrite?: Partial<NonNullable<ReviewActions['rewrite']>>
+} = {}): ReviewActions {
+  return {
+    review: { running: false, personas: 'project', again: false, start: vi.fn(), addPersonas: vi.fn(), ...review },
+    rewrite: { running: false, reason: null, start: vi.fn(), ...rewrite },
+  }
 }
 
 const menuButton = (name: string) => screen.getByRole('button', { name })
@@ -178,6 +201,79 @@ describe('DocumentActionsBar: the menu bar', () => {
     const { user } = renderBar({ titleEditable: false })
     await user.click(menuButton(enDocuments.menu.trigger))
     expect(screen.queryByRole('menuitem', { name: enDocuments.menu.rename })).not.toBeInTheDocument()
+  })
+})
+
+describe('DocumentActionsBar: the Review menu (the AI flows)', () => {
+  const tools = enDocuments.toolbar
+  const reviewMenu = () => within(screen.getByRole('menu', { name: bar.review }))
+  const entry = (name: string) => reviewMenu().getByRole('menuitem', { name })
+  const openReview = async (user: ReturnType<typeof userEvent.setup>) => { await user.click(menuButton(bar.review)) }
+
+  it('sits between Insert and View while the AI flows are offered', () => {
+    renderBar({ review: reviewActions() })
+    expect(within(menuBar()).getAllByRole('button').map((button) => button.textContent)).toStrictEqual([
+      enDocuments.menu.trigger, bar.edit, bar.format, bar.insert, bar.review, bar.view,
+    ])
+  })
+
+  it('is not offered without the AI flows (a viewer, an older version on screen)', () => {
+    renderBar({ review: null })
+    expect(screen.queryByRole('button', { name: bar.review })).not.toBeInTheDocument()
+  })
+
+  it('runs Persona review and Rewrite from comments, each with its icon', async () => {
+    const review = reviewActions()
+    const { user } = renderBar({ review })
+    await openReview(user)
+    const icon = (item: HTMLElement) => [...(item.querySelector('svg')?.classList ?? [])].find((name) => name.startsWith('lucide-'))
+    expect(reviewMenu().getAllByRole('menuitem').map((item) => [item.textContent, icon(item)])).toStrictEqual([
+      [tools.aiReview, 'lucide-users-round'], [tools.aiRewrite, 'lucide-wand-sparkles'],
+    ])
+    await user.click(entry(tools.aiReview))
+    await openReview(user)
+    await user.click(entry(tools.aiRewrite))
+    expect([review.review.start, review.rewrite?.start].map((start) => vi.mocked(start)?.mock.calls.length)).toStrictEqual([1, 1])
+  })
+
+  it('shows Rewrite from comments inert with the toolbar\'s reason, and does nothing', async () => {
+    const reason = 'Reply to a comment or resolve it first.'
+    const review = reviewActions({ rewrite: { reason } })
+    const { user } = renderBar({ review })
+    await openReview(user)
+    const rewrite = entry(tools.aiRewrite)
+    expect(rewrite).toHaveAttribute('aria-disabled', 'true')
+    expect(rewrite).toHaveAccessibleDescription(reason)
+    await user.click(rewrite)
+    expect(review.rewrite?.start).not.toHaveBeenCalled()
+  })
+
+  it('shows a running review busy: a spinner in place of the icon, inert, said under its name', async () => {
+    const review = reviewActions({ review: { running: true } })
+    const { user } = renderBar({ review })
+    await openReview(user)
+    const ask = entry(tools.aiReview)
+    expect([ask.getAttribute('aria-disabled'), ask.querySelector('svg')?.classList.contains('animate-spin')])
+      .toStrictEqual(['true', true])
+    expect(ask).toHaveAccessibleDescription('Personas are reading…')
+    await user.click(ask)
+    expect(review.review.start).not.toHaveBeenCalled()
+  })
+
+  it('says under Persona review that the company\'s personas review a project without its own', async () => {
+    const { user } = renderBar({ review: reviewActions({ review: { personas: 'company' } }) })
+    await openReview(user)
+    expect(entry(tools.aiReview)).toHaveAccessibleDescription(tools.companyPersonasNote)
+  })
+
+  it('offers Add personas with nobody to ask, which opens the Personas tab', async () => {
+    const review = reviewActions({ review: { personas: 'none' } })
+    const { user } = renderBar({ review })
+    await openReview(user)
+    expect(entry(tools.addPersonas)).toHaveAccessibleDescription(tools.addPersonasNote)
+    await user.click(entry(tools.addPersonas))
+    expect(review.review.addPersonas).toHaveBeenCalledTimes(1)
+    expect(review.review.start).not.toHaveBeenCalled()
   })
 })
 

@@ -15,8 +15,14 @@ workspace export carries (jobs/workspace_export/projects.py, project_fields.py),
 - a project ``META``: its ``owner_email`` and each ``members`` entry's ``email`` (an entry holds ``role``,
   ``username``, ``email``, ``added_by`` and ``added_at``; a ``name`` too when a writer set one);
 - a persona (``PERSONA#``, the persona library's too): each research note's ``author``, free text a member typed;
-- a product document's record (``PRODUCT_DOC#``): its ``filename`` (``LISTED_FIELDS``: never rewritten, the
-  document is listed for review instead, below).
+- a product document's record (``PRODUCT_DOC#``): its ``filename``, and a link's ``url``, ``final_url`` and
+  ``title`` (7.104.00; ``LISTED_FIELDS``: never rewritten, the document is listed for review instead, below);
+- a product proposal (``PRODUCT_PROPOSAL#``, 7.104.00: an extract of the product sources): each field's ``value``,
+  ``seen`` (the form's value it was proposed against), ``note`` and its citations' ``quote`` (words copied from a
+  source), each question, each source's name (``_proposal_texts``: never rewritten, listed for review instead, below);
+- the product context (``PRODUCT_CONTEXT``, 7.104.00 round 2): each text field (shared/product_fields.py
+  ``STRING_FIELDS``), typed by a person or accepted from a proposal (never rewritten, listed for review instead,
+  below).
 
 What an erasure does to each, the boards' and memberships' rule (boards.py, members.py): the row is DE-IDENTIFIED,
 never deleted. The address and name are removed; an access entry keyed by the sub stays:
@@ -56,9 +62,12 @@ URL carries.
 
 A project's product documents (``ws/{ws}/projects/{id}/product_docs/``): in a workspace an upload is a ``.md`` or
 ``.txt`` file or an image (the extractor's rules take no PDF there, 3f) and an image is never extracted (it is marked
-failed, 3f). Each record (``PRODUCT_DOC#``, ``DOCS_PAGE`` a step) is judged, and lands on one of two lists the job
-and audit rows carry (runs.py), each capped at 200 with its own ``more``, so a document that holds the address is
-never crowded out by those that could not be judged:
+failed, 3f). Since 7.104.00 the deployment's product sources also hold PDF, Word and PowerPoint files (their upload
+under ``source/``, read on the projects API's twin), links and typed or voice answers (no upload: their record holds
+only their text's key, ``extracted/{doc}.txt``, and a link's ``filename`` is its address); each is judged by its
+extracted text as any other kind. Each record (``PRODUCT_DOC#``, ``DOCS_PAGE`` a step) is judged, and lands on one of
+two lists the job and audit rows carry (runs.py), each capped at 200 with its own ``more``, so a document that holds
+the address is never crowded out by those that could not be judged:
 
 - ``files_needing_review``, the document holds the address: its ``filename`` does, or its text does (the extracted
   text when the record says the extractor wrote it, ``status`` ``ready`` and ``s3_extracted_key`` under its folder;
@@ -66,10 +75,20 @@ never crowded out by those that could not be judged:
   document, are closed as for any match;
 - ``files_not_checked`` (counted in ``product_docs_not_checked``), it could not be judged: an image (its folder
   listed once, however many it holds), an upload neither text nor image, text not extracted that is no ``.md`` or
-  ``.txt``, a file over ``MAX_TEXT_BYTES``, a record whose upload key is not under its folder (its folder listed), or
-  an object the role cannot read. The role holds no ``s3:ListBucket``, so a key that is not there (a record never
+  ``.txt``, a file over ``MAX_TEXT_BYTES``, a record whose upload key is not under its folder (its folder listed), a
+  link or answers not read yet or failed (by its text's key), or an object the role cannot read. The role holds no ``s3:ListBucket``, so a key that is not there (a record never
   uploaded, still pending, or failed) answers 403 like one it may not read: either is "cannot be judged", never a
   failure of the job.
+
+A project's product proposals (7.104.00, ``PRODUCT_PROPOSAL#``, ``DOCS_PAGE`` a step, after its documents): a
+proposal derived from its sources holds their words (a value, the form's value it saw, a note, a quote, a question)
+and their names; one in which any of them holds the address is listed in ``files_needing_review`` by its route,
+``projects/{id}/product-proposals/{proposal_id}`` (under ``ws/{ws}/`` in a workspace), and closes the workspace's
+exports, which copy it. The proposals' first step judges the product context too (``PRODUCT_CONTEXT``, 7.104.00 round
+2: its text fields, which an accepted value copies from a proposal), listed by its route
+``projects/{id}/product-context`` the same way. (A source's delete takes its quotes out of every proposal,
+shared/product_proposals.py ``forget_source``; a proposal's values, notes and sources' names stay for the team to
+review, and an erasure lists them.)
 
 Nothing there is changed or deleted: a document is the project's, and a person decides. A document not checked does
 not close the workspace's exports: if it holds the person's data, its copy in an export's zip stays until that zip
@@ -154,11 +173,14 @@ from shared.library_keys import ITEM_SK_PREFIX as LIBRARY_ITEM_SK_PREFIX
 from shared.library_keys import extracted_key as library_extracted_key
 from shared.library_keys import is_item_id, library_pk
 from shared.library_keys import original_key as library_original_key
+from shared.product_fields import STRING_FIELDS
 from shared.project_keys import (
     COMMENT_SERIES_PREFIX,
     DEPLOYMENT_LINK_REGISTRY_PK,
     DEPLOYMENT_SERIES_REGISTRY_PK,
+    PRODUCT_CONTEXT_SK,
     PRODUCT_DOC_SK_PREFIX,
+    PRODUCT_PROPOSAL_SK_PREFIX,
     REVIEW_REGISTRIES_MARKER_SK,
     SERIES_ID_RE,
     comments_pk,
@@ -181,6 +203,7 @@ from shared.project_walk import (
 from shared.project_writes import PROJECT_DELETION_ATTRIBUTE, is_project_tombstone
 from shared.retention import DOCS_NOT_CHECKED_COUNTER, MALFORMED_ID_COUNTER, PROJECT_COUNTER
 from shared.review_share_audience import MODE_LIST, is_share_id
+from shared.scoped_keys import scoped_object_key
 from shared.scoped_query import SK_BEGINS, SK_EQUALS
 from shared.timestamps import now_iso
 from shared.ws_repo import (
@@ -224,7 +247,7 @@ ERASED_FIELDS: Final = {
 #: team uploaded), but a record whose field holds it is listed for review (``_product_doc``).
 #: A library item's ``created_by`` / ``updated_by`` are ``{sub, name}``: their ``name`` is judged (an item stored before
 #: 7.63.00 could hold the uploader's address there, see library_routes.py ``_actor``).
-LISTED_FIELDS: Final = {'product_doc': ('filename',),
+LISTED_FIELDS: Final = {'product_doc': ('filename', 'url', 'final_url', 'title'),
                         'library_item': ('title', 'filename', 'source', 'tags', 'created_by', 'updated_by')}
 #: The product document records one docs step reads (each may be one or two object reads).
 DOCS_PAGE: Final = 5
@@ -243,8 +266,8 @@ _TEXT_SUFFIXES: Final = ('.md', '.txt')
 _EXTRACTED: Final = 'ready'
 #: A rewrite that removes the attribute.
 _REMOVE: Final = object()
-#: The parts of one project, in order (its prototypes' pins since 7.98.00, pins.py).
-_META, _DOCS, _PERSONAS, _PINS, _SERIES = 'meta', 'docs', 'personas', 'pins', 'series'
+#: The parts of one project, in order (its product proposals since 7.104.00; its prototypes' pins since 7.98.00, pins.py).
+_META, _DOCS, _PROPOSALS, _PERSONAS, _PINS, _SERIES = 'meta', 'docs', 'proposals', 'personas', 'pins', 'series'
 #: The cursor's mark of a deployment walk begun under 7.98.00 (its end sets ``PINS_WALKED``).
 _PINS_FROM_START: Final = 'pins_from_start'
 
@@ -365,8 +388,9 @@ class ProjectPeopleEraser:
         """The steps both scopes share: a link, a series' threads, one project's parts, the persona library and the
         end (the next page of projects is each scope's own state: ``registry``, ``projects``)."""
         return {'link': self._link_step, 'threads': self._threads_step, _META: self._meta_step,
-                _DOCS: self._docs_step, _PERSONAS: self._personas_step, 'prototypes': self._prototypes_step,
-                'prototype_pins': self._prototype_pins_step, 'project_done': self._project_done_step,
+                _DOCS: self._docs_step, _PROPOSALS: self._proposals_step, _PERSONAS: self._personas_step,
+                'prototypes': self._prototypes_step, 'prototype_pins': self._prototype_pins_step,
+                'project_done': self._project_done_step,
                 'library': self._library_step, 'documents_library': self._documents_library_step,
                 'pin_form_pages': self._pin_form_pages_step, 'pin_forms': self._pin_forms_step,
                 'done': self._done_step}
@@ -411,7 +435,7 @@ class ProjectPeopleEraser:
                 return 'threads' if at.get('series') else ('project_done' if at.get('series_listed') else 'series')
             if part == _PINS:
                 return 'prototype_pins' if at.get('prototypes') else 'prototypes'
-            if part not in (_META, _DOCS, _PERSONAS):
+            if part not in (_META, _DOCS, _PROPOSALS, _PERSONAS):
                 raise ValueError('a carried project part is not one')
             return part
         if not at.get('registry_done' if workspace else 'projects_done'):
@@ -504,7 +528,44 @@ class ProjectPeopleEraser:
             self._product_doc(scope, project_id, row)
             if (cut := self._cut(rows, n)) is not None:
                 return {**at, 'docs_from': cut}
-        return {**at, 'docs_from': following} if following else {**at, 'part': _PERSONAS, 'docs_from': None}
+        return ({**at, 'docs_from': following} if following
+                else {**at, 'part': _PROPOSALS, 'docs_from': None, 'proposals_from': None})
+
+    def _proposals_step(self, scope: WorkspaceScope | None, at: dict[str, Any]) -> dict[str, Any]:
+        """One page of the project's product proposals (``DOCS_PAGE``, 7.104.00), each judged (``_proposal``), the
+        first page after the product context (``_context``); cut after a row when the time runs low. Then its
+        personas."""
+        project_id = self._project(at)
+        if at.get('proposals_from') is None:
+            self._context(scope, project_id)
+        rows, following = query_page(self._view(scope), project_pk(project_id, workspace=scope),
+                                     checked_key(at.get('proposals_from')), Limit=DOCS_PAGE, ConsistentRead=True,
+                                     **merged(sort_key(SK_BEGINS, {':sk': PRODUCT_PROPOSAL_SK_PREFIX}),
+                                              _PROPOSAL_PROJECTION))
+        for n, row in enumerate(rows):
+            self._proposal(scope, project_id, row)
+            if (cut := self._cut(rows, n)) is not None:
+                return {**at, 'proposals_from': cut}
+        return ({**at, 'proposals_from': following} if following
+                else {**at, 'part': _PERSONAS, 'proposals_from': None})
+
+    def _context(self, scope: WorkspaceScope | None, project_id: str) -> None:
+        """Judge the project's product context (the module docstring): one whose text fields hold the address is
+        listed for review by its route and closes the workspace's exports; nothing is changed."""
+        rows, _ = query_page(self._view(scope), project_pk(project_id, workspace=scope), None, ConsistentRead=True,
+                             **merged(sort_key(SK_EQUALS, {':sk': PRODUCT_CONTEXT_SK}), _CONTEXT_PROJECTION))
+        if any(self._wanted in text.casefold() for row in rows for text in _context_texts(row)):
+            self._holds_it(scope, scoped_object_key(scope, f'projects/{project_id}/product-context'))
+
+    def _proposal(self, scope: WorkspaceScope | None, project_id: str, row: Mapping[str, Any]) -> None:
+        """Judge one product proposal (the module docstring): one whose sources' words or names (``_proposal_texts``)
+        hold the address is listed for review by its route and closes the workspace's exports; nothing is changed."""
+        proposal_id = row.get('proposal_id')
+        if not isinstance(proposal_id, str) or not is_project_id(proposal_id):
+            workspaces.count(self._run, MALFORMED_ID_COUNTER)
+            return
+        if any(self._wanted in text.casefold() for text in _proposal_texts(row)):
+            self._holds_it(scope, scoped_object_key(scope, f'projects/{project_id}/product-proposals/{proposal_id}'))
 
     def _personas_step(self, scope: WorkspaceScope | None, at: dict[str, Any]) -> dict[str, Any]:
         """One page of the project's personas (their research notes' authors); cut after a row when the time runs
@@ -636,16 +697,15 @@ class ProjectPeopleEraser:
         (``_text_key``)."""
         folder = product_docs_prefix(project_id, workspace=scope)
         doc_id = str(row.get('sk', '')).removeprefix(PRODUCT_DOC_SK_PREFIX)
-        raw = row.get('s3_raw_key')
-        shaped = is_project_id(doc_id) and isinstance(raw, str) and raw.startswith(f'{folder}raw/')
-        if not shaped:
+        raw = _listed_key(row, folder, doc_id) if is_project_id(doc_id) else None
+        if raw is None:
             workspaces.count(self._run, MALFORMED_ID_COUNTER)
         if any(isinstance(row.get(name), str) and self._wanted in str(row[name]).casefold()
                for name in LISTED_FIELDS['product_doc']):
             # Checked before the record's shape: a record that names the person is listed whatever else it holds.
-            self._holds_it(scope, raw if shaped and isinstance(raw, str) else folder)
+            self._holds_it(scope, raw or folder)
             return
-        if not shaped or not isinstance(raw, str):
+        if raw is None:
             self._not_checked(folder)
             return
         key = self._text_key(scope, folder, raw, row)
@@ -680,7 +740,7 @@ class ProjectPeopleEraser:
             return None
         if ready is not None:
             return ready
-        if lowered.endswith(_TEXT_SUFFIXES):
+        if lowered.endswith(_TEXT_SUFFIXES) and raw.startswith(f'{folder}raw/'):
             return raw
         # Neither a text upload nor its extracted text to read (another kind, or text not extracted yet).
         self._not_checked(raw)
@@ -902,11 +962,69 @@ def _projection(kind: str) -> dict[str, Any]:
             'ExpressionAttributeNames': {'#pk': 'pk', '#sk': 'sk', **names, **extra}}
 
 
-#: What a docs step reads of a product document record.
+def _listed_key(row: Mapping[str, Any], folder: str, doc_id: str) -> str | None:
+    """The object a product document's record is judged and listed by, or None when the record is malformed: its
+    upload (``s3_raw_key`` under its folder's ``raw/``, or since 7.104.00 a PDF, Word or PowerPoint file's
+    ``source/``, which only the twin reads); or, for a source with no upload (7.104.00: a link, typed or voice answers,
+    whose record holds no ``s3_raw_key``), its text's key (``extracted/{doc}.txt``, shared/product_sources.py
+    ``product_doc_extracted_key``), which holds all it stores."""
+    raw = row.get('s3_raw_key')
+    if raw is None:
+        return f'{folder}extracted/{doc_id}.txt'
+    return raw if isinstance(raw, str) and raw.startswith((f'{folder}raw/', f'{folder}source/')) else None
+
+
+def _texts_at(entries: object, name: str) -> list[str]:
+    """``entry[name]`` of each map of a list that is text (anything else left out)."""
+    if not isinstance(entries, list):
+        return []
+    return [str(entry[name]) for entry in entries if isinstance(entry, Mapping) and isinstance(entry.get(name), str)]
+
+
+def _proposal_texts(row: Mapping[str, Any]) -> list[str]:
+    """Every text of a proposal: each field's ``value``, ``seen``, ``note`` and citations' ``quote``, each question's
+    ``question``, each source's ``name`` (anything else, or not text, is left out)."""
+    fields = row.get('fields')
+    entries = [entry for entry in fields.values() if isinstance(entry, Mapping)] if isinstance(fields, Mapping) else []
+    texts = [str(entry[name]) for entry in entries for name in ('value', 'seen', 'note')
+             if isinstance(entry.get(name), str)]
+    for entry in entries:
+        texts.extend(_texts_at(entry.get('citations'), 'quote'))
+    return [*texts, *_texts_at(row.get('questions'), 'question'), *_texts_at(row.get('sources'), 'name')]
+
+
+def _context_texts(row: Mapping[str, Any]) -> list[str]:
+    """Every text field of a product context (``STRING_FIELDS``): a value, or a list's lines (the schema before the
+    fields were text)."""
+    texts: list[str] = []
+    for name in STRING_FIELDS:
+        value = row.get(name)
+        if isinstance(value, str):
+            texts.append(value)
+        elif isinstance(value, list):
+            texts.extend(one for one in value if isinstance(one, str))
+    return texts
+
+
+#: What a docs step reads of a product document record (a link's address, where it ended and its title too).
 _DOC_PROJECTION: Final = {
-    'ProjectionExpression': '#pk, #sk, #raw, #type, #status, #text, #file',
+    'ProjectionExpression': '#pk, #sk, #raw, #type, #status, #text, #file, #url, #final, #title',
     'ExpressionAttributeNames': {'#pk': 'pk', '#sk': 'sk', '#raw': 's3_raw_key', '#type': 'content_type',
-                                 '#status': 'status', '#text': 's3_extracted_key', '#file': 'filename'},
+                                 '#status': 'status', '#text': 's3_extracted_key', '#file': 'filename', '#url': 'url',
+                                 '#final': 'final_url', '#title': 'title'},
+}
+#: What the proposals' first step reads of the product context: its text fields (lib/stacks/retention-worker.ts holds
+#: the deployment's Query to these among DEPLOYMENT_QUERY_ATTRIBUTES).
+_CONTEXT_PROJECTION: Final = {
+    'ProjectionExpression': ', '.join(['#pk', '#sk', *(f'#c{n}' for n in range(len(STRING_FIELDS)))]),
+    'ExpressionAttributeNames': {'#pk': 'pk', '#sk': 'sk', **{f'#c{n}': name for n, name in enumerate(STRING_FIELDS)}},
+}
+#: What a proposals step reads of a product proposal (lib/stacks/retention-worker.ts holds the deployment's Query to
+#: these among DEPLOYMENT_QUERY_ATTRIBUTES).
+_PROPOSAL_PROJECTION: Final = {
+    'ProjectionExpression': '#pk, #sk, #pid, #fields, #questions, #sources',
+    'ExpressionAttributeNames': {'#pk': 'pk', '#sk': 'sk', '#pid': 'proposal_id', '#fields': 'fields',
+                                 '#questions': 'questions', '#sources': 'sources'},
 }
 #: What the documents library step reads of an item (lib/stacks/retention-worker.ts holds the deployment's Query to
 #: these among DEPLOYMENT_QUERY_ATTRIBUTES): its key, status, the metadata a person typed and who made and changed it.
@@ -920,10 +1038,11 @@ _LIBRARY_PROJECTION: Final = {
 _PINS_START: Final = {'prototypes': [], 'prototypes_from': None, 'prototypes_listed': False,
                       'prototype_pins_from': None}
 #: The per-project part of a workspace's cursor, as a project starts.
-_PROJECT_START: Final = {'part': _META, 'docs_from': None, 'personas_from': None, 'series': [], 'series_from': None,
-                         'series_listed': False, 'start': None, **_PINS_START}
+_PROJECT_START: Final = {'part': _META, 'docs_from': None, 'proposals_from': None, 'personas_from': None,
+                         'series': [], 'series_from': None, 'series_listed': False, 'start': None, **_PINS_START}
 #: The same of the deployment's: its series are walked through its series registry, not per project.
-_DEPLOYMENT_PROJECT_START: Final = {'part': _META, 'docs_from': None, 'personas_from': None, **_PINS_START}
+_DEPLOYMENT_PROJECT_START: Final = {'part': _META, 'docs_from': None, 'proposals_from': None, 'personas_from': None,
+                                    **_PINS_START}
 
 
 def _after_pins(at: Mapping[str, Any]) -> dict[str, Any]:

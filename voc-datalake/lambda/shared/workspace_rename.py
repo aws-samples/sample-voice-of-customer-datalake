@@ -34,10 +34,10 @@ from typing import Any, Final
 from botocore.exceptions import ClientError
 
 from shared.audit_rows import put_new_audit_row
+from shared.aws import CONDITION_FAILED, TRANSACTION_CONFLICT, cancellation_codes
 from shared.dynamo_paging import iter_query
 from shared.exceptions import AuthorizationError, ConflictError, NotFoundError
 from shared.logging import logger
-from shared.persona_save import CONDITION_FAILED, cancellation_codes
 from shared.platform_workspaces import LISTING_PK, RENAMED_AT, listing_sort_key, validated_workspace_name
 from shared.request_body import reject_unknown_fields
 from shared.timestamps import now_iso
@@ -117,7 +117,7 @@ def _commit(table: Any, context: WorkspaceContext, name: str, actor: str) -> Non
         codes = cancellation_codes(exc)
         if actor_index is not None and codes[actor_index:actor_index + 1] == [CONDITION_FAILED]:
             raise AuthorizationError(NO_LONGER_ADMIN) from exc
-        if CONDITION_FAILED in codes or 'TransactionConflict' in codes:
+        if CONDITION_FAILED in codes or TRANSACTION_CONFLICT in codes:
             raise ConflictError(RENAME_CHANGED_MEANWHILE) from exc
         raise
 

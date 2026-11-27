@@ -3,9 +3,9 @@
  *
  * - its roving focus (useRovingToolbar): one Tab stop for the whole row, the arrow keys, Home and End;
  * - `ToolbarButton`: an icon button named by `aria-label`, with its tooltip (`role="tooltip"`, its description, shown on
- *   hover and on keyboard focus); a toggle says whether it is on with `aria-pressed`; a count shows as a badge (the
- *   count is in the name, so it is announced). A disabled item stays focusable (`aria-disabled`, APG) and says why in
- *   its tooltip.
+ *   hover and on keyboard focus), its name also beside the icon when it is one of the AI flows (`text`); a toggle says
+ *   whether it is on with `aria-pressed`; a count shows as a badge (the count is in the name, so it is announced). A
+ *   disabled item stays focusable (`aria-disabled`, APG) and says why in its tooltip.
  * - `ToolbarMenu`: a menu button of the row (the version picker, "⋯"), its entries drawn as the menu bar's
  *   (CanvasMenuEntries).
  *
@@ -47,24 +47,38 @@ interface ToolbarButtonProps extends ToolbarControl {
   readonly onClick: () => void
 }
 
-export function ToolbarButton({
-  rove, label, hint, icon: Icon, pressed, badge, disabled = false, busy = false, opensDialog = false, keyShortcuts, buttonRef,
-  onClick,
-}: ToolbarButtonProps) {
-  const tipId = useId()
+/** What a button shows: its icon (a spinner while it runs), its name beside it (`text`), its count. */
+function ButtonFace({ label, icon: Icon, busy, text, badge }: Readonly<{
+  label: string; icon: ToolbarControl['icon']; busy: boolean; text: boolean; badge?: number
+}>) {
   return (
-    // Not `disabled`: a disabled item could not take the row's roving focus (APG: it stays focusable, its tooltip says why).
-    <button ref={buttonRef} type="button" {...rove} className={toolbarButtonClass(false)} aria-label={label}
-      aria-describedby={tipId} aria-pressed={pressed} aria-disabled={disabled || busy ? true : undefined}
-      aria-haspopup={opensDialog ? 'dialog' : undefined} aria-keyshortcuts={keyShortcuts}
-      onClick={disabled || busy ? undefined : onClick}>
+    <>
       {busy ? <Loader2 size={16} className="animate-spin motion-reduce:animate-none" aria-hidden="true" /> : <Icon size={16} aria-hidden="true" />}
+      {/* The same words as its name (`aria-label`), so what is seen is what is announced. */}
+      {text ? <span aria-hidden="true" className="whitespace-nowrap">{label}</span> : null}
       {badge === undefined || badge === 0 ? null : (
         <span aria-hidden="true" data-testid="toolbar-badge"
           className="absolute -right-0.5 -top-0.5 min-w-4 rounded-full bg-accent px-1 font-mono text-[10px] font-semibold leading-4 text-accent-fg">
           {badge}
         </span>
       )}
+    </>
+  )
+}
+
+export function ToolbarButton({
+  rove, label, hint, icon, pressed, badge, disabled = false, busy = false, opensDialog = false, keyShortcuts, buttonRef,
+  text = false, onClick,
+}: ToolbarButtonProps) {
+  const tipId = useId()
+  const inert = disabled || busy
+  return (
+    // Not `disabled`: a disabled item could not take the row's roving focus (APG: it stays focusable, its tooltip says why).
+    <button ref={buttonRef} type="button" {...rove} className={toolbarButtonClass(text)} aria-label={label}
+      aria-describedby={tipId} aria-pressed={pressed} aria-disabled={inert ? true : undefined}
+      aria-haspopup={opensDialog ? 'dialog' : undefined} aria-keyshortcuts={keyShortcuts}
+      onClick={inert ? undefined : onClick}>
+      <ButtonFace label={label} icon={icon} busy={busy} text={text} badge={badge} />
       <ToolbarTip id={tipId}>{hint}</ToolbarTip>
     </button>
   )

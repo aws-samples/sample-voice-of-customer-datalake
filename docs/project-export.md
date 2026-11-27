@@ -103,7 +103,7 @@ and members' addresses and no erasure reaches it, so delete a bundle once it is 
 
 | Data | Where | Notes |
 |---|---|---|
-| The project (META), personas, PR/FAQs, PRDs, prototypes, custom and research documents, decision records, product-doc rows | projects table, `PROJECT#{id}` | The whole partition. |
+| The project (META), personas, PR/FAQs, PRDs, prototypes, custom and research documents, decision records, product-doc rows, the product context and its product proposals | projects table, `PROJECT#{id}` | The whole partition, but the product extract's lock (`PRODUCT_EXTRACT`, a running extract's), meaningless on another deployment. A proposal (`PRODUCT_PROPOSAL#…`, 7.104.00) keeps its proposed fields, citations, review marks and the model that made it; its `created_by` and the context's `field_meta` subs are remapped as every sub is. |
 | Document version counters and allocations | projects table, `DOCUMENT_VERSIONS#PROJECT#{id}` | Version numbers continue where they were. |
 | Comment threads and replies | projects table, `DCOMMENTS#{id}#{series}` / `C#…` | |
 | Prototype pin forms and pins | aggregates table, `FEEDBACK_FORM` / `FORM#pf_…`, `PINS#{form}` | |

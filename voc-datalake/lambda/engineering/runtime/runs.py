@@ -83,7 +83,7 @@ from engineering.spend import (
     release_alert,
 )
 from shared import agents_store, workflow_schema
-from shared.aws import consistent_item, is_conditional_check_failure
+from shared.aws import TRANSACTION_CONFLICT, cancellation_codes, consistent_item, is_conditional_check_failure
 from shared.dynamo_paging import iter_query
 from shared.ids import is_key_collision
 from shared.logging import logger
@@ -267,8 +267,7 @@ def _role_models(raw: object) -> dict[str, str]:
 
 def transaction_conflict(error: ClientError) -> bool:
     """The transaction lost a race with another write of one of its items (worth one more try)."""
-    reasons = error.response.get('CancellationReasons') or []
-    return any(reason.get('Code') == 'TransactionConflict' for reason in reasons)
+    return TRANSACTION_CONFLICT in cancellation_codes(error)
 
 
 def _history(run_id: str, *, status: str, actor: str, now: int, reason: str = '',
@@ -638,12 +637,16 @@ class RunStore:
 
     def resume(self, run_id: str, *, now: int, actor: str = '', only_from: str = '') -> str:
         """A person resumed the run from its decision point: active again; ``RunNotActive`` when it was not waiting.
-        ``resumed_epoch`` records when (the supervisor gives a Resume's new coordinator its own launch window). At a
-        flow step's decision point (``flow:<step>``) it is also that person's decision on the step, a create-only
-        ``STEP#<step>#decision#…`` row in the same transaction, held to the decision point read (D4: who and when;
-        the conductor passes the step, or gives a blocked one another try). ``only_from``: only off that decision
-        point (``RunNotActive`` at any other: a Resume a fill carries on never passes a point the person did not
-        see). The step decided on, '' for none (7.71.04: the Resume then tries it again, ``step_retry.py``)."""
+        ``resumed_epoch`` records when, in whole seconds (the supervisor gives a Resume's new coordinator its own launch
+        window, and a coordinate task its coordinator ended done before it is reopened:
+        ``BoardLeases.coordinator_to_start``). At a flow step's decision point (``flow:<step>``) it is also that
+        person's decision on the step, a create-only ``STEP#<step>#decision#…`` row in the same transaction, held to
+        the decision point read (D4: who and when; the conductor passes the step, or gives a blocked one another try:
+        7.104.00, every task of it that ended unfinished by the end of the decision's second, ``now``:
+        ``conductor.decided_since``, which states that window and why it is accepted).
+        ``only_from``: only off that decision point (``RunNotActive`` at any other: a Resume a fill
+        carries on never passes a point the person did not see). The step decided on, '' for none (7.71.04: the
+        Resume then tries it again, ``step_retry.py``)."""
         waiting = self.get(run_id)
         if waiting is None:   # (never started: refused before any write, as META's condition would refuse it)
             raise RunNotActive(f'run {run_id} is not active')

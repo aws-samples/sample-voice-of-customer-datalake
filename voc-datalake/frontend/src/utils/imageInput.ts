@@ -4,7 +4,7 @@
  * @module utils/imageInput
  *
  * LIFTED, NOT COPIED. These were module-private in
- * `pages/ProjectDetail/ProductDocsUpload.tsx`, which was the only pane that
+ * the Product tab's docs card (now its Sources card, `pages/ProjectDetail/ProductSourcesCard.tsx`), the only pane that
  * accepted a pasted image. The persona-import modal now needs exactly the same
  * behaviour, and the traps they exist for are properties of the browser and of
  * this platform's naming rather than of either pane:

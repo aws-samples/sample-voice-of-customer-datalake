@@ -2511,17 +2511,20 @@
   {
     "file": "api/voiceSessionsApi.ts",
     "method": "GET",
-    "call": "sessionsPath(projectId, personaId)",
+    "call": "sessionsPath(projectId, subject)",
     "probes": [
       {
         "path": "/projects/proj_1/personas/persona_1/voice-sessions"
+      },
+      {
+        "path": "/projects/proj_1/product-interview/voice-sessions"
       }
     ]
   },
   {
     "file": "api/voiceSessionsApi.ts",
     "method": "POST",
-    "call": "sessionsPath(projectId, personaId)",
+    "call": "sessionsPath(projectId, subject)",
     "probes": [
       {
         "path": "/projects/proj_1/personas/persona_1/voice-sessions",
@@ -2529,26 +2532,45 @@
           "consent": true,
           "language": "en"
         }
+      },
+      {
+        "path": "/projects/proj_1/product-interview/voice-sessions",
+        "body": {
+          "consent": true,
+          "language": "en",
+          "questions": [
+            {
+              "field": "product_name",
+              "question": "What is the product called?"
+            }
+          ]
+        }
       }
     ]
   },
   {
     "file": "api/voiceSessionsApi.ts",
     "method": "GET",
-    "call": "sessionPath(projectId, personaId, sessionId)",
+    "call": "sessionPath(projectId, subject, sessionId)",
     "probes": [
       {
         "path": "/projects/proj_1/personas/persona_1/voice-sessions/voice_1"
+      },
+      {
+        "path": "/projects/proj_1/product-interview/voice-sessions/voice_1"
       }
     ]
   },
   {
     "file": "api/voiceSessionsApi.ts",
     "method": "POST",
-    "call": "`${sessionPath(projectId, personaId, sessionId)}/end`",
+    "call": "`${sessionPath(projectId, subject, sessionId)}/end`",
     "probes": [
       {
         "path": "/projects/proj_1/personas/persona_1/voice-sessions/voice_1/end"
+      },
+      {
+        "path": "/projects/proj_1/product-interview/voice-sessions/voice_1/end"
       }
     ]
   },
@@ -4018,6 +4040,110 @@
     "probes": [
       {
         "path": "/projects/proj_1/product-docs"
+      }
+    ]
+  },
+  {
+    "file": "api/projectsApi.ts",
+    "method": "POST",
+    "call": "`/projects/${projectId}/product-docs/${docId}/uploaded`",
+    "probes": [
+      {
+        "path": "/projects/proj_1/product-docs/doc_x/uploaded"
+      }
+    ]
+  },
+  {
+    "file": "api/projectsApi.ts",
+    "method": "POST",
+    "call": "`/projects/${projectId}/product-docs/urls`",
+    "probes": [
+      {
+        "path": "/projects/proj_1/product-docs/urls",
+        "body": {
+          "url": "https://example.com/product"
+        }
+      }
+    ]
+  },
+  {
+    "file": "api/projectsApi.ts",
+    "method": "POST",
+    "call": "`/projects/${projectId}/product-docs/${docId}/refresh`",
+    "probes": [
+      {
+        "path": "/projects/proj_1/product-docs/doc_x/refresh"
+      }
+    ]
+  },
+  {
+    "file": "api/projectsApi.ts",
+    "method": "POST",
+    "call": "`/projects/${projectId}/product-docs/answers`",
+    "probes": [
+      {
+        "path": "/projects/proj_1/product-docs/answers",
+        "body": {
+          "mode": "typed",
+          "answers": [
+            {
+              "field": "product_name",
+              "question": "What is the product called?",
+              "answer": "Parcel Pilot"
+            }
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "file": "api/projectsApi.ts",
+    "method": "POST",
+    "call": "`/projects/${projectId}/product-extract`",
+    "probes": [
+      {
+        "path": "/projects/proj_1/product-extract",
+        "body": {
+          "response_language": "en",
+          "effort": "max"
+        }
+      }
+    ]
+  },
+  {
+    "file": "api/projectsApi.ts",
+    "method": "GET",
+    "call": "`/projects/${projectId}/product-proposals/latest`",
+    "probes": [
+      {
+        "path": "/projects/proj_1/product-proposals/latest"
+      }
+    ]
+  },
+  {
+    "file": "api/projectsApi.ts",
+    "method": "POST",
+    "call": "`/projects/${projectId}/product-proposals/${encodeURIComponent(proposalId)}/accept`",
+    "probes": [
+      {
+        "path": "/projects/proj_1/product-proposals/pp_x/accept",
+        "body": {
+          "fields": {
+            "product_name": {
+              "seen": ""
+            }
+          }
+        }
+      }
+    ]
+  },
+  {
+    "file": "api/projectsApi.ts",
+    "method": "POST",
+    "call": "`/projects/${projectId}/product-proposals/${encodeURIComponent(proposalId)}/dismiss`",
+    "probes": [
+      {
+        "path": "/projects/proj_1/product-proposals/pp_x/dismiss"
       }
     ]
   },

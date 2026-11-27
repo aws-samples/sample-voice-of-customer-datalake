@@ -88,8 +88,9 @@ describe('ProductTab sections', () => {
       expect(screen.getByRole('region', { name: title })).toBeInTheDocument()
     }
     const labels = [
-      /product name/i, /one-liner/i, /current state/i, /target users/i, /problem solved/i, /key features/i,
-      /differentiators/i, /success metrics/i, /known limitations/i, /non-goals/i, /notes \(anything else\)/i,
+      /what the product does/i, /product name/i, /one-liner/i, /current state/i, /target users/i, /problem solved/i,
+      /key features/i, /differentiators/i, /success metrics/i, /known limitations/i, /non-goals/i,
+      /notes \(anything else\)/i,
     ]
     expect(labels.map((label) => screen.getAllByLabelText(label).length)).toStrictEqual(labels.map(() => 1))
     expect(labels).toHaveLength(PRODUCT_CONTEXT_FIELD_COUNT)

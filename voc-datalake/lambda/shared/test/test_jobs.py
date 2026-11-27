@@ -62,7 +62,9 @@ class TestJobContext:
         ctx = JobContext('proj_123', 'job_abc', workspace=None)
         ctx.update_progress(50, 'processing')
 
-        mock_update.assert_called_once_with('proj_123', 'job_abc', 'running', 50, 'processing', workspace=None)
+        # A progress write never reopens a job that ended (review Q3, 7.104.00 round 1).
+        mock_update.assert_called_once_with('proj_123', 'job_abc', 'running', 50, 'processing', workspace=None,
+                                            unless_finished=True)
 
 
 @pytest.mark.usefixtures("reset_table_cache")

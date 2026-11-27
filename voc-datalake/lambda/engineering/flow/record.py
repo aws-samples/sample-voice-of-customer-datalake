@@ -8,9 +8,11 @@
   ``fan_out`` (a map's shards, as the run coordinator listed them), ``done`` (a step the coordinator did itself, or a
   board it closed), ``not_yet_run`` (a step the runtime cannot do yet that the flow went on without, recorded by the
   board when the conductor first says so), ``decision`` (a person's Resume at the step's decision point,
-  ``runs.RunStore.resume``) and ``verdict`` (``#<task>``: a quality gate's verdict as the board read it in the deciding
-  final-go task's gate record, for the readers that read no gate record) and ``inherited`` (7.51.00: a child run's
-  step its parent had done, written by the child's start, ``runtime/restart.py``: done without a task here).
+  ``runs.RunStore.resume``: its ``at``, in whole seconds, covers every task of the step that ended unfinished by the
+  end of that second) and ``verdict``
+  (``#<task>``: a quality gate's verdict as the board read it in the deciding final-go task's gate record, for the
+  readers that read no gate record) and ``inherited`` (7.51.00: a child run's step its parent had done, written by
+  the child's start, ``runtime/restart.py``: done without a task here).
 
 The tasks the board holds for each step (their ``step`` and ``shard``) and these rows are all the conductor reads
 (``conductor.conduct``).
@@ -18,16 +20,27 @@ The tasks the board holds for each step (their ``step`` and ``shard``) and these
 from __future__ import annotations
 
 import json
-from collections import Counter
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Any, Final
 
 from botocore.exceptions import ClientError
 
 from engineering.board.model import Task
 from engineering.board.store import BoardError, posts_sk
-from engineering.flow.conductor import GO, NO_GO, UNREAD, BoardState, Flow, FlowError, Plan, StepTask, conduct
+from engineering.flow.conductor import (
+    GO,
+    NO_GO,
+    UNREAD,
+    BoardState,
+    Flow,
+    FlowError,
+    Plan,
+    StepTask,
+    conduct,
+    decided_until,
+)
 from engineering.flow.ledger import ReadRecord, newest_final_go, verdict
 from engineering.rows import get_row, number_value, run_pk, run_rows, string_attr
 from engineering.runtime.outputs import PULL_REQUEST_DRAFT
@@ -100,14 +113,19 @@ def recorded_verdicts(rows: Iterable[Mapping[str, Any]]) -> dict[tuple[str, str]
             for row in rows if string_attr(row, 'record') == VERDICT}
 
 
+def _latest(*moments: datetime | None) -> datetime | None:
+    return max((moment for moment in moments if moment is not None), default=None)
+
+
 def board_state(tasks: Iterable[Task], rows: Iterable[Mapping[str, Any]], *, cap_reached: bool,
                 verdicts: Mapping[str, str] | None = None, draft_pr: bool = False) -> BoardState:
     """The conductor's view of a run: its tasks (each with its step), its step rows and its gates' verdicts; and
-    (7.71.04) whether its pull request opens as a draft (``draft_pull_request``)."""
+    (7.71.04) whether its pull request opens as a draft (``draft_pull_request``). A step's decisions are what its
+    latest one covers (7.104.00, ``conductor.decided_until``: through the end of the second it was recorded in)."""
     fanned: dict[str, tuple[str, ...]] = {}
     done: set[str] = set()
     inherited: set[str] = set()
-    decisions: Counter[str] = Counter()
+    decisions: dict[str, datetime | None] = {}
     for row in rows:
         step, kind = string_attr(row, 'step'), string_attr(row, 'record')
         if kind == FAN_OUT:
@@ -115,11 +133,11 @@ def board_state(tasks: Iterable[Task], rows: Iterable[Mapping[str, Any]], *, cap
         elif kind == DONE:
             done.add(step)
         elif kind == DECISION:
-            decisions[step] += 1
+            decisions[step] = _latest(decisions.get(step), decided_until(string_attr(row, 'at')))
         elif kind == INHERITED:
             inherited.add(step)
     return BoardState(tasks=tuple(step_task(task) for task in tasks if task.flow_step), fanned_out=fanned,
-                      completed=frozenset(done), decisions=dict(decisions), cap_reached=cap_reached,
+                      completed=frozenset(done), decisions=decisions, cap_reached=cap_reached,
                       verdicts=dict(verdicts or {}), inherited=frozenset(inherited), draft_pr=draft_pr)
 
 

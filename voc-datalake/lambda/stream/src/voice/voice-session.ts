@@ -1,6 +1,8 @@
 /**
- * One spoken interview with a persona: the browser's WebSocket on one side, Nova Sonic on the other (docs/
- * voice-personas.md → The relay). One per AgentCore session (one microVM per session id).
+ * One spoken interview with a persona, or (7.104.00) with the product interviewer about the team's own product: the
+ * browser's WebSocket on one side, Nova Sonic on the other (docs/voice-personas.md → The relay). One per AgentCore
+ * session (one microVM per session id). The session's kind picks the prompt and the tools (prompt.ts
+ * `sessionSetup`: the persona with its `cite`, the interviewer with none); everything below is the same for both.
  *
  * - Start: the session row goes `minted` → `live` once (store.ts `activate`: the presigned URL is single use and
  *   taken until the row's `connect_by`, its minute and 10 s for the clocks), then the projects API's input is read and
@@ -33,7 +35,7 @@ import { Conversation } from './conversation.js';
 import { isBusyError, SonicStream, type SonicTransport } from './bedrock-stream.js';
 import { logEvent } from './log.js';
 import { Meter, centsOf } from './meter.js';
-import { citeToolSpec, GOODBYE_TURN, systemPrompt } from './prompt.js';
+import { GOODBYE_TURN, sessionSetup } from './prompt.js';
 import {
   browserMessageSchema, VOICE_CLOSE, VOICE_INPUT_SAMPLE_RATE, type RelayMessage, type VoiceEndReason,
 } from './protocol.js';
@@ -83,6 +85,11 @@ interface Failure {
 }
 
 const refused: Failure = { reason: 'refused', code: VOICE_CLOSE.policy };
+
+/** The review ids a turn may cite: the persona's evidence pack (the product interviewer cites nothing). */
+function citable(input: SessionInput): Set<string> {
+  return new Set(input.kind === 'persona_interview' ? input.evidence.map((item) => item.feedback_id) : []);
+}
 
 export class VoiceSession {
   private input: SessionInput | undefined;
@@ -182,7 +189,7 @@ export class VoiceSession {
       if (this.endRequested()) return undefined;
       this.channel.json({ type: 'ready', voice_id: input.voiceId, session_seconds: input.sessionSeconds, minutes_left: input.minutesLeft });
       this.armLimits(input);
-      logEvent('session_live', { session_id: sessionId, evidence: input.evidence.length });
+      logEvent('session_live', { session_id: sessionId, kind: input.kind, evidence: citable(input).size });
       return undefined;
     } catch (error) {
       logEvent('session_failed', { session_id: sessionId, error: errorName(error) });
@@ -193,8 +200,7 @@ export class VoiceSession {
   private begin(input: SessionInput): void {
     this.input = input;
     this.minutesLeft = input.minutesLeft;
-    const transcript = new Transcript(new Set(input.evidence.map((item) => item.feedback_id)),
-      () => new Date(this.deps.clock.now()).toISOString());
+    const transcript = new Transcript(citable(input), () => new Date(this.deps.clock.now()).toISOString());
     this.transcript = transcript;
     this.conversation = new Conversation(transcript, {
       send: (message) => { this.channel.json(message); },
@@ -218,7 +224,7 @@ export class VoiceSession {
     if (input === undefined) return;
     const stream = new SonicStream(this.streams, this.deps.clock.now());
     this.streams += 1;
-    stream.send(openingEvents({ voiceId: input.voiceId, systemPrompt: systemPrompt(input), tools: [citeToolSpec()], history }));
+    stream.send(openingEvents({ voiceId: input.voiceId, ...sessionSetup(input), history }));
     const previous = this.stream;
     this.stream = stream;
     for (const frame of this.pendingAudio) this.forward(stream, frame);

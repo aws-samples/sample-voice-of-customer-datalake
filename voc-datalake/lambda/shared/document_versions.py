@@ -35,6 +35,7 @@ from uuid import uuid4
 
 from botocore.exceptions import ClientError
 
+from shared.aws import CONDITION_FAILED, TRANSACTION_CONFLICT, cancellation_codes
 from shared.aws import is_conditional_check_failure as _conditional_failure
 from shared.digests import sha256_hex
 from shared.exceptions import ConflictError, ServiceError, ValidationError
@@ -90,12 +91,12 @@ LEGACY_MIGRATION_WAIT_SECONDS = 15
 LEGACY_MIGRATION_POLL_MAX_SECONDS = 0.25
 
 _TRANSIENT_TRANSACTION_REASONS = frozenset({
-    'TransactionConflict',
+    TRANSACTION_CONFLICT,
     'ThrottlingError',
     'ProvisionedThroughputExceeded',
 })
 _PERMANENT_TRANSACTION_REASONS = frozenset({
-    'ConditionalCheckFailed',
+    CONDITION_FAILED,
     'ItemCollectionSizeLimitExceeded',
     'ValidationError',
 })
@@ -1526,31 +1527,15 @@ def _allocation_retryable(
     return counter_moved or migration_active or _transient(error)
 
 
-def _cancellation_reasons(error: ClientError) -> object:
-    """The raw ``CancellationReasons`` field, deliberately untyped.
-
-    The stubs promise a list of typed dicts, but the field may be absent or
-    shaped differently on the wire, so callers validate every level.
-    """
-    return error.response.get('CancellationReasons')
-
-
 def _transient(error: ClientError) -> bool:
     code = error.response.get('Error', {}).get('Code')
     if code in _TRANSIENT_ERROR_CODES:
         return True
     if code != 'TransactionCanceledException':
         return False
-    reasons = _cancellation_reasons(error)
-    if not isinstance(reasons, list):
-        # Python DynamoDB responses may omit cancellation reasons. The retry
-        # budget is bounded and each attempt first checks for a committed replay.
-        return True
-    reason_codes = {
-        str(reason.get('Code'))
-        for reason in reasons
-        if isinstance(reason, dict) and reason.get('Code') not in (None, 'None')
-    }
+    # Python DynamoDB responses may omit cancellation reasons (no code at all: transient). The retry
+    # budget is bounded and each attempt first checks for a committed replay.
+    reason_codes = {found for found in cancellation_codes(error) if found is not None}
     if reason_codes & _PERMANENT_TRANSACTION_REASONS:
         return False
     return not reason_codes or bool(reason_codes & _TRANSIENT_TRANSACTION_REASONS)

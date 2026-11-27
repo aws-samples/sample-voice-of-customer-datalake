@@ -212,9 +212,9 @@ describe('the AI assistant stream runs for 15 minutes', () => {
   });
 
   // Same runtime as voc-plan-step (plan-runtime.test.ts), which is bundled from the same package.
-  it('runs the chat-stream Lambda on ARM64 Node.js 24', () => {
+  it('runs the chat-stream Lambda on ARM64 Node.js 26', () => {
     const { Runtime, Architectures } = chatStreamProperties();
-    expect([Runtime, Architectures]).toStrictEqual(['nodejs24.x', ['arm64']]);
+    expect([Runtime, Architectures]).toStrictEqual(['nodejs26.x', ['arm64']]);
   });
 
   it('lets the /chat/stream integration wait 900000 ms', () => {

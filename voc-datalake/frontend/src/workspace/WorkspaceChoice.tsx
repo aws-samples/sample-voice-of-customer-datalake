@@ -8,13 +8,23 @@
  * - "could not load your workspaces" (a `/workspace/…` address whose list could not be read), with Retry: such an
  *   address never opens the app without its workspace.
  *
+ * The picker, and the not-found page of a caller with no workspace yet, offer Create a workspace (7.104.00) to whoever
+ * the platform console is shown to (`seesPlatformConsole`, adminTabs.ts: an administrator in `platform-admins`;
+ * `POST /platform/workspaces` checks the same groups again, live): the console's own form below the list, then a full
+ * page load into the new workspace, which the caller administers (`enterWorkspace.ts`).
+ *
  * @module workspace/WorkspaceChoice
  */
+import { useId, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { ReactNode } from 'react'
-import { Building2, LogOut, RotateCw } from 'lucide-react'
+import { Building2, LogOut, Plus, RotateCw } from 'lucide-react'
 import clsx from 'clsx'
 import { useSignOut } from '../hooks/useSignOut'
+import { useIsAdmin, useIsPlatformAdmin } from '../store/authStore'
+import CreateWorkspaceForm from '../pages/Settings/CreateWorkspaceForm'
+import { seesPlatformConsole } from '../pages/Settings/adminTabs'
+import { enterWorkspace } from './enterWorkspace'
 import { lastWorkspaceSlug } from './useMyWorkspaces'
 import { workspaceUrl } from './workspacePath'
 import type { CurrentWorkspace } from './currentWorkspace'
@@ -56,12 +66,65 @@ interface WorkspaceChoiceProps {
   readonly refused: boolean
 }
 
+/** Create a workspace: a secondary button under the list that shows the console's form; a create enters the new one. */
+function CreateWorkspaceOffer() {
+  const { t } = useTranslation()
+  const formId = useId()
+  const [open, setOpen] = useState(false)
+  return (
+    <div className="space-y-3">
+      <button type="button" className="btn btn-secondary gap-2" aria-expanded={open} aria-controls={open ? formId : undefined}
+        onClick={() => setOpen(!open)}>
+        <Plus size={16} aria-hidden="true" />
+        {t('workspaces.picker.create')}
+      </button>
+      {open ? <div id={formId}><CreateWorkspaceForm onCreated={(workspace) => enterWorkspace(workspace)} /></div> : null}
+    </div>
+  )
+}
+
+/** Whether the caller is one the platform console is shown to (adminTabs.ts). */
+function useSeesPlatformConsole(): boolean {
+  const isAdmin = useIsAdmin()
+  const isPlatformAdmin = useIsPlatformAdmin()
+  return seesPlatformConsole({ isAdmin, isPlatformAdmin })
+}
+
+function WorkspaceLinks({ workspaces, path, lastUsed }: Readonly<{ workspaces: readonly CurrentWorkspace[]; path: string; lastUsed: string | null }>) {
+  const { t } = useTranslation()
+  return (
+    <nav aria-label={t('workspaces.listLabel')}>
+      <ul className="space-y-2">
+        {workspaces.map((workspace) => {
+          const isLast = workspace.slug === lastUsed
+          return (
+            <li key={workspace.id}>
+              <a
+                href={workspaceUrl(workspace.slug, path)}
+                className={clsx('card focus-ring flex items-center gap-3 hover:border-border-strong', isLast && 'border-accent')}
+              >
+                <Building2 size={18} className="text-accent flex-shrink-0" aria-hidden="true" />
+                <span className="min-w-0 flex-1 text-sm font-semibold text-text-strong break-words">{workspace.name}</span>
+                {isLast ? <span className="badge badge-accent">{t('workspaces.picker.lastUsed')}</span> : null}
+                <span className="badge badge-muted">{t(`workspaces.role.${workspace.role}`)}</span>
+              </a>
+            </li>
+          )
+        })}
+      </ul>
+    </nav>
+  )
+}
+
 export default function WorkspaceChoice({ workspaces, path, notFound, refused }: WorkspaceChoiceProps) {
   const { t } = useTranslation()
   const lastUsed = notFound ? null : lastWorkspaceSlug()
-  const start = notFound && workspaces.length === 0
+  const none = workspaces.length === 0
+  const start = notFound && none
     ? <a href="/" className="btn btn-primary">{t('workspaces.notFound.start')}</a>
     : null
+  // The picker, or "You are not a member of any workspace yet" (not a workspace the server refused in this tab).
+  const offersCreate = useSeesPlatformConsole() && (!notFound || (none && !refused))
 
   return (
     <GatePage
@@ -69,30 +132,10 @@ export default function WorkspaceChoice({ workspaces, path, notFound, refused }:
       body={notFound ? t('workspaces.notFound.body') : t('workspaces.picker.intro')}
       actions={start}
     >
-      {workspaces.length === 0 ? (
-        <p className="card text-sm text-text">{refused ? t('workspaces.notFound.notAvailable') : t('workspaces.notFound.none')}</p>
-      ) : (
-        <nav aria-label={t('workspaces.listLabel')}>
-          <ul className="space-y-2">
-            {workspaces.map((workspace) => {
-              const isLast = workspace.slug === lastUsed
-              return (
-                <li key={workspace.id}>
-                  <a
-                    href={workspaceUrl(workspace.slug, path)}
-                    className={clsx('card focus-ring flex items-center gap-3 hover:border-border-strong', isLast && 'border-accent')}
-                  >
-                    <Building2 size={18} className="text-accent flex-shrink-0" aria-hidden="true" />
-                    <span className="min-w-0 flex-1 text-sm font-semibold text-text-strong break-words">{workspace.name}</span>
-                    {isLast ? <span className="badge badge-accent">{t('workspaces.picker.lastUsed')}</span> : null}
-                    <span className="badge badge-muted">{t(`workspaces.role.${workspace.role}`)}</span>
-                  </a>
-                </li>
-              )
-            })}
-          </ul>
-        </nav>
-      )}
+      {none
+        ? <p className="card text-sm text-text">{refused ? t('workspaces.notFound.notAvailable') : t('workspaces.notFound.none')}</p>
+        : <WorkspaceLinks workspaces={workspaces} path={path} lastUsed={lastUsed} />}
+      {offersCreate ? <CreateWorkspaceOffer /> : null}
     </GatePage>
   )
 }

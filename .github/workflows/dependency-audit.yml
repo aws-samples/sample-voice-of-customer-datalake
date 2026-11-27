@@ -53,13 +53,15 @@ jobs:
       # npm audit reads the lockfiles and asks the registry; no `npm ci` is needed.
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: '24'
+          node-version: '26'
 
-      # 3.12 is the interpreter the gates use. The Lambda layers are resolved for their own target
-      # (CPython 3.14, manylinux2014_aarch64) by the script's pip flags, whatever runs pip.
+      # The interpreter the gates use, .python-version (3.15): requirements-dev.txt is resolved for the interpreter
+      # that runs pip (its markers and wheels), so the report names the pins the gates install. The Lambda layers are
+      # resolved for their own target (CPython 3.15, manylinux_2_28 or manylinux2014 aarch64) by the script's pip
+      # flags, whatever runs pip.
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
-          python-version: '3.12'
+          python-version-file: .python-version
 
       # pip-audit is pinned exactly and kept out of the interpreter that resolves the requirements.
       - name: Install pip-audit

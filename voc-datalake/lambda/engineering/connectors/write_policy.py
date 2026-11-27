@@ -159,6 +159,22 @@ def docs_branch(kind: str, version: int) -> str:
     return branch
 
 
+def pushed_docs_branch(branch: str, kind: str, version: int) -> str:
+    """The branch a docs push's claim names (7.104.00, S2), read back before a pull request opens from it: the docs
+    write's own branch of ``kind`` at ``version`` (``docs_branch``), or the two-level ``voc-agent/docs/<kind>-v<n>``
+    a push of 7.52.00 to 7.71.03 named on its claim (a docs claim has no TTL, ``records.DocsClaims``, so a push of then
+    whose pull request never opened is still read and opened); ``WriteRefused`` for any other, whatever wrote the
+    claim.
+
+    Only the broker writes that claim, so this re-check is defence in depth, kept on purpose: 7.71.04's security
+    review (S2) found the branch read back from a claim used as stored, so a claim row changed in the table (or a
+    broker bug) could name the branch a pull request opens from."""
+    if branch not in (docs_branch(kind, version), f'{AGENT_BRANCH_PREFIX}docs/{kind}-v{int(version)}'):
+        raise WriteRefused(f'The docs push names the branch {branch[:120]!r}, not the docs write\'s own of {kind} '
+                           f'at version {int(version)}: no pull request opens from it.')
+    return branch
+
+
 def check_ci_definitions(changed_paths: Iterable[str], ci_definitions: Collection[str]) -> None:
     """Raise ``WriteRefused`` when a push changes a CI definition: one it knows by its place, or one the host named
     (``ci_definitions``)."""

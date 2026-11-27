@@ -65,7 +65,7 @@ import json
 import re
 import time
 from collections.abc import Callable, Mapping
-from datetime import UTC, datetime
+from datetime import datetime
 from functools import partial
 from typing import Final
 from urllib.parse import parse_qs, quote, urlencode, urlsplit
@@ -146,6 +146,10 @@ TOKEN_PATH: Final = re.compile(r'/app/installations/[0-9]+/access_tokens\Z')
 JSON_ACCEPT: Final = 'application/vnd.github+json'
 RAW_ACCEPT: Final = 'application/vnd.github.raw+json'
 _NEXT: Final = re.compile(r'<([^>]+)>;\s*rel="next"')
+#: (7.104.00) The ``Link`` header's last and previous pages: an issue's comments read newest first (``issue_comment``);
+#: the last page's is the reactions read's (``github_reactions.LAST_LINK``), one rule.
+_LAST: Final = github_reactions.LAST_LINK
+_PREV: Final = re.compile(r'<([^>]+)>;\s*rel="prev"')
 
 Permissions = Mapping[str, str]
 _READS: Final[Mapping[ReadKind, Permissions]] = {
@@ -237,9 +241,10 @@ def send_request(transport: Transport, clock: Callable[[], float], method: str, 
     return response
 
 
-def next_page(headers: Mapping[str, str]) -> str | None:
-    """The page number of the ``Link`` header's ``rel="next"`` (the next read's cursor), or ``None``."""
-    found = _NEXT.search(headers.get('link', ''))
+def next_page(headers: Mapping[str, str], rel: re.Pattern[str] = _NEXT) -> str | None:
+    """The page number of the ``Link`` header's ``rel="next"`` (the next read's cursor), or ``None``; ``rel``: another
+    of its links (``_LAST``, ``_PREV``)."""
+    found = rel.search(headers.get('link', ''))
     page = parse_qs(urlsplit(found.group(1)).query).get('page', [''])[0] if found else ''
     return page if PAGE_NUMBER.fullmatch(page) else None
 
@@ -282,15 +287,14 @@ def _ruleset_checks(rules: list[object]) -> tuple[str, ...]:
 
 
 def _posted_by_app(comment: dict[str, object], app_id: str) -> bool:
-    """Whether GitHub says App ``app_id`` (the connection's) posted ``comment`` (7.71.04): its
-    ``performed_via_github_app.id``, which a person's comment, or another App's, never has."""
+    """Whether App ``app_id`` (the connection's) posted ``comment`` itself (7.71.04): GitHub's
+    ``performed_via_github_app.id``, which a person's comment, or another App's, never has, and (7.104.00, S1) its
+    author the App's own bot (``user.type`` ``Bot``, ``user.login`` the App's ``<slug>[bot]``), which a person
+    commenting through the App with a user token is not: their comment carries the App too, under their own login."""
     found = _dig(comment, 'performed_via_github_app', 'id')
-    return type(found) is int and str(found) == app_id
-
-
-def _iso_utc(epoch: int) -> str:
-    """``epoch`` (seconds) as GitHub's ``since`` takes it: ISO 8601 in UTC, ``YYYY-MM-DDTHH:MM:SSZ``."""
-    return datetime.fromtimestamp(epoch, UTC).strftime('%Y-%m-%dT%H:%M:%SZ')
+    slug = _dig(comment, 'performed_via_github_app', 'slug')
+    return (type(found) is int and str(found) == app_id and isinstance(slug, str) and bool(slug)
+            and _dig(comment, 'user', 'type') == 'Bot' and _dig(comment, 'user', 'login') == f'{slug}[bot]')
 
 
 def issues_repository(credential: GitHubAppCredential) -> str:
@@ -656,20 +660,39 @@ class GitHubHost:
                              body={'body': body}, ok=(201,))
         return _text(_json(response), 'html_url')
 
-    def issue_comment(self, connection_id: str, number: int, marker: str, since: int) -> str | None:
-        """The URL of issue ``number``'s comment that is the run's (7.71.03), oldest first (GitHub's order), a few
-        pages at most (``marked_comment``). Since 7.71.04 only one the connection's App posted
-        (``performed_via_github_app.id``, the credential's ``app_id``) whose body ends with ``marker``, among the
-        comments updated at or after ``since`` (GitHub's ``since``), so the run's is on the first pages however long
-        the issue's thread."""
+    def issue_comment(self, connection_id: str, number: int, marker: str) -> str | None:
+        """The URL of issue ``number``'s comment that is the run's (7.71.03), a few pages at most
+        (``marked_comment``): since 7.71.04 only one the connection's App posted itself (``_posted_by_app``, the
+        credential's ``app_id``) whose body ends with ``marker``. Newest first (7.104.00): GitHub lists an issue's
+        comments oldest first and takes no order, so the look reads the first page, then from the last page its
+        ``Link`` names back a page at a time, each page newest first; the run's comment is among the newest however
+        long the thread, and however long ago the call that posted it (7.71.04's ``since``, from that call's claim,
+        missed it once a claim was taken again twice). A ``Link`` that names a next page and no last is read on from
+        the first page."""
         app_id = self._credentials(connection_id).app_id
-        query = {'per_page': FIND_PAGE_SIZE, 'since': _iso_utc(since)}
-        return marked_comment(
-            lambda page: self._api(connection_id, _READS['issue'], 'GET',
-                                   f'/issues/{int(number)}/comments?{urlencode({**query, "page": page})}',
-                                   'the comment read'),
-            next_page, marker, lambda comment: _posted_by_app(comment, app_id),
-            lambda comment: _text(comment, 'html_url'))
+
+        def page(at: str) -> Response:
+            return self._api(connection_id, _READS['issue'], 'GET',
+                             f'/issues/{int(number)}/comments?{urlencode({"per_page": FIND_PAGE_SIZE, "page": at})}',
+                             'the comment read')
+
+        first = page('1')
+        last = next_page(first.headers, _LAST)
+
+        def read(at: str) -> Response:
+            return first if at == '1' else page(at)
+
+        def ours(comment: dict[str, object]) -> bool:
+            return _posted_by_app(comment, app_id)
+
+        def url(comment: dict[str, object]) -> str:
+            return _text(comment, 'html_url')
+
+        if last is None and next_page(first.headers) is not None:
+            # (a Link that names no last page: read on from the first, as GitHub lists them)
+            return marked_comment(read, next_page, marker, ours, url)
+        return marked_comment(read, partial(next_page, rel=_PREV), marker, ours, url, start=last or '1',
+                              newest_first=True)
 
     def label_issue(self, connection_id: str, number: int, labels: tuple[str, ...]) -> tuple[str, ...]:
         """Add ``labels`` to issue ``number`` (GitHub creates a label the repository does not have yet)."""

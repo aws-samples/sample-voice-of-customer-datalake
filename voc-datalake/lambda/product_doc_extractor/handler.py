@@ -54,7 +54,7 @@ WHY NO NEW PIP DEPENDENCY
     Image dimensions are read from the file header with `struct` (see
     _sniff_format / _dimensions_from_head), so no Pillow. `imghdr` is NOT an
     option either — it was removed from the standard library in Python 3.13 and
-    this function runs on python3.14.
+    this function runs on python3.15.
 """
 from __future__ import annotations
 
@@ -868,7 +868,7 @@ def _mark_extracting(project_id: str, doc_id: str, *, workspace: str | None) -> 
     """Publish the in-flight state, once, before the slow work starts.
 
     `extracting` was declared in three places and written in none: the UI renders
-    a distinct "Extracting…" badge for it (ProductDocsUpload.tsx), ProductDocStatus
+    a distinct "Reading…" state for it (ProductSourceList.tsx, since 7.104.00), ProductDocStatus
     lists it, and product_context.py's STALLABLE_STATUSES includes it — so its
     stall branch could never be reached either. One extra update_item per
     document makes all three mean something, and lets the user tell "still

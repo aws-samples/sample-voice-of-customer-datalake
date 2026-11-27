@@ -3,6 +3,7 @@ the conductor cannot follow."""
 from __future__ import annotations
 
 from collections.abc import Callable
+from datetime import UTC, datetime
 
 import pytest
 
@@ -39,10 +40,10 @@ def test_the_step_rows_and_the_tasks_steps_are_the_conductors_view():
              Task(task_id='t2', role='fixer', state='open', title='', spec='{}', spec_hash='', depth=0, priority=0,
                   attempt=1)]   # (a person's own task: no step, not the flow's)
     rows = [_row('map', FAN_OUT, shards={'L': [{'S': 'core'}, {'S': 'web'}]}), _row('plan', DONE),
-            _row('gate', DECISION), _row('gate', DECISION), _row('x', 'not_yet_run')]
+            _row('gate', DECISION, at={'S': '2026-11-14T10:00:00Z'}), _row('x', 'not_yet_run')]
     state = board_state(tasks, rows, cap_reached=True)
     assert (state.fanned_out, state.completed, state.decisions, state.cap_reached) == (
-        {'map': ('core', 'web')}, frozenset({'plan'}), {'gate': 2}, True)
+        {'map': ('core', 'web')}, frozenset({'plan'}), {'gate': _END_OF_10}, True)
     assert [(task.step, task.shard) for task in state.tasks] == [('mapper', 'core')]
 
 
@@ -59,8 +60,33 @@ def test_a_step_record_is_one_of_its_kinds_and_a_decision_names_who_and_when():
     with pytest.raises(ValueError, match='step record'):
         step_sk('gate', 'merged')
     item = decision_item('pk', 'gate', actor='admin-1', at='2026-11-14T10:00:00Z', nonce='ab12')
-    assert (item['sk'], item['by'], item['record']) == ('STEP#gate#decision#2026-11-14T10:00:00Z#ab12', 'admin-1',
-                                                        DECISION)
+    assert (item['sk'], item['by'], item['record'], item['at']) == (
+        'STEP#gate#decision#2026-11-14T10:00:00Z#ab12', 'admin-1', DECISION, '2026-11-14T10:00:00Z')
+    assert 'failures' not in item   # (7.104.00: its time is what it covers, conductor.decided_since)
+
+
+#: What a decision recorded to the second at 10:00:00Z covers (conductor.decided_until): the whole of that second.
+_END_OF_10 = datetime(2026, 11, 14, 10, 0, 0, 999_999, tzinfo=UTC)
+
+
+@pytest.mark.parametrize(('rows', 'decided'), [
+    ([_row('gate', DECISION, at={'S': '2026-11-14T10:00:00Z'})], _END_OF_10),
+    ([_row('gate', DECISION, at={'S': '2026-11-14T10:00:00Z'}), _row('gate', DECISION, at={'S': '2026-11-14T11:00:00Z'}),
+      _row('gate', DECISION, at={'S': '2026-11-14T10:30:00Z'})], datetime(2026, 11, 14, 11, 0, 0, 999_999, tzinfo=UTC)),
+    ([_row('gate', DECISION, at={'S': '2026-11-14T10:00:00Z'}, failures={'N': '1'})], _END_OF_10),
+    ([_row('gate', DECISION)], None),
+    ([_row('gate', DECISION, at={'S': 'now'}), _row('gate', DECISION, at={'S': '2026-11-14T10:00:00Z'})], _END_OF_10),
+    ([_row('gate', DECISION, at={'S': '2026-11-14T10:00:00.250000Z'})], _END_OF_10),
+    ([_row('gate', DECISION, at={'S': '2026-11-14T10:00:00.250000Z'}),
+      _row('gate', DECISION, at={'S': '2026-11-14T09:59:59Z'})], _END_OF_10),
+], ids=['one', 'the-latest-of-three', 'a-row-naming-failures', 'no-time', 'one-time-unread', 'a-fraction',
+        'a-fraction-after-a-whole-second'])
+def test_a_steps_decisions_are_what_its_latest_decision_covers_whatever_else_its_rows_hold(
+        rows: list[dict[str, object]], decided: datetime | None):
+    # (F1 of the 7.104.00 reviews) Every row is read alike, by its ``at``: through the end of its second, a fraction in
+    # it included (no writer records one). One whose time does not read still decided the step (it passes a decision
+    # point) and covers no failed task.
+    assert board_state([], rows, cap_reached=False).decisions == {'gate': decided}
 
 
 def test_a_copy_is_read_once_and_kept_and_a_record_is_written_once():

@@ -22,6 +22,7 @@ from typing import Any
 
 from botocore.exceptions import ClientError
 
+from shared.aws import CONDITION_FAILED, TRANSACTION_CONFLICT, cancellation_codes
 from shared.exceptions import (
     ApiError,
     ConfigurationError,
@@ -64,7 +65,7 @@ _OWNER_FIELDS = (
     'verification_tested_sha',
 )
 _RETRYABLE_TRANSACTION_CODES = frozenset({
-    'TransactionConflict',
+    TRANSACTION_CONFLICT,
     'TransactionInProgressException',
     'ProvisionedThroughputExceeded',
     'ProvisionedThroughputExceededException',
@@ -192,17 +193,6 @@ def _owned_delete(
     }}
 
 
-def _reason_codes(reasons: object) -> set[object]:
-    """The `Code` of every mapping in a cancellation's `CancellationReasons`.
-
-    Taken as `object`: this is a wire answer, so a missing list or a non-mapping
-    entry contributes nothing rather than raising.
-    """
-    if not isinstance(reasons, list):
-        return set()
-    return {reason.get('Code') for reason in reasons if isinstance(reason, dict)}
-
-
 def _transact(
     client: Any,
     items: list[dict[str, Any]],
@@ -215,9 +205,8 @@ def _transact(
             client.transact_write_items(TransactItems=items)
         except ClientError as error:
             code = error.response.get('Error', {}).get('Code')
-            reasons = error.response.get('CancellationReasons')
-            reason_codes = _reason_codes(reasons)
-            if 'ConditionalCheckFailed' in reason_codes:
+            reason_codes = set(cancellation_codes(error))
+            if CONDITION_FAILED in reason_codes:
                 raise ConflictError(collision_message) from error
             retryable = code in _RETRYABLE_TRANSACTION_CODES or bool(
                 reason_codes & _RETRYABLE_TRANSACTION_CODES

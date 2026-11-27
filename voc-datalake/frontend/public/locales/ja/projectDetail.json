@@ -308,7 +308,8 @@
       "importPersona": "ペルソナインポート",
       "mergeDocuments": "ドキュメントマージ",
       "research": "リサーチ",
-      "draftPrototype": "プロトタイプの下書き"
+      "draftPrototype": "プロトタイプの下書き",
+      "extractProductDescription": "製品の説明の抽出"
     }
   },
   "notFound": {
@@ -532,6 +533,7 @@
       "oneLiner": "一行説明",
       "problemSolved": "解決する課題",
       "productName": "製品名",
+      "productSummary": "製品でできること",
       "successMetrics": "成功指標",
       "targetUsers": "対象ユーザー"
     },
@@ -557,27 +559,6 @@
     },
     "subtitle": "ここの情報は、現在の製品コンテキストとして PRD・PR/FAQ の生成に自動的に注入されます。",
     "title": "製品／サービス説明",
-    "upload": {
-      "accepted": "PNG、JPEG、GIF、WebP は 3.5 MB まで · MD、TXT は 10 MB まで",
-      "delete": "ドキュメントを削除",
-      "dropZone": "ファイルをここにドロップ、スクリーンショットを貼り付け、またはクリックしてアップロード",
-      "empty": "まだドキュメントがありません。",
-      "errors": {
-        "tooLarge": "サイズ超過（>10 MB）: {{name}}",
-        "unsupportedType": "未対応の形式: {{name}}（{{type}}）。対応形式: {{accepted}}",
-        "uploadFailed": "{{name}}: アップロード失敗 — {{message}}"
-      },
-      "extractedChars_one": "{{count, number}} 文字を抽出済み",
-      "extractedChars_other": "{{count, number}} 文字を抽出済み",
-      "heading": "社内ドキュメント",
-      "hint": "画像とテキスト — 最大 20 件",
-      "loading": "読み込み中…",
-      "notYet": "PDF と Word (.docx) はまだここでは読み取れません。ライブラリに追加し、アシスタントで # を付けて言及してください。",
-      "statusExtracting": "抽出中…",
-      "statusFailed": "失敗",
-      "statusReady": "準備完了",
-      "statusUploading": "アップロード中…"
-    },
     "assistant": {
       "button": "AI アシスタントで入力",
       "hint": "アシスタントが空欄の項目について 1 問ずつ質問し、最後にすべての回答を 1 枚のカードにまとめて承認を求めます。",
@@ -607,6 +588,178 @@
         "title": "メモ",
         "description": "PRD と PR/FAQ の作成者が知っておくべきその他の情報。"
       }
+    },
+    "sources": {
+      "title": "ソース",
+      "description": "抽出が製品の説明を作るために読むファイル、リンク、回答です。",
+      "hint": "最大 20 件",
+      "empty": "ドキュメント、画像、リンクを追加するか、いくつかの質問に答えてください。",
+      "emptyViewer": "ソースはまだありません。",
+      "answerQuestions": "質問に答える",
+      "dropZone": "ここにファイルをドロップ、スクリーンショットを貼り付け、またはクリックしてアップロード",
+      "accepted": "PDF、Word (.docx)、PowerPoint (.pptx) は 25 MB まで · MD、TXT は 10 MB まで · PNG、JPEG、GIF、WebP は 3.5 MB まで",
+      "loading": "読み込み中…",
+      "loadFailed": "ソースを読み込めませんでした。接続を確認して、もう一度お試しください。",
+      "typedAnswers": "入力した回答",
+      "voiceInterview": "音声インタビュー",
+      "status": {
+        "uploading": "アップロード中…",
+        "pending": "読み取り待ち",
+        "extracting": "読み取り中…",
+        "fetching": "取得中…",
+        "ready": "準備完了",
+        "failed": "失敗"
+      },
+      "chars_one": "{{count, number}} 文字を読み取り",
+      "chars_other": "{{count, number}} 文字を読み取り",
+      "pages_one": "{{count, number}} ページ",
+      "pages_other": "{{count, number}} ページ",
+      "cut": "読み取り上限で切り詰め",
+      "readByModel": "AI が読み取り",
+      "injection": "このテキストの一部は AI モデルへの指示のように読めます。データとしてのみ読まれ、従われることはありません。",
+      "retry": "再試行",
+      "refetch": "再取得",
+      "delete": "ソースを削除",
+      "link": {
+        "label": "リンクを追加",
+        "placeholder": "https://example.com/product",
+        "add": "リンクを追加",
+        "adding": "追加中…",
+        "invalid": "https:// で始まる公開ページのアドレスを入力してください。",
+        "tooLong": "リンクが 2,048 文字を超えています。"
+      },
+      "errors": {
+        "unsupportedType": "未対応の形式: {{name}} ({{type}})。対応形式: {{accepted}}",
+        "tooLarge": "大きすぎます ({{mb}} MB 超): {{name}}",
+        "uploadFailed": "{{name}}: {{message}}",
+        "linkFailed": "リンクを追加できませんでした: {{message}}",
+        "refreshFailed": "ソースを読み直せませんでした: {{message}}",
+        "deleteFailed": "ソースを削除できませんでした: {{message}}",
+        "tryAgain": "もう一度お試しください。"
+      }
+    },
+    "extract": {
+      "button": "製品の説明を抽出",
+      "running": "抽出中…",
+      "hint": "準備完了のソースをすべて読み、各フィールドの値をそのソースとともに提案します。承認するまで何も変わりません。",
+      "noReady": "ソースを追加し、準備完了になるまでお待ちください。",
+      "confirmTitle": "今すぐ抽出しますか?",
+      "confirmLeftOut_one": "{{count, number}} 件のソースがまだ読み取り中のため除外されます。今すぐ抽出しますか?",
+      "confirmLeftOut_other": "{{count, number}} 件のソースがまだ読み取り中のため除外されます。今すぐ抽出しますか?",
+      "confirm": "今すぐ抽出",
+      "steps": {
+        "queued": "開始待ち…",
+        "starting": "開始しています…",
+        "readingSources": "ソースを読んでいます…",
+        "thinking": "考えています ({{elapsed}})…",
+        "checkingCitations": "引用を確認しています…",
+        "saved": "提案を保存しました。仕上げています…"
+      },
+      "failed": {
+        "refused": "モデルがこれらのソースの読み取りを拒否しました。原因になった可能性のあるソースを削除して、もう一度お試しください。",
+        "timedOut": "抽出が 12 分を超えたため停止しました。ソースを減らすか短くしてもう一度試すか、xhigh で再試行してください。",
+        "cut": "回答の容量が足りませんでした。ソースを減らすか短くして、もう一度お試しください。",
+        "unreadable": "回答を読み取れませんでした。もう一度お試しください。",
+        "stale": "この抽出は進捗の報告を停止しました。もう一度お試しください。",
+        "generic": "抽出に失敗しました。もう一度お試しください。"
+      },
+      "tryAgain": "もう一度試す",
+      "retryXhigh": "xhigh で再試行",
+      "retryXhighHint": "推論の負荷を下げます。モデルの思考時間が短くなり、早く終わります。",
+      "errors": {
+        "noReadySources": "準備完了のソースがまだありません。ソースを追加するか、読み取りが終わるまでお待ちください。",
+        "busy": "このプロジェクトでは抽出がすでに実行中です。バックグラウンドジョブで確認してください。",
+        "busyStale": "停止した抽出は、開始から約16分後までこのプロジェクトを占有します。その後でもう一度お試しください。",
+        "rateLimited": "抽出が多すぎます。プロジェクトごとに 1 分 1 回・1 日 10 回、1 人あたり 1 日 20 回までです。後でもう一度お試しください。",
+        "generic": "抽出を開始できませんでした。もう一度お試しください。"
+      }
+    },
+    "review": {
+      "title": "提案された製品の説明",
+      "loadFailed": "抽出の提案を読み込めませんでした。接続を確認して、もう一度お試しください。",
+      "subtitle_one": "{{count, number}} 件のソースから、{{at}}。承認するまで何も書き込まれません。",
+      "subtitle_other": "{{count, number}} 件のソースから、{{at}}。承認するまで何も書き込まれません。",
+      "skipped_one": "{{count, number}} 件のソースが抽出の読み取り上限を超えたため除外されました: {{names}}",
+      "skipped_other": "{{count, number}} 件のソースが抽出の読み取り上限を超えたため除外されました: {{names}}",
+      "partlyApplied": "一部適用済み",
+      "groups": {
+        "proposed": "提案",
+        "conflict": "競合",
+        "gap": "不足",
+        "unchanged": "変更なし"
+      },
+      "current": "現在",
+      "proposed": "提案",
+      "empty": "(空)",
+      "by": {
+        "you": "あなたが入力",
+        "teammate": "チームメンバーが入力",
+        "extract": "抽出から",
+        "assistant": "AI アシスタントから"
+      },
+      "confidence": {
+        "high": "確度: 高",
+        "medium": "確度: 中",
+        "low": "確度: 低"
+      },
+      "noVerified": "確認済みのソースなし",
+      "accepted": "承認済み",
+      "changed": "抽出後に変更されました。「提案をすべて承認」では対象外になり、個別に承認すると新しい値を置き換えます。",
+      "citations": "引用",
+      "page": "{{page}} ページ",
+      "sourceDeleted": "ソースは削除済み",
+      "unverified": "この引用はソース内に見つかりませんでした。",
+      "editLabel": "{{field}} の提案値",
+      "select": "{{field}} を承認",
+      "gapNote": "これらのフィールドに答えたソースはありません。フォームの横の質問をご覧ください。",
+      "acceptSelected": "選択したものを承認",
+      "acceptAll": "提案をすべて承認",
+      "dismiss": "却下",
+      "readOnly": "このプロジェクトの編集者だけが提案を承認または却下できます。",
+      "result": {
+        "applied_one": "{{count, number}} 件のフィールドを適用しました。",
+        "applied_other": "{{count, number}} 件のフィールドを適用しました。",
+        "changed": "{{field}} は抽出後に変更されたため適用されませんでした。",
+        "personValue": "{{field}} には人が入力した値があるため置き換えられませんでした。",
+        "allChanged": "選択したすべてのフィールドが抽出後に変更されたため、何も適用されませんでした。各行に新しい値が表示されています。",
+        "closed": "この提案は新しい抽出に置き換えられたか、却下されました。新しい提案を得るには、もう一度抽出してください。",
+        "failed": "提案を承認できませんでした。もう一度お試しください。",
+        "dismissFailed": "提案を却下できませんでした。もう一度お試しください。"
+      },
+      "proposedBadge": "提案あり",
+      "proposedBadgeLabel": "提案あり: {{field}} の提案値を確認",
+      "newSources_one": "この抽出は準備完了のソース {{count, number}} 件を読んでいません。使うにはもう一度抽出してください。",
+      "newSources_other": "この抽出は準備完了のソース {{count, number}} 件を読んでいません。使うにはもう一度抽出してください。"
+    },
+    "gaps": {
+      "title": "質問",
+      "description": "ソースはこれらに答えていません。回答は新しいソースになります。その後もう一度抽出してください。",
+      "defaultDescription": "製品についていくつかの質問に答えてください。回答は抽出が読むソースになります。",
+      "type": "回答を入力",
+      "talk": "話して答える",
+      "chat": "AI チャットで答える",
+      "save": "回答を保存",
+      "saving": "保存中…",
+      "cancel": "キャンセル",
+      "saved": "回答はソースとして保存されました。",
+      "extractAgain": "もう一度抽出",
+      "errors": {
+        "save": "回答を保存できませんでした: {{message}}"
+      }
+    },
+    "questions": {
+      "productName": "製品またはサービスの名前は何ですか?",
+      "oneLiner": "一文で言うと、何を誰のためにしますか?",
+      "productSummary": "短い段落で、製品は何をし、人々はどのように使っていますか?",
+      "targetUsers": "対象となる顧客やユーザーは誰ですか?",
+      "problemSolved": "彼らのどんな問題を解決しますか?",
+      "currentState": "ライフサイクルのどの段階ですか: アイデア、MVP、ベータ、一般提供、成熟のいずれですか?",
+      "keyFeatures": "主な機能は何ですか?",
+      "differentiators": "顧客はどの競合や代替手段と比較し、何が違いますか?",
+      "successMetrics": "目標は何で、成功を示す指標はどれですか?",
+      "knownLimitations": "どんな制約や既知の制限がありますか?",
+      "nonGoals": "意図的に対象外としているもの (非目標) は何ですか?",
+      "freeFormNotes": "PRD と PR/FAQ の作成者が知っておくべきことは他にありますか?"
     }
   },
   "tabs": {
@@ -1010,6 +1163,27 @@
       "savingToLibrary": "ライブラリに保存しています…",
       "savedToLibrary": "ライブラリに保存しました。",
       "libraryFailed": "ライブラリに保存できませんでした。"
+    },
+    "product": {
+      "consent": {
+        "title": "話して答える",
+        "transcript": "会話の文字起こしは、回答に含まれる個人データを伏せたうえで、このプロジェクトのソースとして保存されます。音声は保存されません。",
+        "interviewer": "AI のインタビュアーが質問を読み上げ、あなたが自分の製品について答えます。相手は人ではなく AI です。",
+        "language": "音声機能はまだインターフェースの言語を話せません。{{supported}}で話すと、インタビュアーが合わせます。",
+        "headphones": "インタビュアーが自分の声を拾わないよう、ヘッドホンをお使いください。",
+        "sourcesFull": "このプロジェクトにはすでに上限の 20 件のソースがあるため、インタビューをソースとして保存できません。先にソースを 1 件削除してから話してください。"
+      },
+      "session": {
+        "title": "製品インタビュー",
+        "badge": "AI インタビュアー",
+        "note": "質問するのは AI です。回答はこのプロジェクトのソースになります。音声は保存されません。",
+        "interviewer": "インタビュアー",
+        "saving": "回答をソースとして保存しています…",
+        "saved": "回答はこのプロジェクトのソースとして保存されました。使うにはもう一度抽出してください。",
+        "savedOverCap": "回答はこのプロジェクトのソースとして保存されました。インタビュー中にソースが追加されたため、プロジェクトのソースは 20 件を超えています。次を追加する前に 1 件削除してください。",
+        "nothingSaved": "何も話されなかったため、何も保存されませんでした。",
+        "savedFailed": "回答を保存できませんでした。"
+      }
     }
   }
 }

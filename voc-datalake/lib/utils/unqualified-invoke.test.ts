@@ -22,7 +22,7 @@ function invokeFixture() {
   const producer = new cdk.Stack(app, 'Producer', { env });
   const consumer = new cdk.Stack(app, 'Consumer', { env });
   const fn = (id: string) => new lambda.Function(producer, id, {
-    runtime: lambda.Runtime.PYTHON_3_14, handler: 'h.handler', code: lambda.Code.fromInline('def handler(e, c): pass'),
+    runtime: lambda.Runtime.PYTHON_3_15, handler: 'h.handler', code: lambda.Code.fromInline('def handler(e, c): pass'),
   });
   const role = new iam.Role(consumer, 'Caller', { assumedBy: new iam.ServicePrincipal('lambda.amazonaws.com') });
   return { app, consumer, fn, role };

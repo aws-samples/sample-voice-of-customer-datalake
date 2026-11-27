@@ -47,7 +47,8 @@ Get = Callable[[str], Response]
 #: GitHub's review states, as the read names them (a dismissed or pending review is no reaction).
 _REVIEW_STATES: Final[Mapping[str, str]] = {
     'APPROVED': 'approved', 'CHANGES_REQUESTED': 'changes_requested', 'COMMENTED': 'commented'}
-_LAST: Final = re.compile(r'<([^>]+)>;\s*rel="last"')
+#: The ``Link`` header's last page (also github.py's, which reads an issue's comments newest first from it, 7.104.00).
+LAST_LINK: Final = re.compile(r'<([^>]+)>;\s*rel="last"')
 #: The highest last page a read asks for (a page number GitHub handed out).
 _MAX_PAGE: Final = 10_000
 
@@ -57,7 +58,7 @@ def _more(response: Response) -> bool:
 
 
 def _last_page(response: Response) -> int:
-    found = _LAST.search(response.headers.get('link', ''))
+    found = LAST_LINK.search(response.headers.get('link', ''))
     page = parse_qs(urlsplit(found.group(1)).query).get('page', [''])[0] if found else ''
     return int(page) if page.isdigit() and 0 < int(page) <= _MAX_PAGE else 0
 

@@ -7,7 +7,7 @@
  * field list would be a list that can drift, and the drift would be silent —
  * so both go through here.
  */
-import type { ProductContext } from '../../api/projectTypes'
+import type { ProductContext, ProductContextField } from '../../api/projectTypes'
 
 /**
  * The only member of `ProductContext` the user does not author. Constrained to
@@ -20,6 +20,7 @@ type ServerSetField = Extract<keyof ProductContext, 'updated_at'>
 export const emptyProductContext = (): ProductContext => ({
   product_name: '',
   one_liner: '',
+  product_summary: '',
   target_users: '',
   problem_solved: '',
   current_state: '',
@@ -48,6 +49,7 @@ function authoredValues(context: ProductContext): string[] {
   const authored: Required<Omit<ProductContext, ServerSetField>> = {
     product_name: context.product_name,
     one_liner: context.one_liner,
+    product_summary: context.product_summary,
     target_users: context.target_users,
     problem_solved: context.problem_solved,
     current_state: context.current_state,
@@ -66,7 +68,7 @@ function authoredValues(context: ProductContext): string[] {
 
 /**
  * How many fields a complete description has. Derived from the shape above
- * rather than written down, so the UI cannot promise "of 11" once there are 12.
+ * rather than written down, so the UI cannot promise "of 12" once there are 13.
  */
 export const PRODUCT_CONTEXT_FIELD_COUNT = authoredValues(emptyProductContext()).length
 
@@ -74,3 +76,12 @@ export const PRODUCT_CONTEXT_FIELD_COUNT = authoredValues(emptyProductContext())
 export function countFilledProductContextFields(context: ProductContext): number {
   return authoredValues(context).filter((value) => value.trim() !== '').length
 }
+
+/** A field's stem in the locales (`product.fields.<stem>`, `product.questions.<stem>`): its name in camelCase. */
+const localeStem = (field: ProductContextField): string => field.replaceAll(/_([a-z])/g, (_match, letter: string) => letter.toUpperCase())
+
+/** A field's label key (`product.fields.productName`). */
+export const productFieldLabelKey = (field: ProductContextField): string => `product.fields.${localeStem(field)}`
+
+/** A field's default question key (`product.questions.productName`), asked before any extract. */
+export const productQuestionKey = (field: ProductContextField): string => `product.questions.${localeStem(field)}`

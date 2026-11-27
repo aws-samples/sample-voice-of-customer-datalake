@@ -578,12 +578,11 @@ class GitLabHost:
         kind = 'issues' if on == 'issue' else 'merge_requests'
         return f'{GITLAB_URL}{self.repository(connection_id)}/-/{kind}/{number}#note_{note}'
 
-    def issue_comment(self, connection_id: str, number: int, marker: str, since: int) -> str | None:
+    def issue_comment(self, connection_id: str, number: int, marker: str) -> str | None:
         """The URL of issue ``number``'s note that is the run's (7.71.03), newest first, a few pages at most
-        (``marked_comment``). Since 7.71.04 only a note of the connection's token's own user (``author.id``, ``GET
-        /user``: ``_own_user``), never a system note, whose body ends with ``marker``. ``since`` is not sent: the
-        notes API takes no time filter, and newest first the run's note is on the first pages however long the thread."""
-        del since   # (GitHub's bound; GitLab's is the newest-first order)
+        (``marked_comment``): the run's note is on the first pages however long the thread. Since 7.71.04 only a note
+        of the connection's token's own user (``author.id``, ``GET /user``: ``_own_user``), never a system note, whose
+        body ends with ``marker``."""
         own = self._own_user(connection_id, 'the comment read')
         base = f'/{_THREADS["issue"]}/{int(number)}'
         query = {'per_page': FIND_PAGE_SIZE, 'sort': 'desc', 'order_by': 'created_at'}

@@ -118,16 +118,21 @@ def _finished_through_the_handler(finished: bool, monkeypatch: pytest.MonkeyPatc
     return calls
 
 
-@pytest.mark.parametrize(('resumed', 'reopened'), [(False, False), (True, True)])
-def test_only_a_resumes_launch_reopens_a_coordinate_task_its_coordinator_ended_done(
-        wired: Any, monkeypatch: pytest.MonkeyPatch, resumed: bool, reopened: bool):
-    # (R1, 7.71.04) A coordinate task done on a flow that did not finish is reopened by a person's whole-run Resume
-    # only: a start's retry or a board launch's fill, carried on by the same launch_coordinator, leaves it done; a
-    # Resume's own launch handed on behind a fill (``resumed``) reopens it for a new coordinator.
+@pytest.mark.parametrize(('resumed', 'reopened'), [(None, False), (-3600, False), (60, True)],
+                         ids=['never-resumed', 'resumed-before-it-finished', 'resumed-since'])
+def test_only_a_launch_after_a_resume_since_the_coordinator_finished_reopens_its_coordinate_task(
+        wired: Any, monkeypatch: pytest.MonkeyPatch, resumed: int | None, reopened: bool):
+    # (F3, 7.104.00) A coordinate task done on a flow that did not finish is reopened only once a person resumed the run
+    # after it ended: the run's ``resumed_at``, whoever launches (here the fill's launch_coordinator, as a Resume's
+    # hand-on, a start's retry or a board launch's fill carries it on). 7.71.04 carried a ``resumed`` flag on the
+    # launch event for it instead, which an event handed on before the deploy lacked.
     assert wired is not None
     _coordinator_finished_through_the_handler(False, monkeypatch)
+    if resumed is not None:
+        _runs().needs_human(OTHER_RUN, 'coordinator', now=int(time.time()))
+        _runs().resume(OTHER_RUN, now=int(time.time()) + resumed, actor='admin-1')
     _runtime, started = _recording(monkeypatch)
-    handler.launch_coordinator({'run_id': OTHER_RUN, 'actor': 'admin-1', 'filled': True, 'resumed': resumed})
+    handler.launch_coordinator({'run_id': OTHER_RUN, 'actor': 'admin-1', 'filled': True})
     task = BoardStore(boto3.client('dynamodb', region_name='us-east-1'), TABLE,
                       new_id=lambda: 'unused').task(WORKSPACE, OTHER_RUN, COORDINATE_TASK)
     assert (task.state, task.attempt, [vm.agent_id for vm in started]) == (

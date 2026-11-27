@@ -164,7 +164,7 @@ describe('OverviewTab', () => {
      */
     it('reports every step differently for an empty project and a populated one', () => {
       const populatedStates = [
-        '2 of 11 fields filled',
+        '2 of 12 fields filled',
         'Personas created: 3',
         'Research documents: 1',
         'PRD / PR/FAQ documents: 2',
@@ -187,10 +187,10 @@ describe('OverviewTab', () => {
     it('reports what each step has produced', () => {
       renderPopulatedTab()
 
-      // The "of 11" is deliberately a literal: it is the number the user reads, so
+      // The "of 12" is deliberately a literal: it is the number the user reads, so
       // adding a product-context field should fail here and make someone look at
       // the copy rather than silently shifting it.
-      expect(screen.getByText('2 of 11 fields filled')).toBeInTheDocument()
+      expect(screen.getByText('2 of 12 fields filled')).toBeInTheDocument()
       expect(screen.getByText('Personas created: 3')).toBeInTheDocument()
       expect(screen.getByText('Research documents: 1')).toBeInTheDocument()
       expect(screen.getByText('PRD / PR/FAQ documents: 2')).toBeInTheDocument()

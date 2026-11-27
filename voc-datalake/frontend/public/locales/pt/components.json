@@ -48,6 +48,9 @@
     "personaReviewDone_one": "{{count, number}} comentário registrado ({{personas, number}} personas consultadas)",
     "personaReviewDone_other": "{{count, number}} comentários registrados ({{personas, number}} personas consultadas)",
     "personaReviewDone_many": "{{count, number}} comentários registrados ({{personas, number}} personas consultadas)",
+    "personaReviewDoneCompany_one": "{{count, number}} comentário registrado por personas da empresa ({{personas, number}} consultadas: este projeto não tem personas próprias)",
+    "personaReviewDoneCompany_other": "{{count, number}} comentários registrados por personas da empresa ({{personas, number}} consultadas: este projeto não tem personas próprias)",
+    "personaReviewDoneCompany_many": "{{count, number}} comentários registrados por personas da empresa ({{personas, number}} consultadas: este projeto não tem personas próprias)",
     "personaReviewFailed": "A revisão das personas falhou. Tente novamente."
   },
   "reviewShare": {

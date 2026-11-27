@@ -144,7 +144,7 @@ export function addTrialExpiry(stack: cdk.Stack, props: TrialExpiryProps): lambd
   const plugins = getEnabledPlugins(loadPlugins(PLUGINS_DIR), [...props.enabledSources]).map((plugin) => plugin.id);
   const job = new lambda.Function(scope, 'Job', {
     functionName,
-    runtime: lambda.Runtime.PYTHON_3_14,
+    runtime: lambda.Runtime.PYTHON_3_15,
     architecture: lambda.Architecture.ARM_64,
     handler: 'jobs/trial_expiry/handler.lambda_handler',
     code: trialExpiryCode(),

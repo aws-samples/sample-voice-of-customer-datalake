@@ -5,6 +5,9 @@
  * they agree before Start. Start asks for the microphone first (a refusal starts nothing and spends none of today's
  * sessions), then the session (`POST …/voice-sessions` with `consent: true`), and hands both to the session modal.
  *
+ * For the Product tab's interviewer (7.104.00) the statements say what differs: the transcript is saved as a source of
+ * the project, and the questions are asked by an AI interviewer, the person answering for their own product.
+ *
  * @module pages/ProjectDetail/voice/VoiceConsentDialog
  */
 import { useId, useState } from 'react'
@@ -15,7 +18,7 @@ import DialogClose from '../../../components/DialogClose/DialogClose'
 import ModalShell from '../../../components/ModalShell/ModalShell'
 import { apiErrorCode } from '../../../lib/errors'
 import { voiceKeys, voiceSessionsApi } from '../../../api/voiceSessionsApi'
-import type { StartedVoiceSession, VoiceOffer } from '../../../api/voiceSessionsApi'
+import type { StartedVoiceSession, VoiceOffer, VoiceSubject } from '../../../api/voiceSessionsApi'
 import { openVoiceAudio } from './voiceAudio'
 import type { VoiceAudio } from './voiceAudio'
 import { formatCents, languageSupport, voiceLanguage } from './voiceFormat'
@@ -32,6 +35,8 @@ const START_ERRORS: Readonly<Record<string, string>> = {
   busy: 'voice.consent.errors.busy',
   budget_exhausted: 'voice.consent.errors.budgetExhausted',
   voice_off: 'voice.consent.errors.voiceOff',
+  // A product interview's project already holds its 20 sources (shared/voice_sessions.py mint).
+  too_many_sources: 'voice.product.consent.sourcesFull',
 }
 
 function startErrorKey(error: unknown): string {
@@ -40,10 +45,24 @@ function startErrorKey(error: unknown): string {
   return START_ERRORS[apiErrorCode(error) ?? ''] ?? 'voice.consent.errors.generic'
 }
 
-async function startVoice(projectId: string, personaId: string, language: string): Promise<StartedVoice> {
+/** The statements' keys: a persona's session, or the product interviewer's. */
+const COPY = {
+  persona: {
+    title: 'voice.consent.title', transcript: 'voice.consent.transcript', who: 'voice.consent.synthetic',
+    language: 'voice.consent.language', headphones: 'voice.consent.headphones',
+  },
+  product: {
+    title: 'voice.product.consent.title', transcript: 'voice.product.consent.transcript', who: 'voice.product.consent.interviewer',
+    language: 'voice.product.consent.language', headphones: 'voice.product.consent.headphones',
+  },
+} as const
+
+type Copy = (typeof COPY)[keyof typeof COPY]
+
+async function startVoice(projectId: string, subject: VoiceSubject, language: string): Promise<StartedVoice> {
   const audio = await openVoiceAudio()
   try {
-    return { started: await voiceSessionsApi.start(projectId, personaId, language), audio }
+    return { started: await voiceSessionsApi.start(projectId, subject, language), audio }
   } catch (error) {
     await audio.close()
     throw error
@@ -54,17 +73,18 @@ async function startVoice(projectId: string, personaId: string, language: string
 function blockedKey(offer: VoiceOffer): string | null {
   if (!offer.enabled) return 'voice.consent.off'
   if (offer.minutes_left < 1) return 'voice.consent.noMinutes'
+  if (offer.sources_full) return 'voice.product.consent.sourcesFull'
   return offer.sessions_left_today < 1 ? 'voice.consent.noSessions' : null
 }
 
-function ConsentStatements({ offer, name }: Readonly<{ offer: VoiceOffer; name: string }>) {
+function ConsentStatements({ offer, name, copy }: Readonly<{ offer: VoiceOffer; name: string; copy: Copy }>) {
   const { t, i18n } = useTranslation('projectDetail')
   const language = languageSupport(i18n.language, offer.languages.supported)
   return (
     <>
       <ul className="list-disc space-y-2 pl-5 text-sm text-text">
-        <li>{t('voice.consent.transcript')}</li>
-        <li>{t('voice.consent.synthetic', { name })}</li>
+        <li>{t(copy.transcript)}</li>
+        <li>{t(copy.who, { name })}</li>
         <li>{t('voice.consent.budget', {
           minutes: Math.floor(offer.minutes_left), session: offer.session_minutes,
           cost: formatCents(offer.estimated_cents_per_minute, i18n.language),
@@ -72,15 +92,15 @@ function ConsentStatements({ offer, name }: Readonly<{ offer: VoiceOffer; name: 
       </ul>
       <p className="text-xs text-muted">{t('voice.consent.sessionsToday', { left: offer.sessions_left_today })}</p>
       {language.supported ? null : (
-        <p role="note" className="badge badge-warn whitespace-normal text-left">{t('voice.consent.language', { supported: language.names })}</p>
+        <p role="note" className="badge badge-warn whitespace-normal text-left">{t(copy.language, { supported: language.names })}</p>
       )}
-      <p className="flex items-center gap-1.5 text-xs text-muted"><Headphones size={14} aria-hidden />{t('voice.consent.headphones')}</p>
+      <p className="flex items-center gap-1.5 text-xs text-muted"><Headphones size={14} aria-hidden />{t(copy.headphones)}</p>
     </>
   )
 }
 
-function ConsentBody({ offer, name, agreed, onAgree }: Readonly<{
-  offer: VoiceOffer | undefined; name: string; agreed: boolean; onAgree: (value: boolean) => void
+function ConsentBody({ offer, name, copy, agreed, onAgree }: Readonly<{
+  offer: VoiceOffer | undefined; name: string; copy: Copy; agreed: boolean; onAgree: (value: boolean) => void
 }>) {
   const { t } = useTranslation('projectDetail')
   const agreeId = useId()
@@ -89,7 +109,7 @@ function ConsentBody({ offer, name, agreed, onAgree }: Readonly<{
   if (blocked !== null) return <p role="alert" className="text-sm text-text">{t(blocked)}</p>
   return (
     <div className="space-y-3">
-      <ConsentStatements offer={offer} name={name} />
+      <ConsentStatements offer={offer} name={name} copy={copy} />
       <label htmlFor={agreeId} className="flex items-start gap-2 text-sm text-text-strong">
         <input id={agreeId} type="checkbox" className="mt-0.5" checked={agreed} onChange={(event) => onAgree(event.target.checked)} />
         {t('voice.consent.agree')}
@@ -98,9 +118,10 @@ function ConsentBody({ offer, name, agreed, onAgree }: Readonly<{
   )
 }
 
-export default function VoiceConsentDialog({ projectId, personaId, name, onStarted, onCancel }: Readonly<{
+export default function VoiceConsentDialog({ projectId, subject, name, onStarted, onCancel }: Readonly<{
   projectId: string
-  personaId: string
+  subject: VoiceSubject
+  /** The persona's name, or the project's (the product interviewer's). */
   name: string
   onStarted: (session: StartedVoice) => void
   onCancel: () => void
@@ -108,19 +129,20 @@ export default function VoiceConsentDialog({ projectId, personaId, name, onStart
   const { t, i18n } = useTranslation('projectDetail')
   const titleId = useId()
   const [agreed, setAgreed] = useState(false)
-  const offer = useQuery({ queryKey: voiceKeys.offer(projectId, personaId), queryFn: () => voiceSessionsApi.getOffer(projectId, personaId) })
-  const start = useMutation({ mutationFn: () => startVoice(projectId, personaId, voiceLanguage(i18n.language)), onSuccess: onStarted })
+  const copy = COPY[subject.kind]
+  const offer = useQuery({ queryKey: voiceKeys.offer(projectId, subject), queryFn: () => voiceSessionsApi.getOffer(projectId, subject) })
+  const start = useMutation({ mutationFn: () => startVoice(projectId, subject, voiceLanguage(i18n.language)), onSuccess: onStarted })
   const canStart = agreed && offer.data !== undefined && blockedKey(offer.data) === null && !start.isPending
   return (
     <ModalShell isOpen onClose={onCancel} ariaLabelledBy={titleId} panelClassName="max-w-lg" dismissable={!start.isPending}>
       <div className="dialog-header justify-between">
-        <h2 id={titleId} className="dialog-title">{t('voice.consent.title', { name })}</h2>
+        <h2 id={titleId} className="dialog-title">{t(copy.title, { name })}</h2>
         <DialogClose onClick={onCancel} disabled={start.isPending} />
       </div>
       <div className="dialog-body space-y-3">
         {offer.isError
           ? <p role="alert" className="text-sm text-danger">{t('voice.consent.loadFailed')}</p>
-          : <ConsentBody offer={offer.data} name={name} agreed={agreed} onAgree={setAgreed} />}
+          : <ConsentBody offer={offer.data} name={name} copy={copy} agreed={agreed} onAgree={setAgreed} />}
         {start.isError ? <p role="alert" className="text-sm text-danger">{t(startErrorKey(start.error))}</p> : null}
       </div>
       <div className="dialog-footer flex-col-reverse sm:flex-row">

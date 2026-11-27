@@ -50,6 +50,7 @@ OPUS5 = 'global.anthropic.claude-opus-5'
 OPUS48 = 'global.anthropic.claude-opus-4-8'
 HAIKU55 = 'global.anthropic.claude-haiku-5-5'
 HAIKU45 = 'global.anthropic.claude-haiku-4-5-20251001-v1:0'
+EVERY_EFFORT = ('low', 'medium', 'high', 'xhigh', 'max')
 
 
 @pytest.fixture(autouse=True)
@@ -72,6 +73,7 @@ class TestAllowlistRowsAreTheSettingsApiPayload:
                 'omit_temperature': True,
                 'adaptive_thinking': True,
                 'supports_flex': False,
+                'effort_levels': EVERY_EFFORT,
                 'context_window': 200_000,
             },
             {
@@ -84,6 +86,7 @@ class TestAllowlistRowsAreTheSettingsApiPayload:
                 'omit_temperature': True,
                 'adaptive_thinking': True,
                 'supports_flex': False,
+                'effort_levels': EVERY_EFFORT,
                 'context_window': 1_000_000,
             },
             {
@@ -94,6 +97,7 @@ class TestAllowlistRowsAreTheSettingsApiPayload:
                 'omit_temperature': True,
                 'adaptive_thinking': True,
                 'supports_flex': False,
+                'effort_levels': EVERY_EFFORT,
                 'context_window': 200_000,
             },
             {
@@ -106,6 +110,7 @@ class TestAllowlistRowsAreTheSettingsApiPayload:
                 'omit_temperature': False,
                 'adaptive_thinking': False,
                 'supports_flex': False,
+                'effort_levels': ('low', 'medium', 'high', 'max'),
                 'context_window': 200_000,
             },
             {
@@ -118,6 +123,7 @@ class TestAllowlistRowsAreTheSettingsApiPayload:
                 'omit_temperature': True,
                 'adaptive_thinking': True,
                 'supports_flex': False,
+                'effort_levels': EVERY_EFFORT,
                 'context_window': 200_000,
             },
             {
@@ -130,6 +136,7 @@ class TestAllowlistRowsAreTheSettingsApiPayload:
                 'omit_temperature': True,
                 'adaptive_thinking': True,
                 'supports_flex': False,
+                'effort_levels': EVERY_EFFORT,
                 'context_window': 200_000,
             },
             {
@@ -140,6 +147,7 @@ class TestAllowlistRowsAreTheSettingsApiPayload:
                 'omit_temperature': True,
                 'adaptive_thinking': True,
                 'supports_flex': False,
+                'effort_levels': EVERY_EFFORT,
                 'context_window': 200_000,
             },
             {
@@ -150,6 +158,7 @@ class TestAllowlistRowsAreTheSettingsApiPayload:
                 'omit_temperature': False,
                 'adaptive_thinking': False,
                 'supports_flex': False,
+                'effort_levels': (),
                 'context_window': 200_000,
             },
         ]
@@ -170,6 +179,7 @@ class TestAllowlistRowsAreTheSettingsApiPayload:
             'agent_worker': SONNET55,
             'agent_reviewer': OPUS55,
             'agent_persona': SONNET55,
+            'product_extract': SONNET55,
             'web_reviews_search': 'openai.gpt-5.6-luna',
         }
 

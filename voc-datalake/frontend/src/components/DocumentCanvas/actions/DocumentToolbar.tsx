@@ -1,14 +1,15 @@
 /**
- * @fileoverview The document page's icon toolbar, at the end of its top bar: the version picker (v1 … vN, "Latest"
- * marked; VersionPicker), History, AI review ("Ask personas to review"), AI rewrite ("Revise from comments"), the
- * Comments panel (its badge the open threads), Contents, Full width, Full screen, then Share (the review link of a
- * PR/FAQ or PRD), the row's one prominent button. The buttons are listed in toolbarItems.ts; the View menu switches
- * the same state (the two are doors to one place).
+ * @fileoverview The document page's toolbar, at the end of its top bar: the version picker (v1 … vN, "Latest"
+ * marked; VersionPicker), History, Persona review ("Ask personas to review", or "Add personas" with nobody to ask),
+ * Rewrite from comments ("Revise from comments"), the Comments panel (its badge the open threads), Contents, Full
+ * width, Full screen, then Share (the review link of a PR/FAQ or PRD), the row's one prominent button. The buttons
+ * are listed in toolbarItems.ts; the View menu switches the same state, the Review menu runs the same AI flows (each
+ * pair two doors to one place). The AI flows show their name beside their icon; the others are icons.
  *
  * A WAI-ARIA `toolbar` (useRovingToolbar: one Tab stop, the arrow keys, Home and End; toolbarControls: every icon
- * named, with its tooltip; toggles `aria-pressed`). A viewer gets no Share, AI review or AI rewrite (as the menus offer
- * them only to an editor). On a narrow screen (below `md`) History, the AI flows, Contents and Full width step into a "⋯" menu, so the
- * row stays one line beside the menus. A running AI flow is said in a polite status.
+ * named, with its tooltip; toggles `aria-pressed`). A viewer gets no Share and no AI flow (as the menus offer them
+ * only to an editor). On a narrow screen (below `md`) History, the AI flows, Contents and Full width step into a "⋯"
+ * menu, with their names, so the row stays one line beside the menus. A running AI flow is said in a polite status.
  *
  * `data-document-toolbar`: the focus view's Escape is not this row's (useFocusView).
  *
@@ -119,7 +120,7 @@ export default function DocumentToolbar({
         {inline.map((item) => (
           <ToolbarButton key={item.id} rove={rove(item.id)} label={item.label} hint={item.hint} icon={item.icon}
             pressed={item.pressed} badge={item.badge} disabled={item.disabled} busy={item.busy}
-            opensDialog={item.opensDialog} keyShortcuts={item.keyShortcuts}
+            opensDialog={item.opensDialog} keyShortcuts={item.keyShortcuts} text={item.text}
             buttonRef={item.id === 'fullScreen' ? focusButtonRef : undefined} onClick={item.run} />
         ))}
         {folded.length > 0 ? <MoreMenu items={folded} rove={rove('more')} /> : null}

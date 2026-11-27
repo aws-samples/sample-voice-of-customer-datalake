@@ -86,10 +86,10 @@ describe('readKeyMaterial', () => {
   });
 });
 
-describe('handler arity (Node 24 runtime contract)', () => {
-  it('exposes at most two parameters, or the Node 24 runtime refuses to start', () => {
+describe('handler arity (Node 24+ runtime contract)', () => {
+  it('exposes at most two parameters, or the Node 24+ runtimes refuse to start', () => {
     // REGRESSION GUARD. The exported handler originally took `deps` as a third
-    // parameter for test injection. The Node 24 Lambda runtime infers the
+    // parameter for test injection. The Node 24+ Lambda runtimes infer the
     // handler style from arity, read 3 as the removed `(event, context,
     // callback)` signature, and failed at init with "AWS Lambda has removed
     // support for callback-based function handlers" — before a single line of

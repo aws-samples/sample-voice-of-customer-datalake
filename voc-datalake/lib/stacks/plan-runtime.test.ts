@@ -52,9 +52,9 @@ let template: Template;
 beforeAll(() => { template = synthProcessingTemplate({ withIndexes: true }); });
 
 describe('voc-plan-step (VocProcessingStack)', () => {
-  it('is an ARM64 Node.js 24 function sized like the assistant, with a 300 s timeout', () => {
+  it('is an ARM64 Node.js 26 function sized like the assistant, with a 300 s timeout', () => {
     const fn = lambdaNamed(template, 'voc-plan-step');
-    expect([fn.Runtime, fn.Architectures]).toStrictEqual(['nodejs24.x', ['arm64']]);
+    expect([fn.Runtime, fn.Architectures]).toStrictEqual(['nodejs26.x', ['arm64']]);
     expect([fn.Timeout, fn.MemorySize]).toStrictEqual([300, 1024]);
   });
 

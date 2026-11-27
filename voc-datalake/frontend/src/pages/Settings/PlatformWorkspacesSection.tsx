@@ -4,9 +4,10 @@
  *
  * - Every workspace of the deployment by name, a page at a time: name, slug and status (no credentials badge since
  *   decision 19: a workspace's credentials need no secret, docs/multi-workspace.md → Credentials).
- * - Create one (name and slug): the caller becomes its admin. A slug another workspace has is refused (409).
+ * - Create one (name and slug, CreateWorkspaceForm.tsx, the form the workspace gate's picker offers too): the caller
+ *   becomes its admin. A slug another workspace has is refused (409).
  * - Enter one: a full page load to `/workspace/{slug}/`. A platform admin who is not a member enters as admin, which the
- *   server checks live and audits; the console records the workspace for the gate first (`platformEntry.ts`),
+ *   server checks live and audits; the console records the workspace for the gate first (`enterWorkspace.ts`),
  *   because the caller's own list does not name it.
  * - Create a trial (7.71.00, trial/CreateTrialDialog.tsx): a workspace with an end, its people and a starter pack, then
  *   its import wizard. A trial's row says its state and offers Extend and Convert (trial/TrialActions.tsx); at its end
@@ -15,7 +16,7 @@
  * @module pages/Settings/PlatformWorkspacesSection
  */
 import { useState } from 'react'
-import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useQueryClient } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import { Building2, Hourglass, Info, LogIn } from 'lucide-react'
 import CursorPagesList from '../../components/CursorPagesList/CursorPagesList'
@@ -24,11 +25,10 @@ import { useExpiringValue } from '../../hooks/useExpiringValue'
 import type { CursorPagesQuery } from '../../hooks/useCursorPages'
 import { apiErrorStatus, HTTP_FORBIDDEN } from '../../api/apiErrorStatus'
 import { useCursorPages } from '../../hooks/useCursorPages'
-import { myWorkspacesKey } from '../../api/workspacesApi'
 import { platformWorkspacesApi, platformWorkspacesKey } from '../../api/platformWorkspacesApi'
 import type { PlatformWorkspace } from '../../api/platformWorkspacesApi'
 import RefusalAlert from '../../workspace/RefusalAlert'
-import { rememberPlatformEntry } from '../../workspace/platformEntry'
+import { enterWorkspace } from '../../workspace/enterWorkspace'
 import type { PlatformEntry } from '../../workspace/platformEntry'
 import { workspaceUrl } from '../../workspace/workspacePath'
 import { PLATFORM_REFUSALS } from '../../workspace/workspaceRefusals'
@@ -36,13 +36,6 @@ import CreateWorkspaceForm from './CreateWorkspaceForm'
 import { SECTION_TITLE } from './sectionTitle'
 import CreateTrialDialog from './trial/CreateTrialDialog'
 import TrialActions, { TrialBadge } from './trial/TrialActions'
-
-/** Enter `workspace` (at `path`, its Home by default) with a full page load, the gate told which workspace the address
- *  names. */
-function enterWorkspace(workspace: PlatformEntry, path = '/'): void {
-  rememberPlatformEntry(workspace)
-  window.location.assign(workspaceUrl(workspace.slug, path))
-}
 
 /** Where a new trial opens: its import wizard (7.67.00), for its feedback and the workshop's survey. */
 const IMPORT_WIZARD_PATH = '/scrapers/import'
@@ -83,28 +76,12 @@ function WorkspaceRow({ workspace }: Readonly<{ workspace: PlatformWorkspace }>)
   )
 }
 
-function hadWorkspaces(mine: unknown): boolean {
-  return Array.isArray(mine) && mine.length > 0
-}
-
 export default function PlatformWorkspacesSection() {
   const { t } = useTranslation()
   const queryClient = useQueryClient()
   const { query, rows: workspaces } = useCursorPages<PlatformWorkspace>(platformWorkspacesKey(), platformWorkspacesApi.list)
   const [created, showCreated] = useExpiringValue<{ name: string; slug: string; id: string }>(15000)
   const [creatingTrial, setCreatingTrial] = useState(false)
-  const create = useMutation({
-    mutationFn: ({ name, slug }: { name: string; slug: string }) => platformWorkspacesApi.create(name, slug),
-    // The new workspace is in the console's list and in the caller's own (they are its admin). The caller's own
-    // list is re-read only when it already held a workspace: from none, a list of one would make the gate redirect
-    // into it with a full page load, losing this result and its Enter button (Enter's own load reads it afresh).
-    onSettled: () => Promise.all([
-      queryClient.invalidateQueries({ queryKey: platformWorkspacesKey() }),
-      hadWorkspaces(queryClient.getQueryData(myWorkspacesKey()))
-        ? queryClient.invalidateQueries({ queryKey: myWorkspacesKey() })
-        : null,
-    ]),
-  })
 
   return (
     <div className="card space-y-4">
@@ -117,11 +94,7 @@ export default function PlatformWorkspacesSection() {
       </div>
       <Notice variant="banner" tone="warn" role="note" icon={Info} text={t('workspaces.sharedData')} />
 
-      <CreateWorkspaceForm
-        busy={create.isPending}
-        onCreate={(name, slug) => create.mutateAsync({ name, slug })}
-        onCreated={showCreated}
-      />
+      <CreateWorkspaceForm onCreated={showCreated} />
       <div className="flex flex-col gap-2 rounded-lg border border-border p-4 sm:flex-row sm:items-center">
         <p className="flex-1 text-sm text-muted">{t('workspaces.trial.createDescription')}</p>
         <button type="button" className="btn btn-secondary gap-2 self-start sm:self-auto" onClick={() => setCreatingTrial(true)}>
@@ -136,7 +109,6 @@ export default function PlatformWorkspacesSection() {
           }}
           onOpenImport={(workspace) => enterWorkspace(workspace, IMPORT_WIZARD_PATH)} />
       ) : null}
-      <RefusalAlert error={create.error} refusals={PLATFORM_REFUSALS} />
       {created === null ? null : (
         <div role="status" className="flex flex-col gap-2 rounded-lg bg-ok-subtle p-3 text-sm text-ok sm:flex-row sm:items-center">
           <span className="flex-1">{t('workspaces.platform.created', { name: created.name })}</span>

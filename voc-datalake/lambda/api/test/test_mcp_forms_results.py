@@ -5,32 +5,22 @@ caller sees exactly what its minter sees on the same route: the category and sou
 (a viewer's token is refused), never more."""
 from __future__ import annotations
 
-import json
 from typing import Any
 
 import pytest
 from test_feedback_form_v2 import EDITOR, USER, VIEWER, WS, _create, _item
 from test_feedback_form_v2 import world as v2_world
+from test_mcp_forms_tools import over_mcp
 
-import feedback_form_handler as h
-from shared.mcp_delegate import DomainCall, build_proxy_event, synthetic_claims
-from shared.mcp_global_tools import TOOLS_BY_NAME
 from shared.test.source_profile_fixtures import no_source_profiles
 
 _no_profiles = pytest.fixture(autouse=True)(no_source_profiles)
 world = v2_world
 
-TOOL = TOOLS_BY_NAME['forms_get_results']
-
 
 def _over_mcp(lambda_context: Any, minter: dict, args: dict, *, ws: str | None = None) -> tuple[int, Any]:
     """The tool's call as the global MCP server makes it, for a token ``minter`` made (``ws``: minted there)."""
-    request = TOOL.build(args, None)
-    call = DomainCall(function_name='forms-fn', method=request.method, path=request.path, query=request.query)
-    claims = synthetic_claims({'token_id': 'tok_forms', 'created_by': minter['sub']})
-    response = h.lambda_handler(build_proxy_event(call, claims, ws), lambda_context)
-    body = json.loads(response['body'])
-    return response['statusCode'], TOOL.shape(body, args) if response['statusCode'] == 200 else body
+    return over_mcp(lambda_context, 'forms_get_results', minter, args, ws=ws)
 
 
 @pytest.fixture

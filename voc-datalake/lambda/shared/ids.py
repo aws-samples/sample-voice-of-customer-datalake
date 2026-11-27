@@ -27,7 +27,7 @@ from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import Final
 
-from shared.aws import is_conditional_check_failure
+from shared.aws import cancelled_by_condition, is_conditional_check_failure
 from shared.logging import logger
 
 STAMP_FORMAT: Final = '%Y%m%d%H%M%S'
@@ -51,16 +51,7 @@ def is_key_collision(error: Exception, *, put_index: int | None = None) -> bool:
     """
     if put_index is None:
         return is_conditional_check_failure(error)
-    response = getattr(error, 'response', None)
-    if not isinstance(response, dict):
-        return False
-    if (response.get('Error') or {}).get('Code') != 'TransactionCanceledException':
-        return False
-    reasons = response.get('CancellationReasons')
-    if not isinstance(reasons, list) or len(reasons) <= put_index:
-        return False
-    reason = reasons[put_index]
-    return isinstance(reason, dict) and reason.get('Code') == 'ConditionalCheckFailed'
+    return cancelled_by_condition(error, put_index)
 
 
 def write_with_fresh_id[T](

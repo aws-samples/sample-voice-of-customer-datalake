@@ -1,6 +1,6 @@
 /**
  * @fileoverview The one card shell of the Product tab: the form's sections, the
- * internal documents and the report all use it, so the tab has a single card look
+ * Sources, the questions and the report all use it, so the tab has a single card look
  * (the `card` recipe, an icon + title + optional description header, an optional
  * aside on the right that wraps under the title on a narrow screen).
  *
@@ -17,7 +17,7 @@ export default function ProductCard({
   title: string
   description?: string
   aside?: ReactNode
-  /** The documents card takes pasted screenshots; only events inside the card reach it. */
+  /** The Sources card takes pasted screenshots; only events inside the card reach it. */
   onPaste?: ClipboardEventHandler<HTMLElement>
   children: ReactNode
 }>) {

@@ -13,11 +13,11 @@ import { pythonLayerCode } from './python-layer-bundling';
  * functions (`narrow-distribution`). `dependency-layers.test.ts` pins the template to the lists here.
  */
 
-/** One `LayerVersion` built from `lambda/layers/<dir>/requirements.txt` (arm64, Python 3.14). */
+/** One `LayerVersion` built from `lambda/layers/<dir>/requirements.txt` (arm64, Python 3.15). */
 export function dependencyLayer(scope: Construct, id: string, layerDir: string, description: string): lambda.LayerVersion {
   return new lambda.LayerVersion(scope, id, {
     code: pythonLayerCode(layerDir),
-    compatibleRuntimes: [lambda.Runtime.PYTHON_3_14],
+    compatibleRuntimes: [lambda.Runtime.PYTHON_3_15],
     compatibleArchitectures: [lambda.Architecture.ARM_64],
     description,
   });

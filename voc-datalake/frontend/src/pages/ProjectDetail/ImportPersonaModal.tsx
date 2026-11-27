@@ -88,7 +88,7 @@ function ImportTypeButton({
  * The drag-over state deliberately reuses the populated state's purple family
  * rather than introducing a colour: it is the same "this zone is holding
  * something" signal one moment earlier, and a darker border is what distinguishes
- * it (the same relationship ProductDocsUpload's zone uses for its own hover and
+ * it (the same relationship the Product tab's Sources drop zone uses for its own hover and
  * drag states).
  */
 function zoneStyle(dragActive: boolean, hasFile: boolean): string {

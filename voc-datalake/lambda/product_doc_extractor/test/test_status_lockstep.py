@@ -142,10 +142,12 @@ class TestFrontendStatusMirrorLockstep:
 
     Concretely: a status added to the API and to the extractor but not to the union
     type gives a `status` value the frontend's own type says is impossible.
-    `DocStatusBadge` in ProductDocsUpload.tsx switches on `ready` and `failed` and
-    falls through to the "Extracting…" spinner for everything else, so an
-    unmodelled status renders as a permanent in-flight spinner — the exact
-    never-resolving badge this whole rung was written to remove.
+    `StatusBadge` in ProductSourceList.tsx (7.104.00's Sources card) switches on
+    `ready` and `failed` and falls through to the "Reading…" spinner for everything
+    else, so an unmodelled status renders as a permanent in-flight spinner — the
+    exact never-resolving badge this whole rung was written to remove. (The SPA's
+    lenient read, api/productSourcesSchema.ts, now reads a status it does not know
+    as failed; the union still has to name every real one.)
 
     Read as SOURCE TEXT rather than executed, the same approach as
     test_image_limits_lockstep.py and test_avatar_image_model_lockstep.py.

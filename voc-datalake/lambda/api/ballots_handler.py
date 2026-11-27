@@ -120,7 +120,7 @@ from shared.api import (
     get_caller_subject,
     validate_int,
 )
-from shared.aws import get_dynamodb_resource
+from shared.aws import cancelled_by_condition, get_dynamodb_resource
 from shared.exceptions import (
     ApiError,
     ConfigurationError,
@@ -1282,19 +1282,7 @@ def _row_condition_failed(e: ClientError) -> bool:
     short `CancellationReasons` answers False, so an unreadable cancellation is
     handled as the transient failure it might be rather than the fact it might not be.
     """
-    reasons = e.response.get('CancellationReasons')
-    if not isinstance(reasons, list) or len(reasons) <= BALLOT_TRANSACT_ROW_INDEX:
-        return False
-    return _reason_code(reasons[BALLOT_TRANSACT_ROW_INDEX]) == 'ConditionalCheckFailed'
-
-
-def _reason_code(reason: object) -> object:
-    """A cancellation reason's `Code`, or None for an entry that is not a mapping.
-
-    Taken as `object`: the stubs promise a list of dicts, but this is a wire answer,
-    and `_row_condition_failed` is about the answer that is not one.
-    """
-    return reason.get('Code') if isinstance(reason, dict) else None
+    return cancelled_by_condition(e, BALLOT_TRANSACT_ROW_INDEX)
 
 
 def _write_ballot(

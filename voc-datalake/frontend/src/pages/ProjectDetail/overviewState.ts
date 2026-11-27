@@ -375,7 +375,7 @@ function upstreamGaps(
  * True for a product doc that is an image, whatever kind.
  *
  * A prefix test rather than the closed set the upload boundary enforces
- * (`ALLOWED_MIME` in ProductDocsUpload, `IMAGE_CONTENT_TYPES` server-side), and
+ * (`ALLOWED_MIME` in productSourceUpload.ts, `IMAGE_CONTENT_TYPES` server-side), and
  * lenient in the safe direction: an image type stored by a future client is still
  * offered, and if the backend then declines to read it the build is merely
  * ungrounded — whereas a stricter test here would hide a perfectly usable

@@ -286,7 +286,7 @@ describe('the engineering bus', () => {
   it('runs the inbox router as one arm64 Python function at its size', () => {
     const on = template('on');
     expect(on.findResources('AWS::Lambda::Function')[functionId(on, 'voc-engineering-router')]?.Properties).toMatchObject({
-      Handler: 'engineering/bus/router.handler', Runtime: 'python3.14', Architectures: ['arm64'],
+      Handler: 'engineering/bus/router.handler', Runtime: 'python3.15', Architectures: ['arm64'],
       MemorySize: OPTIONAL_FUNCTION_SIZES['voc-engineering-router'],
     });
   });
@@ -335,7 +335,7 @@ describe('the engineering bus', () => {
     const on = template('on');
     const board = functionId(on, 'voc-engineering-board');
     expect(on.findResources('AWS::Lambda::Function')[board]?.Properties).toMatchObject({
-      Handler: 'engineering/board/api.handler', Runtime: 'python3.14', Architectures: ['arm64'],
+      Handler: 'engineering/board/api.handler', Runtime: 'python3.15', Architectures: ['arm64'],
       MemorySize: OPTIONAL_FUNCTION_SIZES['voc-engineering-board'],
       Environment: {
         Variables: {
@@ -441,7 +441,7 @@ describe('the engineering bus', () => {
     const props = on.findResources('AWS::Lambda::Function')[functionId(on, ENGINEERING_REPORTS_FUNCTION_BASE_NAME)]
       ?.Properties;
     expect(props).toMatchObject({
-      Handler: 'engineering/reports/handler.handler', Runtime: 'python3.14', Architectures: ['arm64'],
+      Handler: 'engineering/reports/handler.handler', Runtime: 'python3.15', Architectures: ['arm64'],
       MemorySize: OPTIONAL_FUNCTION_SIZES[ENGINEERING_REPORTS_FUNCTION_BASE_NAME],
     });
     const env = z.record(z.string(), z.unknown()).parse(props?.Environment?.Variables);

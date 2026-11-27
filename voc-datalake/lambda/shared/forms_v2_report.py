@@ -27,7 +27,7 @@ from __future__ import annotations
 from collections.abc import Iterable, Mapping, Sequence
 from typing import Any, Final
 
-from shared.forms_v2 import CES, CSAT, MATRIX, NPS, OPEN_TEXT, RATING, plain
+from shared.forms_v2 import CES, CSAT, HIDDEN_PREFIX, MATRIX, NPS, OPEN_TEXT, RATING, plain
 from shared.forms_v2_responses import headline_of
 from shared.forms_v2_results import ResultRow, filter_rows, questions_where
 from shared.item_facets import SENTIMENT_VALUES
@@ -164,7 +164,7 @@ def _text_filters(stored: Mapping[str, Any]) -> dict[str, str]:
 def _under(filters: Mapping[str, str], rows: Sequence[ResultRow]) -> list[ResultRow]:
     """``rows`` under a summary's filters (``from``, ``to``, ``language``, ``ending``, ``hidden.<id>``; any other name,
     like the app's ``days``, only describes the view)."""
-    hidden = {key.removeprefix('hidden.'): value for key, value in filters.items() if key.startswith('hidden.')}
+    hidden = {key.removeprefix(HIDDEN_PREFIX): value for key, value in filters.items() if key.startswith(HIDDEN_PREFIX)}
     return filter_rows(rows, date_from=filters.get('from', ''), date_to=filters.get('to', ''),
                        language=filters.get('language', ''), ending=filters.get('ending', ''), hidden=hidden)
 

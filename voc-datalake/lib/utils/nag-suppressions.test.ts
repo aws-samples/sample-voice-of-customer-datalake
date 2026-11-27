@@ -52,8 +52,8 @@ describe('nag-suppressions.ts list builders', () => {
     const arn = `<${logicalId(bucket)}.Arn>`;
     expect(rendered(producer, s3ObjectSuppressions([bucket.arnForObjects('*'), bucket.arnForObjects('raw/*')])))
       .toStrictEqual([`Resource::${arn}/*`, `Resource::${arn}/raw/*`]);
-    expect(rendered(producer, rawDataPrefixSuppressions(bucket, ['avatars/*', 'projects/*/product_docs/extracted/*'])))
-      .toStrictEqual([`Resource::${arn}/avatars/*`, `Resource::${arn}/projects/*/product_docs/extracted/*`]);
+    expect(rendered(producer, rawDataPrefixSuppressions(bucket, ['avatars/*', 'projects/*/product_docs/*'])))
+      .toStrictEqual([`Resource::${arn}/avatars/*`, `Resource::${arn}/projects/*/product_docs/*`]);
   });
 
   it('names the stack\'s own bootstrap asset bucket', () => {

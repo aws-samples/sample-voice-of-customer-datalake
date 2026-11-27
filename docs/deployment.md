@@ -7,9 +7,10 @@ protection, the frontend deployment, diagnostics, and troubleshooting.
 ## Prerequisites
 
 - **AWS CLI** configured with credentials for the target account
-- **Node.js** 24.15+ and npm (root `package.json` `engines`; the same line as CI and the `nodejs24.x` Lambda runtime)
-- **Python** 3.12+ for the local lint and tests (the Lambdas run Python 3.14; their code and layers are built in
-  containers)
+- **Node.js** 24.15+ and npm (root `package.json` `engines`, the local floor; CI runs Node 26, the Node Lambdas'
+  `nodejs26.x`)
+- **Python** 3.12+ for the local lint and tests (the Lambdas run Python 3.15, which CI tests on through
+  `.python-version`; their code and layers are built in containers)
 - **Docker or Finch** for the Lambda layers and CDK asset bundling
 
 ## Project Structure
@@ -84,7 +85,7 @@ or set it in `voc-datalake/cdk.context.json`. An invalid value fails the synth.
 | `anthropicUseCase` | none | Your own Anthropic use-case form, filed by the deploy ([Submit the form from CDK](#submit-the-form-from-cdk-instead-opt-in)) |
 | `skipUseCaseSubmission` | `false` | `true` validates an `anthropicUseCase` block but does not submit it |
 | `modelAgreementRetry` | none | A new value re-attempts every Bedrock model agreement ([Model agreements](#model-agreements-every-deploy-in-the-app-region-best-effort)) |
-| `defaultModelId` | none | Pins every AI surface to one allowlisted model ([Pinning All AI Surfaces](#pinning-all-ai-surfaces-to-one-model)) |
+| `defaultModelId` | none | Pins every AI surface but the product extract to one allowlisted model ([Pinning All AI Surfaces](#pinning-all-ai-surfaces-to-one-model)) |
 | `customModels` | none | Up to four Bedrock models, inference profiles or imported models of your own, offered on the surfaces each declares ([Bring your own model](#bring-your-own-model--c-custommodels)) |
 | `emailFrom` | none | Sender address for participant asks and board sign-in codes through SES ([Participant email](#participant-email-and-feedback-boards--c-emailfrom)) |
 | `inboundEmailDomain` (+ `inboundEmailHostedZoneId`, `inboundEmailHostedZoneName`, `inboundEmailRuleSet`, `inboundEmailCreateIdentity`) | none | Receives feedback by email through SES ([email-intake.md](email-intake.md)) |
@@ -1112,7 +1113,7 @@ ships is what the bundling command copies, and every command ends by deleting `t
 `__pycache__/`, `.pytest_cache/`, `test_*.py`, `*_test.py`, `conftest.py`, `*.pyc` and `.env*` from the
 output. A local `cdk synth` with Docker writes the bundles to `voc-datalake/cdk.out/asset.*` if you want to
 inspect one. `lib/utils/python-lambda-asset.test.ts` checks every bundling command, and (when Docker and the
-`public.ecr.aws/sam/build-python3.14` image are present locally) builds one bundle and checks its contents.
+`public.ecr.aws/sam/build-python3.15` image are present locally) builds one bundle and checks its contents.
 
 <a id="data-retention-nothing-is-ever-deleted"></a>
 
@@ -1644,6 +1645,10 @@ Behaviour worth knowing:
 - **Write-once.** The value is only set if absent, so a redeploy never changes
   it. It is a floor, not a lock: every choice in Administration → AI models
   (per surface, or for all surfaces) takes precedence.
+- **Every surface except the product extract** (7.104.00, `product_extract`, the
+  Product tab's Extract), which keeps its own default (Claude Sonnet 5.5) unless
+  it is picked for itself in Administration → AI models; the pick for all
+  surfaces does not replace it either, and its Automatic says so.
 - **Upgrading.** A deployment pinned before this row existed keeps its pin in
   `SETTINGS#model` (`model_id`), where it still applies to every surface left on
   Automatic; nothing needs to move (the custom resource runs again only when
@@ -1912,6 +1917,10 @@ now, the request is re-run on the next model of one ordered chain:
 2. the surface's built-in default, when different,
 3. then `MODEL_FALLBACK_ORDER`: **Sonnet 5.5 → Sonnet 5 → Sonnet 4.6 → Haiku 5.5 → Haiku 4.5**.
 
+The product extract (`product_extract`, 7.104.00) resolves to its own pick, else its default, and falls back from
+its resolved model to **Sonnet 5.5 → Sonnet 5** only, never to a Haiku (`lambda/shared/model_config.py`
+`_OWN_DEFAULT_SURFACES`).
+
 The web search surface (`web_reviews_search`, OpenAI GPT models) has a chain of its own, never mixed with
 this one: its resolved model, then its default, then `WEB_SEARCH_FALLBACK_ORDER`: **GPT-5.6 Luna → GPT-5.6
 Terra → GPT-5.6 Sol → GPT-5.5 → GPT-5.4**. It steps on HTTP 429 or 503 from the Responses API, or a 400 / 403 /
@@ -2032,11 +2041,11 @@ jobs:
       
       - uses: actions/setup-node@v7
         with:
-          node-version: '24'
+          node-version: '26'
           
       - uses: actions/setup-python@v7
         with:
-          python-version: '3.12'
+          python-version-file: .python-version
           
       - name: Install dependencies
         run: |

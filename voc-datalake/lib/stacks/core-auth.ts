@@ -71,7 +71,7 @@ export function createCoreAuth(ctx: CoreBuildContext, aggregatesTable: dynamodb.
 
   // Custom Message Lambda Trigger
   const customMessageLambda = new lambda.Function(stack, 'CustomMessageLambda', {
-    runtime: lambda.Runtime.PYTHON_3_14,
+    runtime: lambda.Runtime.PYTHON_3_15,
     architecture: lambda.Architecture.ARM_64,
     handler: 'index.handler',
     code: lambda.Code.fromInline(customMessageLambdaCode(signInUrl)),
@@ -410,7 +410,7 @@ export function createInlineCustomResourceHandler(
   const functionName = ctx.uniqueName(handler.baseName);
   return new lambda.Function(ctx.stack, id, {
     functionName,
-    runtime: lambda.Runtime.PYTHON_3_14,
+    runtime: lambda.Runtime.PYTHON_3_15,
     architecture: lambda.Architecture.ARM_64,
     handler: 'index.handler',
     code: lambda.Code.fromInline(

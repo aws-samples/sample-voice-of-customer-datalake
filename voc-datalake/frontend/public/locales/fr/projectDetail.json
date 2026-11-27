@@ -322,7 +322,8 @@
       "importPersona": "Import de persona",
       "mergeDocuments": "Fusion de documents",
       "research": "Recherche",
-      "draftPrototype": "Brouillon de prototype"
+      "draftPrototype": "Brouillon de prototype",
+      "extractProductDescription": "Extraction de la description du produit"
     },
     "completedCount_many": "{{count, number}} terminées",
     "moreFailedCount_many": "{{count, number}} autres en échec"
@@ -551,6 +552,7 @@
       "oneLiner": "Description en une ligne",
       "problemSolved": "Problème résolu",
       "productName": "Nom du produit",
+      "productSummary": "Ce que fait le produit",
       "successMetrics": "Indicateurs de succès",
       "targetUsers": "Utilisateurs cibles"
     },
@@ -576,28 +578,6 @@
     },
     "subtitle": "Les informations saisies ici sont automatiquement injectées dans la génération de PRD et de PR/FAQ comme contexte produit actuel.",
     "title": "Description du produit/service",
-    "upload": {
-      "accepted": "PNG, JPEG, GIF, WebP jusqu’à 3,5 Mo · MD, TXT jusqu’à 10 Mo",
-      "delete": "Supprimer le document",
-      "dropZone": "Déposez des fichiers ici, collez une capture ou cliquez pour envoyer",
-      "empty": "Aucun document pour le moment.",
-      "errors": {
-        "tooLarge": "Trop volumineux (>10 Mo) : {{name}}",
-        "unsupportedType": "Type non pris en charge : {{name}} ({{type}}). Formats acceptés : {{accepted}}",
-        "uploadFailed": "{{name}} : échec de l’envoi — {{message}}"
-      },
-      "extractedChars_one": "{{count, number}} caractère extrait",
-      "extractedChars_other": "{{count, number}} caractères extraits",
-      "heading": "Documents internes",
-      "hint": "Images et texte — 20 max",
-      "loading": "Chargement…",
-      "notYet": "Les PDF et Word (.docx) ne sont pas encore lus ici : ajoutez-les à la Bibliothèque et mentionnez-les dans l'assistant avec #.",
-      "statusExtracting": "Extraction…",
-      "statusFailed": "Échec",
-      "statusReady": "Prêt",
-      "statusUploading": "Envoi…",
-      "extractedChars_many": "{{count, number}} caractères extraits"
-    },
     "assistant": {
       "button": "Remplir avec l'assistant IA",
       "hint": "L'assistant pose une question à la fois sur chaque champ vide, puis présente toutes vos réponses sur une seule carte à approuver.",
@@ -627,6 +607,185 @@
         "title": "Notes",
         "description": "Tout ce que les rédacteurs du PRD et du PR/FAQ doivent encore savoir."
       }
+    },
+    "sources": {
+      "title": "Sources",
+      "description": "Fichiers, liens et réponses que l’extraction lit pour décrire le produit.",
+      "hint": "20 au maximum",
+      "empty": "Ajoutez des documents, des images ou des liens, ou répondez à quelques questions.",
+      "emptyViewer": "Aucune source pour l’instant.",
+      "answerQuestions": "Répondre aux questions",
+      "dropZone": "Déposez des fichiers ici, collez une capture ou cliquez pour importer",
+      "accepted": "PDF, Word (.docx), PowerPoint (.pptx) jusqu’à 25 Mo · MD, TXT jusqu’à 10 Mo · PNG, JPEG, GIF, WebP jusqu’à 3,5 Mo",
+      "loading": "Chargement…",
+      "loadFailed": "Impossible de charger les sources. Vérifiez votre connexion et réessayez.",
+      "typedAnswers": "Réponses écrites",
+      "voiceInterview": "Entretien vocal",
+      "status": {
+        "uploading": "Importation…",
+        "pending": "En attente de lecture",
+        "extracting": "Lecture…",
+        "fetching": "Récupération…",
+        "ready": "Prête",
+        "failed": "Échec"
+      },
+      "chars_one": "{{count, number}} caractère lu",
+      "chars_many": "{{count, number}} caractères lus",
+      "chars_other": "{{count, number}} caractères lus",
+      "pages_one": "{{count, number}} page",
+      "pages_many": "{{count, number}} pages",
+      "pages_other": "{{count, number}} pages",
+      "cut": "coupée à la limite de lecture",
+      "readByModel": "lue par l’IA",
+      "injection": "Des parties de ce texte ressemblent à des instructions pour un modèle d’IA. Il est lu comme des données seulement, jamais suivi.",
+      "retry": "Réessayer",
+      "refetch": "Récupérer à nouveau",
+      "delete": "Supprimer la source",
+      "link": {
+        "label": "Ajouter un lien",
+        "placeholder": "https://example.com/produit",
+        "add": "Ajouter le lien",
+        "adding": "Ajout…",
+        "invalid": "Saisissez l’adresse d’une page publique qui commence par https://.",
+        "tooLong": "Le lien dépasse 2 048 caractères."
+      },
+      "errors": {
+        "unsupportedType": "Type non pris en charge : {{name}} ({{type}}). Acceptés : {{accepted}}",
+        "tooLarge": "Trop volumineux (plus de {{mb}} Mo) : {{name}}",
+        "uploadFailed": "{{name}} : {{message}}",
+        "linkFailed": "Le lien n’a pas été ajouté : {{message}}",
+        "refreshFailed": "La source n’a pas été relue : {{message}}",
+        "deleteFailed": "La source n’a pas été supprimée : {{message}}",
+        "tryAgain": "Réessayez."
+      }
+    },
+    "extract": {
+      "button": "Extraire la description du produit",
+      "running": "Extraction…",
+      "hint": "Lit chaque source prête et propose une valeur pour chaque champ, avec ses sources. Rien ne change avant que vous l’acceptiez.",
+      "noReady": "Ajoutez une source et attendez qu’elle soit prête.",
+      "confirmTitle": "Extraire maintenant ?",
+      "confirmLeftOut_one": "{{count, number}} source est encore en lecture et sera laissée de côté. Extraire maintenant ?",
+      "confirmLeftOut_many": "{{count, number}} sources sont encore en lecture et seront laissées de côté. Extraire maintenant ?",
+      "confirmLeftOut_other": "{{count, number}} sources sont encore en lecture et seront laissées de côté. Extraire maintenant ?",
+      "confirm": "Extraire maintenant",
+      "steps": {
+        "queued": "En attente de démarrage…",
+        "starting": "Démarrage…",
+        "readingSources": "Lecture des sources…",
+        "thinking": "Réflexion ({{elapsed}})…",
+        "checkingCitations": "Vérification des citations…",
+        "saved": "Proposition enregistrée, finalisation…"
+      },
+      "failed": {
+        "refused": "Le modèle a refusé de lire ces sources. Retirez la source qui a pu le provoquer et réessayez.",
+        "timedOut": "L’extraction a duré plus de 12 minutes et a été arrêtée. Réessayez avec moins de sources ou des sources plus courtes, ou relancez-la en xhigh.",
+        "cut": "La réponse a manqué de place. Réessayez avec moins de sources ou des sources plus courtes.",
+        "unreadable": "La réponse n’a pas pu être lue. Réessayez.",
+        "stale": "Cette extraction ne signale plus sa progression. Réessayez.",
+        "generic": "L’extraction a échoué. Réessayez."
+      },
+      "tryAgain": "Réessayer",
+      "retryXhigh": "Relancer en xhigh",
+      "retryXhighHint": "Un effort de raisonnement moindre : le modèle réfléchit moins longtemps et termine plus tôt.",
+      "errors": {
+        "noReadySources": "Aucune source n’est encore prête : ajoutez-en une ou attendez sa lecture.",
+        "busy": "Une extraction est déjà en cours pour ce projet. Suivez-la dans Tâches en arrière-plan.",
+        "busyStale": "L'extraction arrêtée bloque encore ce projet jusqu'à environ 16 minutes après son début. Réessayez à ce moment-là.",
+        "rateLimited": "Trop d’extractions : au plus 1 par minute et 10 par jour par projet, et 20 par jour par personne. Réessayez plus tard.",
+        "generic": "L’extraction n’a pas pu démarrer. Réessayez."
+      }
+    },
+    "review": {
+      "title": "Description du produit proposée",
+      "loadFailed": "Impossible de charger la proposition de l'extraction. Vérifiez votre connexion et réessayez.",
+      "subtitle_one": "À partir de {{count, number}} source, {{at}}. Rien n’est enregistré avant que vous l’acceptiez.",
+      "subtitle_many": "À partir de {{count, number}} sources, {{at}}. Rien n’est enregistré avant que vous l’acceptiez.",
+      "subtitle_other": "À partir de {{count, number}} sources, {{at}}. Rien n’est enregistré avant que vous l’acceptiez.",
+      "skipped_one": "{{count, number}} source a été laissée de côté, au-delà de la limite de lecture de l’extraction : {{names}}",
+      "skipped_many": "{{count, number}} sources ont été laissées de côté, au-delà de la limite de lecture de l’extraction : {{names}}",
+      "skipped_other": "{{count, number}} sources ont été laissées de côté, au-delà de la limite de lecture de l’extraction : {{names}}",
+      "partlyApplied": "Appliquée en partie",
+      "groups": {
+        "proposed": "Proposés",
+        "conflict": "Conflits",
+        "gap": "Lacunes",
+        "unchanged": "Inchangés"
+      },
+      "current": "Actuel",
+      "proposed": "Proposé",
+      "empty": "(vide)",
+      "by": {
+        "you": "saisi par vous",
+        "teammate": "saisi par un collègue",
+        "extract": "issu d’une extraction",
+        "assistant": "de l’assistant IA"
+      },
+      "confidence": {
+        "high": "Confiance élevée",
+        "medium": "Confiance moyenne",
+        "low": "Confiance faible"
+      },
+      "noVerified": "Aucune source vérifiée",
+      "accepted": "Accepté",
+      "changed": "Modifié depuis l’extraction : « Tout accepter » l’ignore, et l’accepter remplace la nouvelle valeur.",
+      "citations": "Citations",
+      "page": "p. {{page}}",
+      "sourceDeleted": "source supprimée",
+      "unverified": "Cette citation n’a pas été trouvée dans la source.",
+      "editLabel": "Valeur proposée pour {{field}}",
+      "select": "Accepter {{field}}",
+      "gapNote": "Aucune source n’a répondu à ces champs : voyez les questions à côté du formulaire.",
+      "acceptSelected": "Accepter la sélection",
+      "acceptAll": "Tout accepter",
+      "dismiss": "Écarter",
+      "readOnly": "Seule une personne qui peut modifier ce projet peut accepter ou écarter la proposition.",
+      "result": {
+        "applied_one": "{{count, number}} champ appliqué.",
+        "applied_many": "{{count, number}} champs appliqués.",
+        "applied_other": "{{count, number}} champs appliqués.",
+        "changed": "{{field}} a changé depuis l’extraction et n’a pas été appliqué.",
+        "personValue": "{{field}} contient une valeur saisie par une personne et n’a pas été remplacé.",
+        "allChanged": "Chaque champ sélectionné a changé depuis l’extraction : rien n’a été appliqué. Les lignes montrent les nouvelles valeurs.",
+        "closed": "Cette proposition a été remplacée par une extraction plus récente ou écartée. Relancez l’extraction pour en obtenir une nouvelle.",
+        "failed": "La proposition n’a pas pu être acceptée. Réessayez.",
+        "dismissFailed": "La proposition n’a pas pu être écartée. Réessayez."
+      },
+      "proposedBadge": "Proposé",
+      "proposedBadgeLabel": "Proposé : examiner la valeur proposée pour {{field}}",
+      "newSources_one": "{{count, number}} source prête n’a pas été lue par cette extraction : relancez l’extraction pour l’utiliser.",
+      "newSources_many": "{{count, number}} sources prêtes n’ont pas été lues par cette extraction : relancez l’extraction pour les utiliser.",
+      "newSources_other": "{{count, number}} sources prêtes n’ont pas été lues par cette extraction : relancez l’extraction pour les utiliser."
+    },
+    "gaps": {
+      "title": "Questions",
+      "description": "Les sources n’y ont pas répondu. Vos réponses deviennent une source de plus ; puis relancez l’extraction.",
+      "defaultDescription": "Répondez à quelques questions sur le produit. Vos réponses deviennent une source que l’extraction lit.",
+      "type": "Écrire les réponses",
+      "talk": "En parler",
+      "chat": "Répondre dans le chat IA",
+      "save": "Enregistrer les réponses",
+      "saving": "Enregistrement…",
+      "cancel": "Annuler",
+      "saved": "Vos réponses sont enregistrées comme source.",
+      "extractAgain": "Relancer l’extraction",
+      "errors": {
+        "save": "Les réponses n’ont pas été enregistrées : {{message}}"
+      }
+    },
+    "questions": {
+      "productName": "Comment s’appelle le produit ou le service ?",
+      "oneLiner": "En une phrase, que fait-il et pour qui ?",
+      "productSummary": "En un court paragraphe, que fait le produit et comment les gens l’utilisent-ils ?",
+      "targetUsers": "Qui sont ses clients ou utilisateurs cibles ?",
+      "problemSolved": "Quel problème résout-il pour eux ?",
+      "currentState": "Où en est-il de son cycle de vie : une idée, un MVP, en bêta, disponible pour tous ou mature ?",
+      "keyFeatures": "Quelles sont ses fonctionnalités clés ?",
+      "differentiators": "À quels concurrents ou alternatives les clients le comparent-ils, et en quoi est-il différent ?",
+      "successMetrics": "Quels sont ses objectifs, et quels indicateurs montrent le succès ?",
+      "knownLimitations": "Quelles contraintes ou limites connues a-t-il ?",
+      "nonGoals": "Qu’est-ce qui est volontairement hors du périmètre (non-objectifs) ?",
+      "freeFormNotes": "Autre chose que les auteurs du PRD et du PR/FAQ devraient savoir ?"
     }
   },
   "tabs": {
@@ -1044,6 +1203,27 @@
       "savingToLibrary": "Enregistrement dans la Bibliothèque…",
       "savedToLibrary": "Enregistré dans la Bibliothèque.",
       "libraryFailed": "Impossible de l’enregistrer dans la Bibliothèque."
+    },
+    "product": {
+      "consent": {
+        "title": "En parler",
+        "transcript": "La transcription de la conversation est enregistrée comme source de ce projet, les données personnelles de vos réponses masquées. L’audio n’est jamais enregistré.",
+        "interviewer": "Un intervieweur IA pose les questions à voix haute, et vous répondez pour votre produit. C’est une IA, pas une personne.",
+        "language": "La voix ne parle pas encore la langue de votre interface. Parlez {{supported}} et l’intervieweur vous suit.",
+        "headphones": "Utilisez un casque pour que l’intervieweur ne s’entende pas lui-même.",
+        "sourcesFull": "Ce projet compte déjà 20 sources, le maximum, donc l'entretien ne pourrait pas être enregistré comme source. Supprimez d'abord une source, puis parlez-en."
+      },
+      "session": {
+        "title": "Entretien sur le produit",
+        "badge": "Intervieweur IA",
+        "note": "Une IA pose les questions. Vos réponses deviennent une source de ce projet ; l’audio n’est jamais enregistré.",
+        "interviewer": "Intervieweur",
+        "saving": "Enregistrement de vos réponses comme source…",
+        "saved": "Vos réponses sont enregistrées comme source de ce projet. Relancez l’extraction pour les utiliser.",
+        "savedOverCap": "Vos réponses sont enregistrées comme source de ce projet. Des sources ont été ajoutées pendant l'entretien, le projet en compte donc plus de 20 : supprimez-en une avant d'en ajouter une autre.",
+        "nothingSaved": "Rien n’a été dit, donc rien n’a été enregistré.",
+        "savedFailed": "Vos réponses n’ont pas pu être enregistrées."
+      }
     }
   }
 }

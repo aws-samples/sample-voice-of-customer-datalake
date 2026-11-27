@@ -1,11 +1,14 @@
 /**
  * @fileoverview The document page's top bar, an editing canvas's: its menu bar (Document · Edit · Format · Insert ·
- * View; menuBar.ts), the save status, Discard and Save, then the icon toolbar (DocumentToolbar: the version picker,
- * History, AI review, AI rewrite, Comments, Contents, Full width, Full screen, Share); the stale-save conflict under it.
+ * Review · View; menuBar.ts), the save status, Discard and Save, then the toolbar (DocumentToolbar: the version picker,
+ * History, Persona review, Rewrite from comments, Comments, Contents, Full width, Full screen, Share); the stale-save
+ * conflict under it.
  *
  * Document is DocumentMenu (Save, Rename, Share, every export, History, Delete); Edit, Format and Insert are the
  * editor's own actions (canvasMenus.ts), offered on an editable canvas only (not while an older version is on screen);
- * View switches the comments panel, the outline, the width and full screen, which the toolbar switches too (one state,
+ * Review is the AI flows of a PR/FAQ or PRD (Persona review or Add personas, Rewrite from comments), with the
+ * toolbar's state and reasons (toolbarItems.ts `reviewMenuEntries`), offered while the toolbar offers them; View
+ * switches the comments panel, the outline, the width and full screen, which the toolbar switches too (one state,
  * two doors). Share and History are one dialog each, whichever door opens it (`DocumentDialogs`). A viewer sees
  * Document (the exports and History only: every other control would 403), View, the status and the toolbar without
  * Share and the AI flows. Export always exports the SAVED version (what the link, the review page and the assistant
@@ -36,7 +39,7 @@ import { saveIgnoringFailure } from '../../UnsavedChangesGuard/useSnapshotGuard'
 import { formatRelativeDate } from '../../../utils/dateUtils'
 import type { DocumentDialog, DocumentMenuProps } from './DocumentMenu'
 import type { CanvasDocument } from './useCanvasDocument'
-import type { ReviewActions } from './toolbarItems'
+import { reviewMenuEntries, type ReviewActions } from './toolbarItems'
 import type { VersionChoice } from './versionChoices'
 import type { FocusViewControls } from '../page/useFocusView'
 import type { ProjectDocument } from '../../../api/types'
@@ -106,10 +109,13 @@ function SaveButtons({ state }: Readonly<{ state: CanvasDocument }>) {
   )
 }
 
-/** Document, then (an editable canvas) Edit, Format and Insert, then View: one row of menus the arrow keys walk. */
-function MenuBar({ menu, focus, view, editing, onOpenDialog }: Readonly<{
+/**
+ * Document, then (an editable canvas) Edit, Format and Insert, then (the AI flows offered) Review, then View: one row
+ * of menus the arrow keys walk.
+ */
+function MenuBar({ menu, focus, view, editing, review, onOpenDialog }: Readonly<{
   menu: DocumentMenuProps; focus: FocusViewControls; view?: CanvasViewControls; editing: boolean
-  onOpenDialog: (dialog: DocumentDialog) => void
+  review: ReviewActions | null; onOpenDialog: (dialog: DocumentDialog) => void
 }>) {
   const { t } = useTranslation('projectDetail')
   const { state } = menu
@@ -126,6 +132,7 @@ function MenuBar({ menu, focus, view, editing, onOpenDialog }: Readonly<{
           <CanvasMenu label={t('documents:menubar.insert')} entries={() => insertEntries(handle, t)} />
         </>
       ) : null}
+      {review === null ? null : <CanvasMenu label={t('documents:menubar.review')} entries={() => reviewMenuEntries(review, t)} />}
       {view === undefined ? null : <CanvasMenu label={t('documents:menubar.view')} entries={() => viewEntries(view, fullScreen, t)} />}
     </div>
   )
@@ -144,7 +151,7 @@ export default function DocumentActionsBar({
     <div className="space-y-2">
       <div role="group" aria-label={t('documents:actions.toolbarLabel')} data-testid="document-actions-bar"
         className="flex flex-wrap items-center gap-x-3 gap-y-1">
-        <MenuBar menu={menu} focus={focus} view={view} editing={editing} onOpenDialog={setDialog} />
+        <MenuBar menu={menu} focus={focus} view={view} editing={editing} review={review} onOpenDialog={setDialog} />
         <SaveStatus document={document} state={state} />
         {/* One group at the row's end: on a phone it wraps under the status as a whole. */}
         <div data-testid="document-actions-controls" className="ml-auto flex flex-wrap items-center justify-end gap-2">

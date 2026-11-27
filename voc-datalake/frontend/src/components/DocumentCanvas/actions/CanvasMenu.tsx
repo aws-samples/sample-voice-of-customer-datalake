@@ -1,9 +1,10 @@
 /**
- * @fileoverview One menu of the document page's menu bar (Edit, Format, Insert, View; menuBar.ts): a WAI-ARIA menu
- * button over a list of entries — actions (`menuitem`, with their keyboard shortcut shown and in
- * `aria-keyshortcuts`), toggles (`menuitemcheckbox`), choices of one (`menuitemradio`: the toolbar's versions) and
- * separators. The entries are read when the menu renders open, so what can run (Undo with nothing to undo) is the
- * text's state at that moment. A disabled entry stays in the menu's roving focus (APG) and does nothing. Choosing an
+ * @fileoverview One menu of the document page's menu bar (Edit, Format, Insert, Review, View; menuBar.ts): a WAI-ARIA
+ * menu button over a list of entries — actions (`menuitem`, with their keyboard shortcut shown and in
+ * `aria-keyshortcuts`; a running one shows a spinner; a note under its name, its description, says why it is inert,
+ * that it runs or what it will do), toggles (`menuitemcheckbox`), choices of one (`menuitemradio`: the toolbar's
+ * versions) and separators. The entries are read when the menu renders open, so what can run (Undo with nothing to
+ * undo) is the text's state at that moment. A disabled entry stays in the menu's roving focus (APG) and does nothing. Choosing an
  * entry closes the menu and puts focus back on its button, then runs it (an editor command takes the focus back to the
  * text; a toggle leaves it on the button). The page's toolbar (DocumentToolbar) draws its menus with the same entries
  * (`CanvasMenuEntries`).
@@ -11,7 +12,7 @@
  * @module components/DocumentCanvas/actions/CanvasMenu
  */
 import clsx from 'clsx'
-import { Check } from 'lucide-react'
+import { Check, Loader2 } from 'lucide-react'
 import { useId } from 'react'
 import { useMenuButton } from '../../ProfileMenu/useMenuButton'
 import { MENUBAR_POPUP_CLASS, MENUBAR_TRIGGER_CLASS } from './menuBar'
@@ -29,6 +30,10 @@ interface MenuAction extends EntryBase {
   readonly icon: LucideIcon
   readonly onSelect: () => void
   readonly disabled?: boolean
+  /** Its action is running: a spinner in place of its icon (pass `disabled` too: it is inert meanwhile). */
+  readonly busy?: boolean
+  /** A line under its name, its description: why it is inert, that it runs, or what it will do. */
+  readonly note?: string
   /** A destructive action (Delete): drawn in the danger colour. */
   readonly danger?: boolean
 }
@@ -100,15 +105,30 @@ export function CanvasMenuItem({ entry, choose }: Readonly<{ entry: CanvasMenuEn
       </button>
     )
   }
+  return <ActionItem entry={entry} keys={keys} choose={choose} />
+}
+
+function ActionItem({ entry, keys, choose }: Readonly<{
+  entry: MenuAction; keys: string | undefined; choose: (run: () => void) => void
+}>) {
+  const noteId = useId()
   const Icon = entry.icon
   const disabled = entry.disabled === true
+  const { note } = entry
   return (
     // Not `disabled`: a disabled item could not take the menu's roving focus (APG: disabled items stay focusable).
     <button type="button" role="menuitem" aria-disabled={disabled ? true : undefined} aria-keyshortcuts={keys}
+      aria-describedby={note === undefined ? undefined : noteId}
       className={clsx(ITEM_CLASS, disabled && 'text-muted cursor-default hover:bg-transparent', entry.danger === true && !disabled && 'text-danger')}
       onClick={disabled ? undefined : () => choose(entry.onSelect)}>
-      <Icon size={16} className="flex-shrink-0" aria-hidden="true" />
-      <span className="truncate">{entry.label}</span>
+      {entry.busy === true
+        ? <Loader2 size={16} className="flex-shrink-0 animate-spin motion-reduce:animate-none" aria-hidden="true" />
+        : <Icon size={16} className="flex-shrink-0" aria-hidden="true" />}
+      <span className="flex min-w-0 flex-col text-left">
+        <span className="truncate">{entry.label}</span>
+        {/* Its description, not part of its name. */}
+        {note === undefined ? null : <span id={noteId} aria-hidden="true" className="text-xs text-muted">{note}</span>}
+      </span>
       <ShortcutHint shortcut={entry.shortcut} />
     </button>
   )

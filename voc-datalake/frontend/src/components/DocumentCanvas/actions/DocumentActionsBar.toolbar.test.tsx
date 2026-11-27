@@ -1,9 +1,10 @@
 /**
- * The document page's icon toolbar (DocumentToolbar, in the bar): a WAI-ARIA toolbar (one Tab stop, the arrow keys,
- * Home and End), every icon named with its tooltip, the toggles `aria-pressed` and in step with the View menu (one
- * state, two doors: the page's stored view preferences), the open comments counted in the Comments button's name,
- * the version picker (the page's own version checked, the latest marked), Share and the AI flows for an editor only,
- * and on a narrow screen the "⋯" menu.
+ * The document page's toolbar (DocumentToolbar, in the bar): a WAI-ARIA toolbar (one Tab stop, the arrow keys,
+ * Home and End), every icon named with its tooltip, the AI flows' names shown beside their icons, the toggles
+ * `aria-pressed` and in step with the View menu (one state, two doors: the page's stored view preferences), the open
+ * comments counted in the Comments button's name, the version picker (the page's own version checked, the latest
+ * marked), Share and the AI flows for an editor only ("Add personas" with nobody to ask, the company's personas said
+ * when they would review), and on a narrow screen the "⋯" menu, the AI flows in it with their names.
  */
 import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -43,10 +44,16 @@ function version(n: number, current = false): DocumentVersion {
 
 function reviewActions(overrides: Partial<ReviewActions> = {}): ReviewActions {
   return {
-    review: { running: false, blocked: false, again: false, start: vi.fn() },
+    review: { running: false, personas: 'project', again: false, start: vi.fn(), addPersonas: vi.fn() },
     rewrite: { running: false, reason: null, start: vi.fn() },
     ...overrides,
   }
+}
+
+/** The persona review's half of the flows, with `review`'s fields. */
+function personaReview(review: Partial<ReviewActions['review']>): ReviewActions {
+  const actions = reviewActions()
+  return { ...actions, review: { ...actions.review, ...review } }
 }
 
 /** The bar as the page wires it: the view from the stored preferences, full screen in state. */
@@ -133,6 +140,36 @@ describe('the toolbar: its items', () => {
     expect(review.rewrite?.start).not.toHaveBeenCalled()
     await user.click(tool(tools.aiReview))
     expect(review.review.start).toHaveBeenCalledTimes(1)
+  })
+
+  /** The words a button shows beside its icon (its tooltip aside), or null. */
+  const shown = (button: HTMLElement) => within(button).queryByText(button.getAttribute('aria-label') ?? '')?.textContent ?? null
+
+  it('shows the AI flows\' names beside their icons, the other buttons as icons', () => {
+    renderBar()
+    expect([tool(tools.aiReview), tool(tools.aiRewrite), tool(enDocuments.page.contents)].map(shown))
+      .toStrictEqual(['Persona review', 'Rewrite from comments', null])
+  })
+
+  it('offers "Add personas" with nobody to ask (no persona in the project or the company), opening the Personas tab', async () => {
+    const review = personaReview({ personas: 'none' })
+    const { user } = renderBar({ review })
+    const add = tool(tools.addPersonas)
+    expect([shown(add), add.getAttribute('aria-disabled')]).toStrictEqual(['Add personas', null])
+    expect(add).toHaveAccessibleDescription(tools.addPersonasHint)
+    await user.click(add)
+    expect([vi.mocked(review.review.addPersonas).mock.calls.length, vi.mocked(review.review.start).mock.calls.length])
+      .toStrictEqual([1, 0])
+  })
+
+  it('says the company\'s personas review a project without its own', () => {
+    renderBar({ review: personaReview({ personas: 'company' }) })
+    expect(tool(tools.aiReview)).toHaveAccessibleDescription(tools.companyPersonasHint)
+  })
+
+  it('offers the review while it is not known who would review (the server decides)', () => {
+    renderBar({ review: personaReview({ personas: null }) })
+    expect(tool(tools.aiReview)).not.toHaveAttribute('aria-disabled')
   })
 
   it('opens the review link from Share', async () => {
@@ -249,7 +286,7 @@ describe('on a narrow screen', () => {
     await user.click(tool(tools.more))
     const more = within(screen.getByRole('menu', { name: tools.more }))
     expect(more.getAllByRole('menuitem').map((item) => item.textContent)).toStrictEqual([
-      enDocuments.actions.history, tools.aiReview, tools.aiRewrite,
+      enDocuments.actions.history, 'Persona review', 'Rewrite from comments',
     ])
     await user.click(more.getByRole('menuitemcheckbox', { name: bar.fullWidth }))
     expect(useDocumentViewStore.getState().fullWidth).toBe(false)

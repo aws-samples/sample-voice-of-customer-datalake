@@ -137,7 +137,7 @@ function boardTriggerCode(): lambda.Code {
   });
 }
 
-/** One board trigger (stdlib + boto3, no layer), Python 3.14 ARM64, 30-day logs. */
+/** One board trigger (stdlib + boto3, no layer), Python 3.15 ARM64, 30-day logs. */
 function boardTrigger(
   ctx: CoreBuildContext,
   id: string,
@@ -145,7 +145,7 @@ function boardTrigger(
 ): lambda.Function {
   return new lambda.Function(ctx.stack, id, {
     functionName: ctx.uniqueName(spec.baseName),
-    runtime: lambda.Runtime.PYTHON_3_14,
+    runtime: lambda.Runtime.PYTHON_3_15,
     architecture: lambda.Architecture.ARM_64,
     // Path-style (the runtime turns `/` into `.`): `auth.board_triggers` beside `shared/`. One entry
     // point for both triggers (it dispatches on the trigger source); each function keeps its own role.

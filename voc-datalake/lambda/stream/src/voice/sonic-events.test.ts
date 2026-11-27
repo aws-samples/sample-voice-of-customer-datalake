@@ -10,6 +10,13 @@ function nameOf(one: Record<string, unknown>): string | undefined {
   return typeof event === 'object' && event !== null ? Object.keys(event)[0] : undefined;
 }
 
+/** The body of a `promptStart` input event, or `{}`. */
+function promptStartOf(one: unknown): object {
+  const event: unknown = typeof one === 'object' && one !== null && 'event' in one ? one.event : undefined;
+  const body: unknown = typeof event === 'object' && event !== null && 'promptStart' in event ? event.promptStart : undefined;
+  return typeof body === 'object' && body !== null ? body : {};
+}
+
 describe('openingEvents', () => {
   const events = openingEvents({
     voiceId: 'matthew', systemPrompt: 'You are Maria.', tools: [{ toolSpec: { name: 'cite' } }],
@@ -25,6 +32,12 @@ describe('openingEvents', () => {
       audioOutputConfiguration: { mediaType: 'audio/lpcm', sampleRateHertz: 24_000, voiceId: 'matthew', encoding: 'base64' },
       toolConfiguration: { tools: [{ toolSpec: { name: 'cite' } }], toolChoice: { auto: {} } },
     } } });
+  });
+
+  it('names no tool settings at all for a session without tools (the product interviewer)', () => {
+    const [, prompt] = openingEvents({ voiceId: 'matthew', systemPrompt: 'You are an AI interviewer.', tools: [], history: [] });
+    expect(Object.keys(promptStartOf(prompt)).sort((a, b) => a.localeCompare(b))).toStrictEqual(
+      ['audioOutputConfiguration', 'promptName', 'textOutputConfiguration']);
   });
 
   it('sends the system prompt, then each history turn, then opens the microphone at 16 kHz', () => {

@@ -325,7 +325,7 @@ export function createAssistantLambdas(
     ...snapStartFunctionProps(stack), // GET /memory cold start (lib/utils/snapstart.ts)
     // Shared constant: the agent conductor invokes this by name (retrieve).
     functionName: ctx.uniqueName(MEMORY_API_FUNCTION_BASE_NAME),
-    runtime: lambda.Runtime.PYTHON_3_14,
+    runtime: lambda.Runtime.PYTHON_3_15,
     architecture: lambda.Architecture.ARM_64,
     handler: 'memory_handler.lambda_handler',
     code: createApiLambdaCode('memory_handler.py'),
@@ -394,7 +394,7 @@ export function createAssistantLambdas(
   const engineering = engineeringReads(ctx, agentsRole);
   const agentsLambda = new lambda.Function(stack, 'AgentsApi', {
     functionName: ctx.uniqueName(AGENTS_API_FUNCTION_BASE_NAME),
-    runtime: lambda.Runtime.PYTHON_3_14,
+    runtime: lambda.Runtime.PYTHON_3_15,
     architecture: lambda.Architecture.ARM_64,
     handler: 'agents_handler.lambda_handler',
     code: createApiLambdaCode('agents_handler.py', { engineering: engineering !== undefined }),
@@ -426,7 +426,7 @@ export function createAssistantLambdas(
     // Lambda's deps) and `npm ci` fails with EUSAGE at bundling time.
     depsLockFilePath: path.join(__dirname, '../../lambda/stream/package-lock.json'),
     handler: 'handler',
-    runtime: lambda.Runtime.NODEJS_24_X,
+    runtime: lambda.Runtime.NODEJS_26_X,
     architecture: lambda.Architecture.ARM_64,
     memorySize: 1024,
     timeout: CHAT_STREAM_TIMEOUT,
@@ -618,7 +618,7 @@ export function createAssistantLambdas(
 
   const dataExplorerLambda = new lambda.Function(stack, 'DataExplorerApi', {
     functionName: ctx.uniqueName('voc-data-explorer-api'),
-    runtime: lambda.Runtime.PYTHON_3_14,
+    runtime: lambda.Runtime.PYTHON_3_15,
     architecture: lambda.Architecture.ARM_64,
     handler: 'data_explorer_handler.lambda_handler',
     code: createApiLambdaCode('data_explorer_handler.py'),

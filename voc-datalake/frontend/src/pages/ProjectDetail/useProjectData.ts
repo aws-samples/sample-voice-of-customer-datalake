@@ -36,14 +36,13 @@ import { documentBoardIds, featureRequestEvidenceFields } from '../../components
 export const productContextKey = (id: string | undefined) => ['product-context', id] as const
 
 /**
- * Query key for a project's uploaded product docs.
+ * Query key for a project's product sources (`GET …/product-docs`).
  *
- * Exported for the same reason as the two keys above: more than one place will
- * need it. The Product tab still lists the docs itself, because it uploads,
- * deletes and polls them and owns that local state; if it ever moves onto React
- * Query this is the key it should share.
+ * Shared by this page (the prototype card's visual picker) and the Product tab's
+ * Sources card (useProductSources.ts), which uploads, deletes and polls them: a
+ * screenshot added there shows in the picker without a reload.
  */
-const productDocsKey = (id: string | undefined) => ['product-docs', id] as const
+export const productDocsKey = (id: string | undefined) => ['product-docs', id] as const
 
 /**
  * How long to keep polling the jobs list after an action reports that it started
@@ -184,10 +183,9 @@ export function useProjectData({
    *
    * `retry: false` and nothing else: a failure reaches the card as `undefined`,
    * which offers no visuals — the build then reads none, which is what it did
-   * before this feature. No `staleTime`, unlike the context: uploads happen in the
-   * Product tab, which does NOT hand its list back to this cache, so the default
-   * refetch on mount and focus is the only thing that lets a screenshot uploaded a
-   * minute ago appear in the picker.
+   * before this feature. No `staleTime`, unlike the context: the Product tab's
+   * Sources card reads and polls this same entry, and the default refetch on mount
+   * and focus covers a change made elsewhere.
    */
   const { data: productDocsData } = useQuery({
     queryKey: productDocsKey(id),

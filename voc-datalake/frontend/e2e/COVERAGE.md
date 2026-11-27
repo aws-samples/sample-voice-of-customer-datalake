@@ -47,6 +47,7 @@ CHANGELOG from 5.00.00 to 5.34.00. Update this file in the same change as a new 
 | Project Personas: generate, import, edit, delete, avatar regenerate | `/projects/{id}/personas` | Covered | s3-personas-documents |
 | Every persona has a loaded avatar (project page and agent runs) | `/projects/{id}/personas` | Covered | persona-avatars M (agent part: production, when the run made a project), s3 step 02, s2 (soft) |
 | Project Product tab (5.32): "Fill with AI assistant" prefilled draft | `/projects/{id}/product` | Covered | product-interview M (send only with `E2E_ASSISTANT_SEND=1` in prod) |
+| Project Product tab (7.104.00): sources, Extract, the review's accepts, a typed answer; a viewer read-only | `/projects/{id}/product` | Covered | product-sources M (the extract only with `E2E_PRODUCT_EXTRACT=1` in prod); voice by hand (docs/voice-personas.md) |
 | Project Decisions (5.04): create, edit, delete | `/projects/{id}/decisions` | Covered | decisions M |
 | Decision release watch (`launched_at`) | `/projects/{id}/decisions` | Missing | needs a dated launch with feedback before and after it |
 | Project Participants (5.33): link / unlink a list, reach | `/projects/{id}/participants` | Covered | participants M |

@@ -1,12 +1,12 @@
 import { describe, expect, it } from 'vitest';
 
 import { parseSessionInput } from './session-input.js';
-import { PROJECT_ID, SESSION_ID, sessionInput } from './voice-fixtures.js';
+import { PROJECT_ID, SESSION_ID, productInput, sessionInput } from './voice-fixtures.js';
 
 describe('parseSessionInput', () => {
   it('reads the persona, its pack, the voice and the limits', () => {
     const input = parseSessionInput(sessionInput(), SESSION_ID, PROJECT_ID);
-    expect(input?.evidence.map((item) => item.feedback_id)).toStrictEqual(['fb1', 'fb2']);
+    expect(input?.kind === 'persona_interview' ? input.evidence.map((item) => item.feedback_id) : []).toStrictEqual(['fb1', 'fb2']);
     expect([input?.voiceId, input?.voiceGender, input?.sessionSeconds, input?.usageKey])
       .toStrictEqual(['tiffany', 'feminine', 900, 'VOICEUSE#DEPLOYMENT#2026-11']);
     expect([input?.sessionCostCapMicroUsd, input?.monthlyCostCapMicroUsd]).toStrictEqual([750_000, 15_000_000]);
@@ -26,7 +26,40 @@ describe('parseSessionInput', () => {
 
   it('drops unreadable evidence and defaults an unreadable language to English', () => {
     const input = parseSessionInput(sessionInput({ evidence: [{ text: 'no id' }, { feedback_id: 'fb9' }], language: 'english' }), SESSION_ID, PROJECT_ID);
-    expect(input?.evidence.map((item) => item.feedback_id)).toStrictEqual(['fb9']);
+    expect(input?.kind === 'persona_interview' ? input.evidence.map((item) => item.feedback_id) : []).toStrictEqual(['fb9']);
     expect(input?.language).toBe('en');
+  });
+
+  it('reads a persona input that names its kind as one that does not (written before 7.104.00)', () => {
+    const named = parseSessionInput(sessionInput({ kind: 'persona_interview' }), SESSION_ID, PROJECT_ID);
+    expect(named).toStrictEqual(parseSessionInput(sessionInput(), SESSION_ID, PROJECT_ID));
+    expect(named?.kind).toBe('persona_interview');
+  });
+});
+
+describe('parseSessionInput: the product interview (7.104.00)', () => {
+  it('reads the questions in order and what the form already says, with no persona', () => {
+    const input = parseSessionInput(productInput(), SESSION_ID, PROJECT_ID);
+    expect(input).toMatchObject({
+      kind: 'product_interview', projectName: 'Checkout redesign', voiceId: 'tiffany', sessionSeconds: 900,
+      questions: [{ field: 'product_name', question: '' }, { field: 'target_users', question: 'Who buys it first?' }],
+      known: { one_liner: 'Track every parcel in one place.' },
+    });
+    expect(input !== undefined && 'persona' in input).toBe(false);
+  });
+
+  it('drops an unreadable question, reads an unreadable known map as empty, and still checks the session', () => {
+    const input = parseSessionInput(productInput({
+      questions: [{ field: 'Not A Field', question: 'x' }, { field: 'non_goals', question: 7 }, 'loose'],
+      known: { one_liner: 'x'.repeat(501) },
+    }), SESSION_ID, PROJECT_ID);
+    expect(input?.kind === 'product_interview' ? [input.questions, input.known] : undefined)
+      .toStrictEqual([[{ field: 'non_goals', question: '' }], {}]);
+    expect(parseSessionInput(productInput(), SESSION_ID, 'proj_2')).toBeUndefined();
+    expect(parseSessionInput(productInput({ session_cost_cap_microusd: 0 }), SESSION_ID, PROJECT_ID)).toBeUndefined();
+  });
+
+  it('refuses a kind it does not know as a persona input without a persona', () => {
+    expect(parseSessionInput(productInput({ kind: 'board_meeting' }), SESSION_ID, PROJECT_ID)).toBeUndefined();
   });
 });

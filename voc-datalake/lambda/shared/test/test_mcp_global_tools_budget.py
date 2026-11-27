@@ -5,9 +5,10 @@ before the user types. Clients cache the list (a 2026-07-28 ``tools/list`` says 
 ``cacheScope: "private"``; a legacy client keeps it for the session), and a client that caches its
 prompt prefix pays for the list in full once per conversation, not on every turn. Past about
 10,000 tokens a client is better served by searching tools on demand, and some clients refuse large
-servers, so this pins the WHOLE catalogue (what an admin-minted write token is shown) under 10,000
-tokens (owner decision 24, 6.10.00; 4,000 before): a wordy description or a new tool fails here rather
-than in a client.
+servers, so this pins the WHOLE catalogue (what an admin-minted write token is shown) under 10,500
+tokens (owner decision 24, 6.10.00: 10,000, 4,000 before; raised to 10,500 by the owner's decision of
+2026-11-26, 7.104.00, to fit the read-only forms tools after every description was trimmed): a wordy
+description or a new tool fails here rather than in a client.
 
 No tokenizer is a dependency of the Lambda bundle, so tokens are estimated at
 3 characters each over compact JSON — schema JSON is punctuation-dense and
@@ -19,7 +20,9 @@ import json
 
 from shared.mcp_global_tools import AREAS, TOOLS, area_of
 
-TOKEN_BUDGET = 10_000
+# The owner's decision of 2026-11-26 (7.104.00): 10,000 -> 10,500, to fit the five read-only forms tools
+# (shared/mcp_global_tools_forms.py) once every description was trimmed (docs/mcp.md, Tools -> Budget).
+TOKEN_BUDGET = 10_500
 CHARS_PER_TOKEN_ESTIMATE = 3
 
 

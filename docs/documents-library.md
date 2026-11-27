@@ -192,7 +192,11 @@ Pay per use only, nothing fixed:
   jobs run in their own Lambdas with their own roles, which would need the library's grants, and their prompts,
   derivation lockstep and dialogs a change of their own. Meanwhile, mention the items in the assistant and ask it to
   draft or revise the document.
-- Project product documents stay where they are (they ground the prototype builder).
+- Project product documents stay where they are, project sources rather than library items (they ground the
+  product description, PRD / PR-FAQ generation and the prototype builder). Since 7.104.00 they read PDF, DOCX and
+  PPTX too, with this library's extraction (`lambda/shared/library_extract.py`) on the projects API's assist twin
+  (`lambda/shared/product_source_worker.py`, [project-workspace.md](project-workspace.md)), within the same caps (25 MB,
+  500 pages, the zip limits; a scanned PDF of at most 4.5 MB read by the model on the `documents` surface).
 
 ## Tests
 

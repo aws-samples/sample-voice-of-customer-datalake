@@ -69,6 +69,11 @@ def _rows_of(world: World, project_id: str, scope: WorkspaceScope, text: str) ->
         {'pk': own, 'sk': 'PRODUCT_DOC#pd_1', 'doc_id': 'pd_1', 'status': 'ready', 'title': 'Spec',
          's3_raw_key': f'ws/{scope.ws}/projects/{project_id}/product_docs/raw/pd_1.md'},
         {'pk': own, 'sk': 'PRODUCT_CONTEXT', 'summary': text},
+        # A product proposal is exported (7.104.00); the extract's lock is not.
+        {'pk': own, 'sk': 'PRODUCT_PROPOSAL#20261101T090000000000Z#a1b2c3d4e5f6', 'status': 'open',
+         'proposal_id': 'pp_20261101T090000000000Z_a1b2c3d4e5f6', 'fields': {'one_liner': {'value': text}},
+         'questions': [], 'model': {'id': 'global.anthropic.claude-sonnet-5-5', 'effort': 'max'}},
+        {'pk': own, 'sk': 'PRODUCT_EXTRACT', 'lock_id': 'lock-1', 'started_epoch': 1},
         # A nested key named like a secret, refused at any depth.
         {'pk': own, 'sk': 'PERSONA#per_1', 'persona_id': 'per_1', 'name': 'Mobile shopper', 'quotes': [text],
          'identity': {'age_range': '30s', 'source': {'api_key': 'nested secret value'}}},
@@ -173,7 +178,8 @@ def test_the_live_project_is_exported_with_only_its_allowlisted_fields(world, mo
     documents = _jsonl(files, 'projects_documents')
     library = project_pk(COMPANY_PERSONAS_CONTAINER, workspace=A)
     assert sorted((row['pk'], row['sk']) for row in documents) == sorted([
-        (own, 'META'), (own, 'PRODUCT_CONTEXT'), (own, 'PRD#doc_1'), (own, 'PRODUCT_DOC#pd_1'), (library, 'META')])
+        (own, 'META'), (own, 'PRODUCT_CONTEXT'), (own, 'PRD#doc_1'), (own, 'PRODUCT_DOC#pd_1'),
+        (own, 'PRODUCT_PROPOSAL#20261101T090000000000Z#a1b2c3d4e5f6'), (library, 'META')])
     by_sk = {(row['pk'], row['sk']): row for row in documents}
     # The stored row through its classification: what project_fields.py excludes, or classifies neither way, is out.
     assert by_sk[(own, 'PRD#doc_1')] == {'pk': own, 'sk': 'PRD#doc_1', 'document_id': 'doc_1', 'title': 'Checkout PRD',
@@ -246,7 +252,7 @@ def test_the_deleted_project_is_skipped_never_exported_and_counted(world, monkey
             section['deleted_during_export']) == (True, 1, 1, 1, 1, {'later_attribute': 1}, 1, {})
     assert 'product_docs' in section['product_documents']
     counts = {entity: manifest['entities'][entity]['count'] for entity in projects.ENTITIES}
-    assert counts == {'projects_documents': 5, 'personas': 2, 'document_versions': 2, 'document_comments': 2,
+    assert counts == {'projects_documents': 6, 'personas': 2, 'document_versions': 2, 'document_comments': 2,
                       'review_links': 1, 'project_jobs': 1, 'project_lists': 1}
     assert {'projects_documents', 'personas'}.isdisjoint(manifest['not_per_workspace'])
     assert 'agents_workflows' not in manifest['not_per_workspace']   # (exported since 7.80.00, agents.py)

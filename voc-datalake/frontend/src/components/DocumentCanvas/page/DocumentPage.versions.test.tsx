@@ -3,7 +3,8 @@
  * toolbar's picker) read-only under its banner, the page's own canvas kept out of sight; Back to latest; Restore makes
  * a new version (History's restore) and the page moves to it; the version on the page never `/v/`; a viewer cannot
  * restore. The comments panel is closed at first; what needs it (a comment started, a thread asked for) opens it for
- * that visit only, an explicit switch stores the choice; the AI flows reach the bar, not while an older version shows.
+ * that visit only, an explicit switch stores the choice; the AI flows reach the bar, not while an older version shows;
+ * "Add personas" (a persona review with nobody to ask) opens the project's Personas tab.
  * The editor, the review view and the bar are mocked (the bar's View switch stands in for the toolbar's).
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -30,7 +31,7 @@ const canvasState = {
   handleRef: { current: handle }, editable: true, selectDoc: vi.fn(), reloadLatest: vi.fn(), guardDialog: null, reviseRefused: null,
 }
 const AI: ReviewActions = {
-  review: { running: false, blocked: false, again: false, start: vi.fn() }, rewrite: null,
+  review: { running: false, personas: 'project', again: false, start: vi.fn(), addPersonas: vi.fn() }, rewrite: null,
 }
 
 vi.mock('../../../api/projectsApi', () => ({ projectsApi: { getDocumentVersions: vi.fn(), restoreDocumentVersion: vi.fn() } }))
@@ -53,8 +54,9 @@ vi.mock('../../Document/edit/editor/CanvasEditor', () => ({
   ),
 }))
 vi.mock('../../../pages/ProjectDetail/DocumentReviewView', () => ({
-  default: function MockReviewView({ markdown, railHidden, onRevealRail, onActions }: {
+  default: function MockReviewView({ markdown, railHidden, onRevealRail, onActions, onAddPersonas }: {
     markdown: string; railHidden?: boolean; onRevealRail?: () => void; onActions: (actions: ReviewActions | null) => void
+    onAddPersonas: () => void
   }) {
     useEffect(() => { onActions(AI) }, [onActions])
     return (
@@ -62,6 +64,8 @@ vi.mock('../../../pages/ProjectDetail/DocumentReviewView', () => ({
         <div data-testid="review-markdown">{markdown}</div>
         {/* What the review view does when a comment is started (Ctrl+Alt+M) or a thread is asked for. */}
         <button type="button" onClick={onRevealRail}>Start a comment</button>
+        {/* What the review view's "Add personas" (the toolbar's, the Review menu's) does. */}
+        <button type="button" onClick={onAddPersonas}>Add personas</button>
       </div>
     )
   },
@@ -184,6 +188,13 @@ describe('DocumentPage: versions', () => {
     expect(path()).toBe('/projects/proj-1/documents/prfaq_4/v/2/focus')
     await user.click(screen.getByRole('button', { name: 'Pick the page\'s own' }))
     expect(path()).toBe('/projects/proj-1/documents/prfaq_4/focus')
+  })
+
+  it('opens the project\'s Personas tab from "Add personas"', async () => {
+    const user = userEvent.setup()
+    renderPage('/projects/proj-1/documents/prfaq_4')
+    await user.click(screen.getByRole('button', { name: 'Add personas' }))
+    expect(path()).toBe('/projects/proj-1/personas')
   })
 
   it('hands the bar the AI flows, and none while an older version shows', async () => {

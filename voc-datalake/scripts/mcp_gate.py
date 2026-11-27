@@ -168,8 +168,10 @@ MODULE_FLOORS: dict[str, int] = {
     # per-project mint route. The global server's suites joined it.
     # The /mcp/global token authorizer (the global function's `_authorize`).
     'test_global_mcp_authorizer': 7,
-    # 22 -> 26 (6.10.00): the review tools with a pinned token, the names renamed in 6.10.00.
-    'test_global_mcp_e2e': 26,
+    # 22 -> 26 (6.10.00): the review tools with a pinned token, the names renamed in 6.10.00. 26 -> 31 (7.104.00): a
+    # pinned token gets none of the forms tools, and reads a form's response and an email to the inbox without the
+    # contact fields the pin removes, an address typed into an open answer as stored; an unpinned one reads both whole.
+    'test_global_mcp_e2e': 31,
     'test_global_mcp_protocol': 14,
     # 9 -> 5 (b6dbc8fc): the four memory-recall cases for a credential moved to
     # test_memory_handler_mutation.py, which pins the same rule more tightly.
@@ -219,6 +221,15 @@ MODULE_FLOORS: dict[str, int] = {
     'test_mcp_global_work_tools': 36,
     # 7.63.00: forms_get_results through the real forms handler (the minter's results, access and workspace role).
     'test_mcp_forms_results': 3,
+    # 7.104.00: the read-only forms tools (list, definition, responses, report) through the real forms handler: their
+    # answers, the access refusals, paging (a page that fits one tool result), no CSV and no write, the report's AI
+    # summary only on its own view (another view only said to be one), its days an integer only, and none of the five
+    # for a project-pinned token.
+    'test_mcp_forms_tools': 54,
+    # 7.104.00: the Product tab tools: each action's route, the arguments the tool shapes (every limit the route's,
+    # passed through: its refusal reaches the client in its words), and a read and an accept through the real projects
+    # handler (a token never replaces a value a person typed, and writes only for people working AI-driven).
+    'test_mcp_product_tools': 25,
     # 6.04.00: a feature request or +1 over MCP is recorded under the person (the minter).
     'test_mcp_feature_request_person': 3,
     # 7.53.00 (MCP for runs): the five engineering tools, their gates, claims, act budget, answers and skill.

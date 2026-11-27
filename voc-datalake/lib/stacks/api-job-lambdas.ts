@@ -30,6 +30,10 @@ import { createDocumentStateMachine } from './api-document-workflow';
 import { grantMarketplaceSubscription } from './api-marketplace';
 import type { ProjectsLambda } from './api-projects-lambda';
 
+/** What the document generator reads of a project's product sources (7.104.00): every source's text, and an image upload. */
+export const PRODUCT_SOURCE_TEXT_READ = 'projects/*/product_docs/extracted/*';
+export const PRODUCT_SOURCE_IMAGE_READ = 'projects/*/product_docs/raw/*';
+
 export interface JobLambdas {
   /** Builds prototypes too, so it holds the pin-form submit base URL (wired once the RestApi exists). */
   documentGeneratorLambda: lambda.Function;
@@ -114,7 +118,7 @@ export function createJobLambdas(ctx: ApiStackContext, projects: ProjectsLambda)
   // reason the first attempt failed on.
   const JOB_ASYNC_RETRY_ATTEMPTS = 0;
 
-  // One shape for the four: Python 3.14 on Graviton, the jobs asset, the API
+  // One shape for the four: Python 3.15 on Graviton, the jobs asset, the API
   // layer, no async retry, a failure destination (ctx.asyncFailureDestination),
   // and Powertools named after the function.
   const createJobLambda = (
@@ -129,7 +133,7 @@ export function createJobLambdas(ctx: ApiStackContext, projects: ProjectsLambda)
     },
   ): lambda.Function => new lambda.Function(stack, id, {
     functionName: ctx.uniqueName(job.baseName),
-    runtime: lambda.Runtime.PYTHON_3_14,
+    runtime: lambda.Runtime.PYTHON_3_15,
     architecture: lambda.Architecture.ARM_64,
     handler: 'handler.lambda_handler',
     code: createJobLambdaCode(job.jobFolder),
@@ -196,10 +200,26 @@ export function createJobLambdas(ctx: ApiStackContext, projects: ProjectsLambda)
   aggregatesTable.grant(documentGeneratorRole, 'dynamodb:PutItem');
   kmsKey.grantEncryptDecrypt(documentGeneratorRole);
   // Opus 5.5 (the prototype-builder default) is part of the allowlist,
-  // so the Claude grant already covers it — no separate grant needed.
-  grantClaudeModels(documentGeneratorRole, 'invoke');
-  // Product context: read extracted product-doc text when generating PRD/PR-FAQ.
-  rawDataBucket.grantRead(documentGeneratorRole, 'projects/*/product_docs/extracted/*');
+  // so the Claude grant already covers it — no separate grant needed. `stream`
+  // (7.104.00): the Product tab's extract reads its answer over ConverseStream
+  // (lambda/shared/product_extract_model.py), which is
+  // bedrock:InvokeModelWithResponseStream on the same allowlisted models.
+  grantClaudeModels(documentGeneratorRole, 'stream');
+  // Product context, read only: the extracted text of every product source (PRD/PR-FAQ generation, the product
+  // report, the extract's text sources, under extracted/) and, since 7.104.00, an uploaded image itself, which the
+  // extract sends (owner decision 8: the copy the browser resized before its upload, under raw/;
+  // lambda/shared/product_extract.py derives both keys and reads no other object). Never an upload under source/ (a
+  // PDF, DOCX or PPTX, read on the projects API's twin) and no ListBucket (a missing key answers 403, a ClientError
+  // either way). ONE statement with the two object patterns, GetObject only: a second statement put this role's inline
+  // policy past 70% of its quota (api-stack-mcp.test.ts). raw/* stays whole (it holds Markdown and text uploads too,
+  // whose text extracted/* already grants): naming the four image extensions instead (raw/*.png, *.jpg, *.gif,
+  // *.webp, lambda/shared/image_limits.py) puts three more resources in this statement and the policy at 7,451 of
+  // 10,240 characters, past that 70% (7,168), and the code reads raw/ only by a key it derives with an image's
+  // extension (product_doc_raw_key).
+  documentGeneratorRole.addToPrincipalPolicy(new iam.PolicyStatement({
+    actions: ['s3:GetObject'],
+    resources: [PRODUCT_SOURCE_TEXT_READ, PRODUCT_SOURCE_IMAGE_READ].map((key) => rawDataBucket.arnForObjects(key)),
+  }));
   // Prototype HTML: write new prototypes + read prior ones (feedback-driven
   // regeneration reads the prior prototype's HTML back out of S3). Scoped to
   // this prefix only, not a bucket-wide grant. No delete: the job never removes a

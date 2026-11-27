@@ -2,8 +2,8 @@
 (the joins, a gate's two ways, a person's decisions, the steps not run yet, what the board may take at each step)."""
 from __future__ import annotations
 
-from collections import Counter
 from collections.abc import Mapping
+from datetime import datetime, timedelta
 from typing import Any
 
 import pytest
@@ -37,6 +37,8 @@ from engineering.flow.conductor import (
     Plan,
     StepTask,
     conduct,
+    decided_since,
+    decided_until,
 )
 from engineering.flow.ledger import FINAL_GO_ROLE
 from engineering.flow.test.fixtures import STORED_7_47, TEMPLATES
@@ -104,7 +106,7 @@ class Run:
         self.tasks: list[StepTask] = []
         self.fanned: dict[str, tuple[str, ...]] = {}
         self.completed: set[str] = set()
-        self.decisions: Counter[str] = Counter()
+        self.decisions: dict[str, datetime | None] = {}
         self.failing = set(failing)
         self.verdict = verdict
         self.verdicts: dict[str, str] = {}
@@ -156,7 +158,8 @@ class Run:
                 return self.log
             if plan.outcome == AT_A_PERSON:
                 self.log.append(('person', plan.at))
-                self.decisions[plan.at] += 1
+                # (the person decides half a minute after the last task ended, before the next is posted)
+                self.decisions[plan.at] = _at(f'2026-11-14T10:{max(len(self.tasks) - 1, 0):02d}:30+00:00')
                 continue
             self.act(plan)
         raise AssertionError(f'the flow never finished: {self.log}')
@@ -316,14 +319,111 @@ def test_an_end_reached_on_one_way_waits_for_the_others_before_the_flow_finishes
     assert (plan.outcome, plan.at) == (FINISHED, 'end')
 
 
-def test_a_blocked_step_waits_for_a_person_and_each_decision_is_one_more_try():
-    failed = (StepTask('t1', 'a', 'hunter', 'failed'),)
+def _at(at: str, seconds: float = 0) -> datetime:
+    """A time ``seconds`` after ``at``, as a step's decision in ``BoardState.decisions`` (what ``decided_until``
+    answers is one: the end of a second)."""
+    return datetime.fromisoformat(at) + timedelta(seconds=seconds)
+
+
+T1, T2 = '2026-11-14T10:00:00.250000+00:00', '2026-11-14T10:05:00.500000+00:00'
+
+
+def test_a_blocked_step_waits_for_a_person_and_a_decision_covers_what_ended_before_it():
+    # (F1, 7.104.00) The step is blocked only by a task that ended unfinished after its latest decision: one decided
+    # after t1 is ready, t2 failing after that decision blocks it again, a later decision covers t2 too.
+    failed = (StepTask('t1', 'a', 'hunter', 'failed', updated_at=T1),)
     plan = _plan(JOIN, tasks=failed)
     assert (plan.outcome, plan.at, plan.steps['a'].status, plan.steps['b'].status) == (AT_A_PERSON, 'a', BLOCKED, READY)
-    assert _plan(JOIN, tasks=failed, decisions={'a': 1}).steps['a'].status == READY
-    twice = (*failed, StepTask('t2', 'a', 'hunter', 'needs_human'))
-    assert _plan(JOIN, tasks=twice, decisions={'a': 1}).steps['a'].status == BLOCKED
-    assert _plan(JOIN, tasks=twice, decisions={'a': -3}).steps['a'].status == BLOCKED   # (never fewer than none)
+    assert _plan(JOIN, tasks=failed, decisions={'a': _at(T1, 60)}).steps['a'].status == READY
+    twice = (*failed, StepTask('t2', 'a', 'hunter', 'needs_human', updated_at=T2))
+    assert _plan(JOIN, tasks=twice, decisions={'a': _at(T1, 60)}).steps['a'].status == BLOCKED
+    assert _plan(JOIN, tasks=twice, decisions={'a': _at(T2, 60)}).steps['a'].status == READY
+    # (a decision whose time does not read, None, or one before the task covers nothing)
+    for decided in (None, _at(T1, -0.000001)):
+        assert _plan(JOIN, tasks=failed, decisions={'a': decided}).steps['a'].status == BLOCKED
+
+
+def test_a_decision_covers_every_task_end_through_the_end_of_its_second():
+    # (F1, 7.104.00 review) A decision is recorded in whole seconds (its row's at, the run's resumed_epoch) and covers
+    # through the end of that second, whichever form it is read from: the board time of a row, a fraction in it
+    # included (no exactness below the second), or the epoch seconds of a Resume, which reopens a done coordinate task
+    # (runtime/board_bus.py). No time that does not read is covered, or covers.
+    whole = decided_until('2026-11-14T10:00:00Z')
+    assert whole == _at('2026-11-14T10:00:00.999999+00:00')
+    assert decided_until('2026-11-14T10:00:00.400000Z') == whole
+    assert decided_until(int(_at('2026-11-14T10:00:00+00:00').timestamp())) == whole
+    assert [decided_since(whole, at) for at in (T1, '2026-11-14T10:00:00.999999+00:00', '2026-11-14T10:00:01+00:00',
+                                                '2026-11-14T10:00:00')] == [True, True, False, True]   # (no zone: UTC)
+    assert [decided_since(whole, at) for at in ('', 'yesterday', '2026-13-01T00:00:00Z')] == [False] * 3
+    assert (decided_since(None, T1), decided_until(0), decided_until('now'), decided_until('')) == (
+        False, None, None, None)
+    failed = (StepTask('t1', 'a', 'hunter', 'failed', updated_at=T1),)
+    assert _plan(JOIN, tasks=failed, decisions={'a': whole}).steps['a'].status == READY
+    unread = (StepTask('t1', 'a', 'hunter', 'failed', updated_at='not a time'),)
+    assert _plan(JOIN, tasks=unread, decisions={'a': _at(T2)}).steps['a'].status == BLOCKED
+
+
+def test_after_a_map_a_task_that_ends_in_the_decisions_second_is_covered_and_one_in_the_next_blocks_the_step():
+    # (F1, 7.104.00 review: the accepted window, conductor.decided_since) Shard core at a person while web's task is
+    # under way: the Resume decides at 10:05:30, and web's task ends at a person at .700 of the same second. That
+    # second is covered, so the step is ready on both shards; the same end a second later blocks it again for a person.
+    fanned = {'map': ('core', 'web')}
+    decided = {'m': decided_until('2026-11-14T10:05:30Z')}
+
+    def web_ends(at: str) -> tuple[StepTask, ...]:
+        return (StepTask('t1', 'm', 'mapper', 'needs_human', 'core', T1),
+                StepTask('t2', 'm', 'mapper', 'needs_human', 'web', at))
+
+    ready = _plan(MAPPED, fanned_out=fanned, tasks=web_ends('2026-11-14T10:05:30.700000+00:00'), decisions=decided)
+    assert (ready.steps['m'].status, ready.steps['m'].shards_left) == (READY, ('core', 'web'))
+    blocked = _plan(MAPPED, fanned_out=fanned, tasks=web_ends('2026-11-14T10:05:31+00:00'), decisions=decided)
+    assert (blocked.at, blocked.steps['m'].status, 'for web' in blocked.steps['m'].reason) == ('m', BLOCKED, True)
+
+
+def test_a_step_a_person_decided_is_ready_again_and_its_plan_says_nothing_more_of_it():
+    # (Q7/F1, 7.104.00) 7.71.04's RETRY reason told the coordinator to post the step's task again, which the Resume
+    # itself does (runtime/step_retry.py): one rule, the plan's ready step and the board's task posted again.
+    failed = (StepTask('t1', 'a', 'hunter', 'needs_human', updated_at=T1),)
+    assert _plan(JOIN, tasks=failed).steps['a'].status == BLOCKED
+    ready = _plan(JOIN, tasks=failed, decisions={'a': _at(T2)}).steps['a']
+    assert (ready.status, ready.reason, ready.roles) == (READY, '', ('hunter',))
+    item = next(item for item in _plan(JOIN, tasks=failed, decisions={'a': _at(T2)}).view()['steps']
+                if item['step'] == 'a')
+    assert 'reason' not in item
+
+
+@pytest.mark.parametrize('kind', ['quality_gate', 'board'])
+def test_one_decision_covers_every_failed_task_a_gate_or_a_board_had_when_it_was_decided(kind: str):
+    # (Q2, 7.104.00) Two tasks at a person on a gate (or a board): one decision after both covers both, so one Resume
+    # tries it again; a decision between them (an earlier Resume) covers only the first.
+    params = {'posters': ['coordinator'], 'claimers': ['fixer'], 'until': 'drained'} if kind == 'board' else {}
+    definition = _definition([START, ('s', kind, params), END], [('start', 's'), ('s', 'end', 'pass')])
+    role = 'fixer' if kind == 'board' else 'gate-runner'
+    two = (StepTask('t1', 's', role, 'needs_human', updated_at=T1), StepTask('t2', 's', role, 'needs_human',
+                                                                              updated_at=T2))
+    plan = _plan(definition, tasks=two)
+    assert (plan.at, plan.steps['s'].status) == ('s', BLOCKED)
+    assert _plan(definition, tasks=two, decisions={'s': _at(T1, 60)}).steps['s'].status == BLOCKED
+    assert _plan(definition, tasks=two, decisions={'s': _at(T2, 60)}).steps['s'].status == READY
+
+
+def test_after_a_map_one_decision_covers_every_shard_and_a_shards_failure_after_it_blocks_the_step_again():
+    # (F1, 7.104.00) core had two failed tasks and web one: the decision after them covers all three, every shard is
+    # ready again. web's retried task then fails after the decision: the step is blocked again, for a person (a count
+    # of failures per decision, the most of one shard's, 2, would have left it ready: web would run again with no
+    # decision). core's retried one under way changes nothing.
+    fanned = {'map': ('core', 'web')}
+    tasks = (StepTask('t1', 'm', 'mapper', 'failed', 'core', T1), StepTask('t2', 'm', 'mapper', 'needs_human', 'core',
+                                                                          T1),
+             StepTask('t3', 'm', 'mapper', 'needs_human', 'web', T2))
+    decided = {'m': _at(T2, 60)}
+    assert _plan(MAPPED, fanned_out=fanned, tasks=tasks).steps['m'].status == BLOCKED
+    ready = _plan(MAPPED, fanned_out=fanned, tasks=tasks, decisions=decided).steps['m']
+    assert (ready.status, ready.shards_left) == (READY, ('core', 'web'))
+    again = (*tasks, StepTask('t4', 'm', 'mapper', 'in_progress', 'core', '2026-11-14T10:07:00+00:00'),
+             StepTask('t5', 'm', 'mapper', 'failed', 'web', '2026-11-14T10:08:00+00:00'))
+    blocked = _plan(MAPPED, fanned_out=fanned, tasks=again, decisions=decided)
+    assert (blocked.at, blocked.steps['m'].status, 'for web' in blocked.steps['m'].reason) == ('m', BLOCKED, True)
 
 
 def test_an_agent_step_takes_one_task_at_a_time_and_is_done_with_one_done():
@@ -433,6 +533,16 @@ def test_a_gate_takes_its_final_go_only_after_a_gate_runners_task_is_done():
         GATE_ROLES, None)
 
 
+@pytest.mark.parametrize(('draft', 'said'), [(False, 'the flow ends at the pull request, ready for review'),
+                                             (True, 'the flow ends at the draft pull request')])
+def test_the_flows_end_at_its_pull_request_says_how_it_opens(draft: bool, said: str):
+    # (Q7, 7.71.04's PR_END) As the run's META says (BoardState.draft_pr): the fresh Bug fixer run's coordinator said
+    # "the draft pull request" for one ready for review.
+    tasks = (GATED, StepTask('t1', 'gate', 'final-go', TASK_DONE))
+    plan = _plan(GATE, tasks=tasks, verdicts={'gate': 'go'}, draft_pr=draft)
+    assert (plan.outcome, plan.at, plan.reason, plan.steps['pr'].reason) == (FINISHED, 'pr', said, said)
+
+
 @pytest.mark.parametrize(('verdict', 'gate', 'at', 'pr'), [
     ('go', DONE, 'pr', DONE), ('no_go', DONE, 'human', SKIPPED), (None, RUNNING, '', WAITING)],
     ids=['go-takes-pass', 'a-no-go-record-takes-fail', 'unread-is-never-a-go'])
@@ -470,7 +580,7 @@ def test_a_step_of_a_kind_the_runtime_does_not_run_stops_at_a_person():
     definition = _definition([START, ('x', 'teleport', {}), END], [('start', 'x'), ('x', 'end')])
     plan = _plan(definition)
     assert (plan.at, plan.steps['x'].status, 'does not run teleport' in plan.reason) == ('x', STOPPED, True)
-    assert _plan(definition, decisions={'x': 1}).steps['x'].status == PASSED
+    assert _plan(definition, decisions={'x': None}).steps['x'].status == PASSED
 
 
 def test_launches_are_for_live_steps_only():

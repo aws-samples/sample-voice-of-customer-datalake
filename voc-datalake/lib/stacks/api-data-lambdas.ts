@@ -90,7 +90,7 @@ export function createDataLambdas(ctx: ApiStackContext): DataLambdas {
 
   const metricsLambda = new lambda.Function(stack, 'MetricsApi', {
     functionName: ctx.uniqueName(METRICS_API_FUNCTION_BASE_NAME),
-    runtime: lambda.Runtime.PYTHON_3_14,
+    runtime: lambda.Runtime.PYTHON_3_15,
     architecture: lambda.Architecture.ARM_64,
     handler: 'metrics_handler.lambda_handler',
     code: createApiLambdaCode('metrics_handler.py'),
@@ -137,7 +137,7 @@ export function createDataLambdas(ctx: ApiStackContext): DataLambdas {
 
   const feedbackEditLambda = new lambda.Function(stack, 'FeedbackEditApi', {
     functionName: ctx.uniqueName(FEEDBACK_EDIT_API_FUNCTION_BASE_NAME),
-    runtime: lambda.Runtime.PYTHON_3_14,
+    runtime: lambda.Runtime.PYTHON_3_15,
     architecture: lambda.Architecture.ARM_64,
     handler: 'feedback_edit_handler.lambda_handler',
     code: createApiLambdaCode('feedback_edit_handler.py'),
@@ -221,7 +221,7 @@ export function createDataLambdas(ctx: ApiStackContext): DataLambdas {
   const integrationsLambda = new lambda.Function(stack, 'IntegrationsApi', {
     ...snapStartFunctionProps(stack), // GET /sources/status cold start (lib/utils/snapstart.ts)
     functionName: ctx.uniqueName(INTEGRATIONS_API_FUNCTION_BASE_NAME),
-    runtime: lambda.Runtime.PYTHON_3_14,
+    runtime: lambda.Runtime.PYTHON_3_15,
     architecture: lambda.Architecture.ARM_64,
     handler: 'integrations_handler.lambda_handler',
     code: createApiLambdaCode('integrations_handler.py'),
@@ -295,7 +295,7 @@ export function createDataLambdas(ctx: ApiStackContext): DataLambdas {
 
   const scrapersProps: lambda.FunctionProps = {
     functionName: ctx.uniqueName(SCRAPERS_API_FUNCTION_BASE_NAME),
-    runtime: lambda.Runtime.PYTHON_3_14,
+    runtime: lambda.Runtime.PYTHON_3_15,
     architecture: lambda.Architecture.ARM_64,
     handler: 'scrapers_handler.lambda_handler',
     code: createApiLambdaCode('scrapers_handler.py'),
@@ -342,7 +342,7 @@ export function createDataLambdas(ctx: ApiStackContext): DataLambdas {
 
   const manualImportLambda = new lambda.Function(stack, 'ManualImportApi', {
     functionName: ctx.uniqueName('voc-manual-import-api'),
-    runtime: lambda.Runtime.PYTHON_3_14,
+    runtime: lambda.Runtime.PYTHON_3_15,
     architecture: lambda.Architecture.ARM_64,
     handler: 'manual_import_handler.lambda_handler',
     code: createApiLambdaCode('manual_import_handler.py'),
@@ -376,7 +376,7 @@ export function createDataLambdas(ctx: ApiStackContext): DataLambdas {
 
   const manualImportProcessorLambda = new lambda.Function(stack, 'ManualImportProcessor', {
     functionName: manualImportProcessorName,
-    runtime: lambda.Runtime.PYTHON_3_14,
+    runtime: lambda.Runtime.PYTHON_3_15,
     architecture: lambda.Architecture.ARM_64,
     handler: 'manual_import_processor.lambda_handler',
     code: createApiLambdaCode('manual_import_processor.py'),
@@ -475,7 +475,7 @@ export function createDataLambdas(ctx: ApiStackContext): DataLambdas {
 
   const settingsProps: lambda.FunctionProps = {
     functionName: settingsFunctionName,
-    runtime: lambda.Runtime.PYTHON_3_14,
+    runtime: lambda.Runtime.PYTHON_3_15,
     architecture: lambda.Architecture.ARM_64,
     handler: 'settings_handler.lambda_handler',
     code: createApiLambdaCode('settings_handler.py'),

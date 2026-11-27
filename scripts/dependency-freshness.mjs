@@ -6,7 +6,7 @@
  *
  * What it compares with the newest release:
  * - npm: every package of the six lockfiles (`npm outdated --json`, needs each directory's node_modules).
- * - pip: every `==` pin and `>=` / `~=` floor in the four Lambda layers and requirements-dev.txt (PyPI).
+ * - pip: every `==` pin and `>=` / `~=` floor in the five Lambda layers and requirements-dev.txt (PyPI).
  *   A floor is listed apart: a fresh layer build already installs the newest version it allows.
  * - Lambda runtimes: each `Runtime.PYTHON_3_x` / `Runtime.NODEJS_x_X` the CDK app uses, against the
  *   newest one the installed aws-cdk-lib knows (CDK adds a runtime once Lambda launches it).
@@ -34,7 +34,7 @@ export const NPM_DIRS = [
   'tools/kiro-acp-bridge',
 ]
 export const PIP_FILES = [
-  ...['email-intake-deps', 'ingestion-deps', 'processing-deps', 'signing-deps']
+  ...['email-intake-deps', 'engineering-ci-deps', 'ingestion-deps', 'processing-deps', 'signing-deps']
     .map((layer) => `voc-datalake/lambda/layers/${layer}/requirements.txt`),
   'voc-datalake/requirements-dev.txt',
 ]

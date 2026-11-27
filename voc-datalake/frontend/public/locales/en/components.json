@@ -46,6 +46,8 @@
     "personaReviewHint": "Up to 6 of this project's personas read this version and leave comments quoting the text. They never change the document. Costs one model call per persona.",
     "personaReviewDone_one": "{{count, number}} comment filed ({{personas, number}} personas asked)",
     "personaReviewDone_other": "{{count, number}} comments filed ({{personas, number}} personas asked)",
+    "personaReviewDoneCompany_one": "{{count, number}} comment filed by company personas ({{personas, number}} asked: this project has none of its own)",
+    "personaReviewDoneCompany_other": "{{count, number}} comments filed by company personas ({{personas, number}} asked: this project has none of its own)",
     "personaReviewFailed": "The persona review failed. Please try again."
   },
   "reviewShare": {

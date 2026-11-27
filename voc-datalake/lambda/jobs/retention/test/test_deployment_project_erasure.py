@@ -128,6 +128,13 @@ def _member_thread(text: str) -> dict[str, Any]:
                                 author=comments.user_author('s', LEAD), text=text, anchor=None, workspace=None)
 
 
+def _judged(aws, row: dict[str, Any]) -> dict[str, Any]:
+    """The run after the deployment's eraser judged one product document record of DEP_LIVE."""
+    eraser = project_people.ProjectPeopleEraser(_run(), _tables(aws), REVIEWER, aws['s3'], BUCKET)
+    eraser._product_doc(None, DEP_LIVE, row)
+    return eraser._run
+
+
 def _link(aws, share: dict[str, Any]) -> dict[str, Any]:
     return _row(aws, review_link_key(share['share_id'], workspace=None))
 
@@ -207,6 +214,103 @@ class TestAnErasureByEmailReachesTheDeploymentsProjects:
         eraser._product_doc(None, DEP_LIVE, {'sk': 'PRODUCT_DOC#c', 'filename': f'{REVIEWER}.pdf',
                                              's3_raw_key': f'{folder}raw/c.pdf'})
         assert eraser._run['review_files'] == [f'{folder}raw/c.pdf']
+
+    def test_the_product_sources_of_7_72_are_judged_by_their_extracted_text(self, aws):
+        # A PDF read on the twin (its upload under source/), a link and typed answers (no upload: only their text's
+        # key): each is judged by its extracted text, and listed by its upload's key, else by its text's.
+        eraser = project_people.ProjectPeopleEraser(_run(), _tables(aws), REVIEWER, aws['s3'], BUCKET)
+        folder = _dep_docs(DEP_LIVE)
+        for doc, text in (('s1', f'Owner: {REVIEWER}'), ('l1', f'Contact {REVIEWER}'), ('t1', 'No address here')):
+            aws['s3'].put_object(Bucket=BUCKET, Key=f'{folder}extracted/{doc}.txt', Body=text.encode())
+        rows = (
+            {'sk': 'PRODUCT_DOC#s1', 'status': 'ready', 's3_raw_key': f'{folder}source/s1.pdf',
+             's3_extracted_key': f'{folder}extracted/s1.txt', 'content_type': 'application/pdf'},
+            {'sk': 'PRODUCT_DOC#s2', 'status': 'extracting', 's3_raw_key': f'{folder}source/s2.docx'},
+            {'sk': 'PRODUCT_DOC#l1', 'status': 'ready', 'filename': 'https://example.com/product',
+             's3_extracted_key': f'{folder}extracted/l1.txt', 'content_type': 'text/html'},
+            {'sk': 'PRODUCT_DOC#t1', 'status': 'ready', 'filename': 'Typed answers, 2026-11-26',
+             's3_extracted_key': f'{folder}extracted/t1.txt', 'content_type': 'text/markdown'},
+            # A link that failed (or is still being read) has no text to judge: not checked, by its text's key.
+            {'sk': 'PRODUCT_DOC#l2', 'status': 'failed', 'filename': 'https://example.com/gone'},
+            # A link whose address names the person is listed whatever its text.
+            {'sk': 'PRODUCT_DOC#l3', 'status': 'failed', 'filename': f'https://example.com/?ref={REVIEWER}'},
+        )
+        for row in rows:
+            eraser._product_doc(None, DEP_LIVE, row)
+
+        assert eraser._run['review_files'] == [f'{folder}source/s1.pdf', f'{folder}extracted/l1.txt',
+                                               f'{folder}extracted/l3.txt']
+        assert eraser._run[runs.UNCHECKED_FILES] == [f'{folder}source/s2.docx', f'{folder}extracted/l2.txt']
+        assert eraser._run.get(MALFORMED_ID_COUNTER, 0) == 0
+
+    @pytest.mark.parametrize('field', ['url', 'final_url', 'title'])
+    def test_a_links_address_where_it_ended_or_its_title_holding_the_address_lists_it(self, aws, field):
+        # Review Q10 (7.104.00 round 1): only `filename` was read, so a link whose redirect or title named the person
+        # (a profile page, `?ref=`) was judged by its text alone, and a failed one was not checked at all.
+        row = {'sk': 'PRODUCT_DOC#l9', 'status': 'failed', 'source_kind': 'url', 'url': 'https://example.com/team',
+               'filename': 'https://example.com/team', field: f'https://example.com/people/{REVIEWER.upper()}'}
+        run = _judged(aws, row)
+        assert (run['review_files'], run.get(runs.UNCHECKED_FILES, [])) == (
+            [f'{_dep_docs(DEP_LIVE)}extracted/l9.txt'], [])
+
+    def test_a_product_proposal_holding_the_address_is_listed_by_its_route(self, aws, worker_context):
+        # Review S3 (7.104.00 round 1): an extract's proposal keeps its sources' words (values, notes, quotes,
+        # questions) and names, which the erasure never judged.
+        _seed_deployment(aws)
+        gap = {'status': 'gap', 'value': '', 'citations': [], 'note': ''}
+        rows = {
+            'pp_20261126T120000000000Z_aaaaaaaaaaaa': {'fields': {'one_liner': {
+                **gap, 'status': 'proposed', 'value': 'Trips',
+                'citations': [{'source_id': 'S1', 'quote': f'Ask {REVIEWER} for the deck', 'page': None}]}}},
+            'pp_20261126T120001000000Z_bbbbbbbbbbbb': {'fields': {'non_goals': {**gap, 'note': 'none'}},
+                                                         'questions': [{'field': 'x', 'question': f'Is {REVIEWER} it?'}]},
+            'pp_20261126T120002000000Z_cccccccccccc': {'fields': {'one_liner': {**gap, 'value': 'Nothing here'}},
+                                                         'sources': [{'source_id': 'S1', 'name': 'deck.pdf'}]},
+            'pp_20261126T120003000000Z_dddddddddddd': {'sources': [{'source_id': 'S1', 'name': f'{REVIEWER}.pdf'}]},
+            # Review S8 (round 2): the form's value a field was proposed against (`seen`) was not read.
+            'pp_20261126T120004000000Z_eeeeeeeeeeee': {'fields': {'one_liner': {**gap, 'seen': f'Ask {REVIEWER}'}}},
+        }
+        for proposal_id, fields in rows.items():
+            stamp, suffix = proposal_id.removeprefix('pp_').split('_')
+            aws['projects'].put_item(Item={'pk': project_pk(DEP_LIVE, workspace=None), 'sk': f'PRODUCT_PROPOSAL#{stamp}#{suffix}',
+                                           'proposal_id': proposal_id, 'status': 'open', **fields})
+        _with_marker(aws)
+        _erase_by_email(aws, worker_context)
+        job, _audit = erasure_rows(aws, JOB_ID)
+        listed = job['files_needing_review']['keys']
+        assert [key for key in listed if '/product-proposals/' in key] == [
+            f'projects/{DEP_LIVE}/product-proposals/{proposal_id}' for proposal_id in list(rows)
+            if proposal_id[-1] != 'c']
+        # Nothing of a proposal is rewritten: a person decides.
+        assert all(row.get('status') == 'open' for row in aws['projects'].scan()['Items']
+                   if str(row['sk']).startswith('PRODUCT_PROPOSAL#'))
+
+    @pytest.mark.parametrize(('stored', 'listed'), [
+        ({'one_liner': f'Ask {REVIEWER.upper()} for access'}, True),
+        ({'key_features': ['Search', f'Mail {REVIEWER}']}, True),
+        ({'product_name': 'Orbit', 'free_form_notes': 'Nothing personal'}, False),
+        ({'current_state': 'beta'}, False),
+    ], ids=['a-value', 'a-list-line', 'none', 'not-a-text-field'])
+    def test_a_product_context_holding_the_address_is_listed_by_its_route(self, aws, worker_context, stored, listed):
+        # Review S8 (7.104.00 round 2): an accepted value copies a proposal's words into the product context, which the
+        # erasure never judged; like a proposal, it is listed for review by its route, never rewritten.
+        _seed_deployment(aws)
+        row = {'pk': project_pk(DEP_LIVE, workspace=None), 'sk': 'PRODUCT_CONTEXT', **stored}
+        aws['projects'].put_item(Item=row)
+        _with_marker(aws)
+        _erase_by_email(aws, worker_context)
+        job, _audit = erasure_rows(aws, JOB_ID)
+        keys = (job.get('files_needing_review') or {}).get('keys') or []
+        assert (f'projects/{DEP_LIVE}/product-context' in keys) is listed
+        assert aws['projects'].get_item(Key={'pk': project_pk(DEP_LIVE, workspace=None), 'sk': 'PRODUCT_CONTEXT'})['Item'] == row
+
+    def test_an_upload_outside_raw_and_source_is_malformed(self, aws):
+        eraser = project_people.ProjectPeopleEraser(_run(), _tables(aws), REVIEWER, aws['s3'], BUCKET)
+        folder = _dep_docs(DEP_LIVE)
+        eraser._product_doc(None, DEP_LIVE, {'sk': 'PRODUCT_DOC#x1', 'status': 'ready',
+                                             's3_raw_key': f'{folder}elsewhere/x1.pdf',
+                                             's3_extracted_key': f'{folder}extracted/x1.txt'})
+        assert (eraser._run[MALFORMED_ID_COUNTER], eraser._run[runs.UNCHECKED_FILES]) == (1, [folder])
 
     def test_each_change_is_recorded_without_the_address_the_link_id_or_a_workspace(self, aws, worker_context):
         links = _seed_deployment(aws)
@@ -403,6 +507,8 @@ class TestTheDeploymentsWalkHandsOver:
         ({'links_done': True}, 'pair_pages'),
         ({'links_done': True, 'pairs': ['p#ser_' + 'a' * 24]}, 'threads'),
         ({'links_done': True, 'pairs_done': True}, 'projects'),
+        ({'links_done': True, 'pairs_done': True, 'ids': ['p'],
+          'part': 'proposals'}, 'proposals'),
         ({'links_done': True, 'pairs_done': True, 'ids': ['p'],
           'part': 'personas'}, 'personas'),
         ({'links_done': True, 'pairs_done': True, 'ids': ['p'],

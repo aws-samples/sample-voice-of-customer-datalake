@@ -308,7 +308,8 @@
       "importPersona": "Persona-Import",
       "mergeDocuments": "Dokument-Zusammenführung",
       "research": "Recherche",
-      "draftPrototype": "Prototyp-Entwurf"
+      "draftPrototype": "Prototyp-Entwurf",
+      "extractProductDescription": "Produktbeschreibung auslesen"
     }
   },
   "notFound": {
@@ -532,6 +533,7 @@
       "oneLiner": "Kurzbeschreibung",
       "problemSolved": "Gelöstes Problem",
       "productName": "Produktname",
+      "productSummary": "Was das Produkt leistet",
       "successMetrics": "Erfolgskennzahlen",
       "targetUsers": "Zielnutzer"
     },
@@ -557,27 +559,6 @@
     },
     "subtitle": "Die Angaben hier werden automatisch als aktueller Produktkontext in die PRD- & PR/FAQ-Generierung eingespeist.",
     "title": "Produkt-/Service-Beschreibung",
-    "upload": {
-      "accepted": "PNG, JPEG, GIF, WebP bis 3,5 MB · MD, TXT bis 10 MB",
-      "delete": "Dokument löschen",
-      "dropZone": "Dateien hier ablegen, Screenshot einfügen oder klicken zum Hochladen",
-      "empty": "Noch keine Dokumente.",
-      "errors": {
-        "tooLarge": "Zu groß (>10 MB): {{name}}",
-        "unsupportedType": "Nicht unterstützter Typ: {{name}} ({{type}}). Zulässig: {{accepted}}",
-        "uploadFailed": "{{name}}: Upload fehlgeschlagen — {{message}}"
-      },
-      "extractedChars_one": "{{count, number}} Zeichen extrahiert",
-      "extractedChars_other": "{{count, number}} Zeichen extrahiert",
-      "heading": "Interne Dokumente",
-      "hint": "Bilder und Text — max. 20",
-      "loading": "Wird geladen…",
-      "notYet": "PDF und Word (.docx) werden hier noch nicht gelesen: Fügen Sie sie der Bibliothek hinzu und erwähnen Sie sie im Assistenten mit #.",
-      "statusExtracting": "Wird extrahiert…",
-      "statusFailed": "Fehlgeschlagen",
-      "statusReady": "Bereit",
-      "statusUploading": "Wird hochgeladen…"
-    },
     "assistant": {
       "button": "Mit dem KI-Assistenten ausfüllen",
       "hint": "Der Assistent fragt nacheinander nach jedem leeren Feld und zeigt dann alle Antworten auf einer Karte zur Freigabe.",
@@ -607,6 +588,178 @@
         "title": "Notizen",
         "description": "Alles Weitere, was die Autoren von PRD und PR/FAQ wissen sollten."
       }
+    },
+    "sources": {
+      "title": "Quellen",
+      "description": "Dateien, Links und Antworten, die der Auszug liest, um das Produkt zu beschreiben.",
+      "hint": "Höchstens 20",
+      "empty": "Fügen Sie Dokumente, Bilder oder Links hinzu oder beantworten Sie ein paar Fragen.",
+      "emptyViewer": "Noch keine Quellen.",
+      "answerQuestions": "Fragen beantworten",
+      "dropZone": "Dateien hier ablegen, Screenshot einfügen oder klicken zum Hochladen",
+      "accepted": "PDF, Word (.docx), PowerPoint (.pptx) bis 25 MB · MD, TXT bis 10 MB · PNG, JPEG, GIF, WebP bis 3,5 MB",
+      "loading": "Wird geladen…",
+      "loadFailed": "Die Quellen konnten nicht geladen werden. Prüfen Sie Ihre Verbindung und versuchen Sie es erneut.",
+      "typedAnswers": "Getippte Antworten",
+      "voiceInterview": "Sprachinterview",
+      "status": {
+        "uploading": "Wird hochgeladen…",
+        "pending": "Wartet aufs Lesen",
+        "extracting": "Wird gelesen…",
+        "fetching": "Wird abgerufen…",
+        "ready": "Bereit",
+        "failed": "Fehlgeschlagen"
+      },
+      "chars_one": "{{count, number}} Zeichen gelesen",
+      "chars_other": "{{count, number}} Zeichen gelesen",
+      "pages_one": "{{count, number}} Seite",
+      "pages_other": "{{count, number}} Seiten",
+      "cut": "an der Lesegrenze gekürzt",
+      "readByModel": "von KI gelesen",
+      "injection": "Teile dieses Texts lesen sich wie Anweisungen an ein KI-Modell. Er wird nur als Daten gelesen, nie befolgt.",
+      "retry": "Erneut versuchen",
+      "refetch": "Neu abrufen",
+      "delete": "Quelle löschen",
+      "link": {
+        "label": "Link hinzufügen",
+        "placeholder": "https://example.com/produkt",
+        "add": "Link hinzufügen",
+        "adding": "Wird hinzugefügt…",
+        "invalid": "Geben Sie die Adresse einer öffentlichen Seite ein, die mit https:// beginnt.",
+        "tooLong": "Der Link ist länger als 2.048 Zeichen."
+      },
+      "errors": {
+        "unsupportedType": "Nicht unterstützter Typ: {{name}} ({{type}}). Zulässig: {{accepted}}",
+        "tooLarge": "Zu groß (über {{mb}} MB): {{name}}",
+        "uploadFailed": "{{name}}: {{message}}",
+        "linkFailed": "Der Link wurde nicht hinzugefügt: {{message}}",
+        "refreshFailed": "Die Quelle wurde nicht erneut gelesen: {{message}}",
+        "deleteFailed": "Die Quelle wurde nicht gelöscht: {{message}}",
+        "tryAgain": "Versuchen Sie es erneut."
+      }
+    },
+    "extract": {
+      "button": "Produktbeschreibung auslesen",
+      "running": "Wird ausgelesen…",
+      "hint": "Liest jede bereite Quelle und schlägt für jedes Feld einen Wert mit seinen Quellen vor. Nichts ändert sich, bevor Sie es übernehmen.",
+      "noReady": "Fügen Sie eine Quelle hinzu und warten Sie, bis sie bereit ist.",
+      "confirmTitle": "Jetzt auslesen?",
+      "confirmLeftOut_one": "{{count, number}} Quelle wird noch gelesen und bleibt außen vor. Jetzt auslesen?",
+      "confirmLeftOut_other": "{{count, number}} Quellen werden noch gelesen und bleiben außen vor. Jetzt auslesen?",
+      "confirm": "Jetzt auslesen",
+      "steps": {
+        "queued": "Wartet auf den Start…",
+        "starting": "Wird gestartet…",
+        "readingSources": "Die Quellen werden gelesen…",
+        "thinking": "Denkt nach ({{elapsed}})…",
+        "checkingCitations": "Die Zitate werden geprüft…",
+        "saved": "Vorschlag gespeichert, wird abgeschlossen…"
+      },
+      "failed": {
+        "refused": "Das Modell hat es abgelehnt, diese Quellen zu lesen. Entfernen Sie die Quelle, die das verursacht haben könnte, und versuchen Sie es erneut.",
+        "timedOut": "Der Auszug dauerte länger als 12 Minuten und wurde abgebrochen. Versuchen Sie es mit weniger oder kürzeren Quellen erneut oder wiederholen Sie ihn mit xhigh.",
+        "cut": "Der Antwort ging der Platz aus. Versuchen Sie es mit weniger oder kürzeren Quellen erneut.",
+        "unreadable": "Die Antwort konnte nicht gelesen werden. Versuchen Sie es erneut.",
+        "stale": "Diese Extraktion meldet keinen Fortschritt mehr. Versuchen Sie es erneut.",
+        "generic": "Der Auszug ist fehlgeschlagen. Versuchen Sie es erneut."
+      },
+      "tryAgain": "Erneut versuchen",
+      "retryXhigh": "Mit xhigh wiederholen",
+      "retryXhighHint": "Ein geringerer Denkaufwand: Das Modell denkt kürzer nach und ist früher fertig.",
+      "errors": {
+        "noReadySources": "Noch keine Quelle ist bereit: Fügen Sie eine hinzu oder warten Sie, bis sie gelesen ist.",
+        "busy": "Für dieses Projekt läuft bereits ein Auszug. Verfolgen Sie ihn unter Hintergrundaufgaben.",
+        "busyStale": "Die angehaltene Extraktion blockiert dieses Projekt noch bis etwa 16 Minuten nach ihrem Start. Versuchen Sie es dann erneut.",
+        "rateLimited": "Zu viele Auszüge: höchstens 1 pro Minute und 10 pro Tag je Projekt sowie 20 pro Tag je Person. Versuchen Sie es später erneut.",
+        "generic": "Der Auszug konnte nicht starten. Versuchen Sie es erneut."
+      }
+    },
+    "review": {
+      "title": "Vorgeschlagene Produktbeschreibung",
+      "loadFailed": "Der Vorschlag der Extraktion konnte nicht geladen werden. Prüfen Sie Ihre Verbindung und versuchen Sie es erneut.",
+      "subtitle_one": "Aus {{count, number}} Quelle, {{at}}. Nichts wird gespeichert, bevor Sie es übernehmen.",
+      "subtitle_other": "Aus {{count, number}} Quellen, {{at}}. Nichts wird gespeichert, bevor Sie es übernehmen.",
+      "skipped_one": "{{count, number}} Quelle blieb außen vor, über der Lesegrenze des Auszugs: {{names}}",
+      "skipped_other": "{{count, number}} Quellen blieben außen vor, über der Lesegrenze des Auszugs: {{names}}",
+      "partlyApplied": "Teilweise übernommen",
+      "groups": {
+        "proposed": "Vorgeschlagen",
+        "conflict": "Konflikte",
+        "gap": "Lücken",
+        "unchanged": "Unverändert"
+      },
+      "current": "Aktuell",
+      "proposed": "Vorgeschlagen",
+      "empty": "(leer)",
+      "by": {
+        "you": "von Ihnen eingegeben",
+        "teammate": "von einem Teammitglied eingegeben",
+        "extract": "aus einem Auszug",
+        "assistant": "vom KI-Assistenten"
+      },
+      "confidence": {
+        "high": "Hohe Sicherheit",
+        "medium": "Mittlere Sicherheit",
+        "low": "Geringe Sicherheit"
+      },
+      "noVerified": "Keine geprüfte Quelle",
+      "accepted": "Übernommen",
+      "changed": "Seit dem Auszug geändert: „Alle Vorschläge übernehmen“ lässt es aus, und eine Übernahme ersetzt den neuen Wert.",
+      "citations": "Zitate",
+      "page": "S. {{page}}",
+      "sourceDeleted": "Quelle gelöscht",
+      "unverified": "Dieses Zitat wurde in der Quelle nicht gefunden.",
+      "editLabel": "Vorgeschlagener Wert für {{field}}",
+      "select": "{{field}} übernehmen",
+      "gapNote": "Keine Quelle hat diese Felder beantwortet: siehe die Fragen neben dem Formular.",
+      "acceptSelected": "Auswahl übernehmen",
+      "acceptAll": "Alle Vorschläge übernehmen",
+      "dismiss": "Verwerfen",
+      "readOnly": "Nur wer dieses Projekt bearbeiten darf, kann den Vorschlag übernehmen oder verwerfen.",
+      "result": {
+        "applied_one": "{{count, number}} Feld übernommen.",
+        "applied_other": "{{count, number}} Felder übernommen.",
+        "changed": "{{field}} wurde seit dem Auszug geändert und nicht übernommen.",
+        "personValue": "{{field}} enthält einen von einer Person eingegebenen Wert und wurde nicht ersetzt.",
+        "allChanged": "Jedes ausgewählte Feld wurde seit dem Auszug geändert, daher wurde nichts übernommen. Die Zeilen zeigen die neuen Werte.",
+        "closed": "Dieser Vorschlag wurde durch eine neuere Extraktion ersetzt oder verworfen. Extrahieren Sie erneut, um einen neuen zu erhalten.",
+        "failed": "Der Vorschlag konnte nicht übernommen werden. Versuchen Sie es erneut.",
+        "dismissFailed": "Der Vorschlag konnte nicht verworfen werden. Versuchen Sie es erneut."
+      },
+      "proposedBadge": "Vorgeschlagen",
+      "proposedBadgeLabel": "Vorgeschlagen: den vorgeschlagenen Wert für {{field}} prüfen",
+      "newSources_one": "{{count, number}} bereite Quelle wurde von diesem Auszug nicht gelesen: Lesen Sie erneut aus, um sie zu nutzen.",
+      "newSources_other": "{{count, number}} bereite Quellen wurden von diesem Auszug nicht gelesen: Lesen Sie erneut aus, um sie zu nutzen."
+    },
+    "gaps": {
+      "title": "Fragen",
+      "description": "Die Quellen haben diese nicht beantwortet. Ihre Antworten werden eine weitere Quelle; lesen Sie dann erneut aus.",
+      "defaultDescription": "Beantworten Sie ein paar Fragen zum Produkt. Ihre Antworten werden eine Quelle, die der Auszug liest.",
+      "type": "Antworten tippen",
+      "talk": "Im Gespräch klären",
+      "chat": "Im KI-Chat antworten",
+      "save": "Antworten speichern",
+      "saving": "Wird gespeichert…",
+      "cancel": "Abbrechen",
+      "saved": "Ihre Antworten sind als Quelle gespeichert.",
+      "extractAgain": "Erneut auslesen",
+      "errors": {
+        "save": "Die Antworten wurden nicht gespeichert: {{message}}"
+      }
+    },
+    "questions": {
+      "productName": "Wie heißt das Produkt oder der Dienst?",
+      "oneLiner": "Was tut es in einem Satz, und für wen?",
+      "productSummary": "Was tut das Produkt in einem kurzen Absatz, und wie wird es genutzt?",
+      "targetUsers": "Wer sind seine Zielkunden oder Nutzer?",
+      "problemSolved": "Welches Problem löst es für sie?",
+      "currentState": "Wo steht es in seinem Lebenszyklus: eine Idee, ein MVP, in der Beta, allgemein verfügbar oder ausgereift?",
+      "keyFeatures": "Was sind seine wichtigsten Funktionen?",
+      "differentiators": "Mit welchen Wettbewerbern oder Alternativen vergleichen Kunden es, und wie unterscheidet es sich?",
+      "successMetrics": "Was sind seine Ziele, und welche Kennzahlen zeigen den Erfolg?",
+      "knownLimitations": "Welche Einschränkungen oder bekannten Grenzen hat es?",
+      "nonGoals": "Was liegt bewusst außerhalb des Umfangs (Nicht-Ziele)?",
+      "freeFormNotes": "Was sollten die Autoren von PRD und PR/FAQ sonst noch wissen?"
     }
   },
   "tabs": {
@@ -1010,6 +1163,27 @@
       "savingToLibrary": "Wird in der Bibliothek gespeichert…",
       "savedToLibrary": "In der Bibliothek gespeichert.",
       "libraryFailed": "Es konnte nicht in der Bibliothek gespeichert werden."
+    },
+    "product": {
+      "consent": {
+        "title": "Im Gespräch klären",
+        "transcript": "Das Transkript des Gesprächs wird als Quelle dieses Projekts gespeichert, personenbezogene Daten in Ihren Antworten geschwärzt. Die Audioaufnahme wird nie gespeichert.",
+        "interviewer": "Ein KI-Interviewer stellt die Fragen laut, und Sie antworten für Ihr Produkt. Es ist eine KI, keine Person.",
+        "language": "Die Sprachfunktion spricht Ihre Oberflächensprache noch nicht. Sprechen Sie {{supported}}, und der Interviewer folgt Ihnen.",
+        "headphones": "Verwenden Sie Kopfhörer, damit der Interviewer sich nicht selbst hört.",
+        "sourcesFull": "Dieses Projekt hat bereits 20 Quellen, das Maximum, daher könnte das Interview nicht als Quelle gespeichert werden. Löschen Sie zuerst eine Quelle und sprechen Sie dann darüber."
+      },
+      "session": {
+        "title": "Produktinterview",
+        "badge": "KI-Interviewer",
+        "note": "Eine KI stellt die Fragen. Ihre Antworten werden eine Quelle dieses Projekts; die Audioaufnahme wird nie gespeichert.",
+        "interviewer": "Interviewer",
+        "saving": "Ihre Antworten werden als Quelle gespeichert…",
+        "saved": "Ihre Antworten sind als Quelle dieses Projekts gespeichert. Lesen Sie erneut aus, um sie zu nutzen.",
+        "savedOverCap": "Ihre Antworten sind als Quelle dieses Projekts gespeichert. Während des Interviews wurden Quellen hinzugefügt, daher hat das Projekt jetzt mehr als 20: Löschen Sie eine, bevor Sie eine weitere hinzufügen.",
+        "nothingSaved": "Es wurde nichts gesagt, daher wurde nichts gespeichert.",
+        "savedFailed": "Ihre Antworten konnten nicht gespeichert werden."
+      }
     }
   }
 }

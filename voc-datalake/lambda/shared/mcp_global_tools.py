@@ -3,8 +3,10 @@
 Every tool is a thin translation from MCP arguments to ONE route of the domain
 Lambda that owns the data (``shared.mcp_delegate``): metrics, settings, memory,
 projects, agents (and, since 7.53.00, the engineering runs: shared/mcp_global_tools_engineering.py), engagement (the
-feedback boards), radar, feedback edits, integrations (source status) or, since 7.63.00, the feedback forms (a form's
-Results, read only). The tool never reads a table itself, so the route's own
+feedback boards), radar, feedback edits, integrations (source status) or, since 7.63.00, the feedback forms (read only:
+since 7.104.00 a form's list, definition, Results, responses and report, shared/mcp_global_tools_forms.py), and,
+since 7.104.00 too, a project's product description (shared/mcp_global_tools_product.py). The tool
+never reads a table itself, so the route's own
 validation, category filtering and per-project access rules apply to the call,
 evaluated for the token's minter (never admin, capped at editor).
 
@@ -30,7 +32,8 @@ from typing import Any, Final
 
 from shared.dimension_config import DIMENSION_KEY_RE, MAX_DIMENSIONS, parse_dims_param
 from shared.document_sections import SECTION_ORDER, newest_edit_first, row_section
-from shared.forms_v2 import HIDDEN_ID, MAX_HIDDEN_VALUE_CHARS
+from shared.email_intake_settings import EMAIL_INTAKE_SOURCE
+from shared.forms_v2 import CONTACT_FIELDS
 from shared.library_keys import is_item_id
 from shared.mcp_global_kit import (
     BOOL_SCHEMA,
@@ -61,10 +64,11 @@ from shared.mcp_global_kit import (
     text_arg,
 )
 from shared.mcp_global_tools_engineering import ENGINEERING_TOOLS
+from shared.mcp_global_tools_forms import FORMS_TOOLS
+from shared.mcp_global_tools_product import PRODUCT_TOOLS
 from shared.mcp_global_tools_steps import LEGACY_REVISE_STEP, STEP_TOOLS, legacy_revise
 from shared.mcp_global_tools_work import WORK_TOOLS
 from shared.prototype_pins import STATUSES as PIN_STATUSES
-from shared.timestamps import ISO_DAY_RE
 
 DOMAIN_FUNCTION_ENV: Final[dict[str, str]] = {
     DOMAIN_METRICS: 'METRICS_FUNCTION',
@@ -128,6 +132,13 @@ _FEEDBACK_REPLIES: Final = 5
 _FEEDBACK_TEXT_CHARS: Final = 600
 _FEEDBACK_REPLY_CHARS: Final = 300
 _FEEDBACK_PLACE_CHARS: Final = 200
+# The contact fields of a stored feedback item that a project-pinned token never reads (7.104.00, ``without_contact``):
+# the metadata keys a person's address and name are kept under (the feedback-form submit route's ``submitter_email`` and
+# ``submitter_name``, the email inbox's sender ``email``; an erasure by email matches the two addresses,
+# shared/source_policy.py ``EMAIL_METADATA_FIELDS``), a form response's contact_info answers (``_is_contact_answer``)
+# and an email inbox item's top-level ``author``, its sender's name or address (email_intake/compose.py). Nothing
+# else: the rest of an item is what its source's PII policy stored.
+CONTACT_METADATA_KEYS: Final[tuple[str, ...]] = ('email', 'submitter_email', 'submitter_name')
 
 # ── Argument readers ────────────────────────────────────────────────────────
 def _dims_arg(args: Mapping[str, Any]) -> str | None:
@@ -153,7 +164,7 @@ def _item_filters(args: Mapping[str, Any]) -> dict[str, Any]:
 
 
 _DAYS = {'type': 'integer', 'minimum': 0, 'maximum': MAX_DAYS, 'default': DEFAULT_DAYS,
-         'description': 'Days back; 0 = all time.'}
+         'description': '0 = all time.'}
 _LIMIT = {'type': 'integer', 'minimum': 1, 'maximum': MAX_LIST_LIMIT, 'default': DEFAULT_LIST_LIMIT}
 _FILTER = {'type': 'string', 'maxLength': MAX_FILTER_LENGTH}
 _ITEM_FILTERS = {
@@ -263,6 +274,60 @@ def _prototype_feedback(payload: object, _args: Mapping[str, Any]) -> dict:
 def _project_list(payload: object, _args: Mapping[str, Any]) -> dict:
     projects = [public(p) for p in rows_at(payload, 'projects') if isinstance(p, Mapping)]
     return {'count': len(projects), 'projects': projects}
+
+
+def _pinned_project_list(payload: object, pin: str) -> object:
+    """``projects_list`` for a token pinned to ``pin``: only its project."""
+    if not isinstance(payload, Mapping) or not isinstance(payload.get('projects'), list):
+        return payload
+    projects = [p for p in payload['projects'] if isinstance(p, Mapping) and p.get('project_id') == pin]
+    return {**payload, 'projects': projects, 'count': len(projects)}
+
+
+def _is_contact_answer(answer: object) -> bool:
+    """A contact_info answer of ``metadata.form_answers``, ``{name?, email?, phone?, company?}``: no other question
+    type's answer has that shape (a choice is ``{code}`` or ``{codes}`` with ``other``, a matrix ``{rows}``, the rest
+    a text, a number or true)."""
+    return isinstance(answer, Mapping) and bool(answer) and set(answer) <= set(CONTACT_FIELDS)
+
+
+def _metadata_without_contact(metadata: Mapping[str, Any]) -> dict[str, Any]:
+    """``metadata`` without ``CONTACT_METADATA_KEYS`` and without the contact_info answers of its ``form_answers``."""
+    kept = {key: value for key, value in metadata.items() if key not in CONTACT_METADATA_KEYS}
+    answers = kept.get('form_answers')
+    if isinstance(answers, Mapping):
+        kept['form_answers'] = {qid: answer for qid, answer in answers.items() if not _is_contact_answer(answer)}
+    return kept
+
+
+def without_contact(item: object) -> object:
+    """A stored feedback item without its contact fields: ``metadata`` without ``CONTACT_METADATA_KEYS`` and without
+    the contact_info answers of its ``form_answers``, and an email inbox item without its top-level ``author``. The
+    inbox item is told by its ``source_platform``, which the inbox sets on every item it queues and no PII policy
+    changes; ``metadata.email`` is not the inbox's alone (the queue schema takes it from any producer). Anything else
+    as it is."""
+    if not isinstance(item, Mapping):
+        return item
+    inbox_author = item.get('source_platform') == EMAIL_INTAKE_SOURCE and 'author' in item
+    metadata = item.get('metadata')
+    if not inbox_author and not isinstance(metadata, Mapping):
+        return item
+    out = {key: value for key, value in item.items() if not (inbox_author and key == 'author')}
+    if isinstance(metadata, Mapping):
+        out['metadata'] = _metadata_without_contact(metadata)
+    return out
+
+
+def _item_without_contact(payload: object, _pin: str) -> object:
+    """``feedback_get`` for a pinned token: the item ``without_contact``."""
+    return without_contact(payload)
+
+
+def _items_without_contact(payload: object, _pin: str) -> object:
+    """``feedback_search`` for a pinned token: each of its ``items`` ``without_contact``."""
+    if not isinstance(payload, Mapping) or not isinstance(payload.get('items'), list):
+        return payload
+    return {**payload, 'items': [without_contact(item) for item in payload['items']]}
 
 
 def _feature_requests(payload: object, args: Mapping[str, Any]) -> object:
@@ -495,39 +560,6 @@ def _search_library(args: Mapping[str, Any], _project: str | None) -> RouteReque
     return RouteRequest(DOMAIN_PROJECTS, 'POST', '/projects/library/context', body=body)
 
 
-#: The hidden-field filters one read takes (each id and value as a form declares and the route bounds them).
-MAX_FORM_HIDDEN_FILTERS: Final = 5
-
-
-def _form_day(args: Mapping[str, Any], name: str) -> str | None:
-    """``forms_get_results``' ``from`` / ``to``: a day (the route also takes a time, which an agent never needs)."""
-    value = text_arg(args, name, max_length=32)
-    if value is not None and not ISO_DAY_RE.match(value):
-        raise InvalidToolArgument(f'{name} must be a date, YYYY-MM-DD')
-    return value
-
-
-def _form_hidden(args: Mapping[str, Any]) -> dict[str, str]:
-    """``hidden`` ({field id: value}) as the route's ``hidden.<id>=<value>`` parameters."""
-    value = args.get('hidden')
-    if value is None:
-        return {}
-    if not isinstance(value, Mapping) or len(value) > MAX_FORM_HIDDEN_FILTERS or not all(
-            isinstance(key, str) and HIDDEN_ID.fullmatch(key) and isinstance(text, str)
-            and 0 < len(text) <= MAX_HIDDEN_VALUE_CHARS for key, text in value.items()):
-        raise InvalidToolArgument(f'hidden must map up to {MAX_FORM_HIDDEN_FILTERS} hidden field ids to values')
-    return {f'hidden.{key}': text for key, text in value.items()}
-
-
-def _get_form_results(args: Mapping[str, Any], _project: str | None) -> RouteRequest:
-    """A form's Results as JSON (api/feedback_form_handler.py ``get_form_results``, ``GET /feedback-forms/{id}/results``):
-    the forms Lambda reads them as the minter, with the route's category and source access and its workspace rule (a
-    viewer 403). Never the responses' CSV, never a write: no other forms route is a tool."""
-    query: dict[str, Any] = {'from': _form_day(args, 'from'), 'to': _form_day(args, 'to'),
-                             'include_test': 'true' if bool_arg(args, 'include_test') else None, **_form_hidden(args)}
-    return RouteRequest(DOMAIN_FORMS, 'GET', f"/feedback-forms/{id_arg(args, 'form_id')}/results", query=query)
-
-
 def _run_agent(args: Mapping[str, Any], _project: str | None) -> RouteRequest:
     return RouteRequest(DOMAIN_AGENTS, 'POST', f"/agents/{id_arg(args, 'agent_id')}/run")
 
@@ -536,161 +568,150 @@ def _run_agent(args: Mapping[str, Any], _project: str | None) -> RouteRequest:
 # Every name starts with its area (AREAS), so a client that lists or searches tools finds an area's tools
 # together; each description says what the tool does, its nouns and verbs, when to use it and its key
 # arguments (the whole list's budget: test_mcp_global_tools_budget.py).
-AREAS: Final[tuple[str, ...]] = ('feedback', 'forms', 'memory', 'company', 'projects', 'documents', 'library', 'agents',
-                                 'engineering', 'feature_requests', 'radar', 'prioritization', 'insights')
+AREAS: Final[tuple[str, ...]] = ('feedback', 'forms', 'memory', 'company', 'projects', 'product', 'documents', 'library',
+                                 'agents', 'engineering', 'feature_requests', 'radar', 'prioritization', 'insights')
 
 _CATALOGUE: Final[tuple[GlobalTool, ...]] = (
     GlobalTool(
         'feedback_search', 'Search customer feedback',
-        'Search customer feedback (reviews, app-store ratings, survey and form answers, support messages) by '
-        'text, or list the newest items. Use it for what customers say and for the evidence behind every claim '
-        'about customers. `query` (2+ characters) searches the text; without it the filters list the newest '
-        'items. Filters: `days` (0 = all time), `category`, `sentiment` (positive, negative, neutral, mixed), '
-        '`source`, `channel`, `tag`, `dims` (from feedback_list_dimensions), `urgent: true` (high urgency only), '
-        '`limit`. Each item has its feedback_id: cite it.',
+        'Search customer feedback (reviews, ratings, survey and form answers, support messages) by `query` (2+ '
+        'characters), or list the newest: what customers say, the evidence for any claim about them. Filters: '
+        '`days`, `category`, `sentiment` (positive, negative, neutral, mixed), `source`, `channel`, `tag`, `dims` '
+        '(see feedback_list_dimensions), `urgent: true` (high urgency only), `limit`. Cite each feedback_id.',
         schema({'query': {'type': 'string', 'maxLength': MAX_QUERY_LENGTH}, 'days': _DAYS, 'limit': _LIMIT,
                  'category': _FILTER, 'sentiment': _FILTER, 'source': _FILTER, 'urgent': BOOL_SCHEMA, **_ITEM_FILTERS}),
-        _search_feedback, stripped),
+        _search_feedback, stripped, pinned_shape=_items_without_contact),
     GlobalTool(
         'feedback_get', 'Get one feedback item',
-        'Read one customer feedback item (review) in full by `feedback_id`: text, source, date, rating, '
-        'sentiment, category, urgency, persona, dimensions and tags. `include_similar: true` adds up to '
-        f'{MAX_SIMILAR} similar items (short text), to see whether a problem is isolated or a pattern.',
+        'Read a feedback item (review) in full by `feedback_id`: text, source, date, rating, sentiment, category, '
+        f'urgency, persona, dimensions, tags. `include_similar: true` adds up to {MAX_SIMILAR} similar items (short '
+        'text): is a problem isolated or a pattern?',
         schema({'feedback_id': ID_SCHEMA, 'include_similar': BOOL_SCHEMA}, ('feedback_id',)), _get_feedback, stripped,
-        follow_ups=_similar_follow_up),
+        follow_ups=_similar_follow_up, pinned_shape=_item_without_contact),
     GlobalTool(
         'feedback_get_metrics', 'Get feedback metrics',
-        'Count and trend customer feedback over `days` (0 = all time): `view` summary (volume, sentiment, daily '
-        'series), sentiment, categories, sources, personas, dimensions (counts per value of one dimension `key`), '
-        'github (issues per release and label) or entities (the filter values in use with counts). Filters: '
-        '`source`, `channel`, `tag`, `dims`. Prefer it to counting search results.',
+        'Count and trend customer feedback over `days`: `view` summary (volume, sentiment, daily series), '
+        'sentiment, categories, sources, personas, dimensions (counts per value of dimension `key`), github (issues '
+        'per release and label) or entities (filter values in use, with counts). Filters: `source`, `channel`, '
+        '`tag`, `dims`. Prefer it to counting search results.',
         schema({'view': {'type': 'string', 'enum': list(METRIC_VIEWS), 'default': 'summary'}, 'days': _DAYS,
                  'key': _FILTER, 'source': _FILTER, **_ITEM_FILTERS}),
         _get_metrics),
     GlobalTool(
         'feedback_list_categories', 'List feedback categories',
-        'List the feedback category taxonomy you can see: categories with their descriptions and subcategories. '
-        'Use the exact names as `category` in feedback_search and feedback_edit.',
+        'List the feedback categories you can see, with descriptions and subcategories: the exact `category` names '
+        'of feedback_search and feedback_edit.',
         schema({}), _list_categories),
     GlobalTool(
         'feedback_list_dimensions', 'List feedback dimensions',
-        'List the feedback dimensions (key, label, allowed values; for example product, module, user type). Use '
-        'the exact keys and values in `dims` filters and as the `key` of feedback_get_metrics view=dimensions.',
+        'List the feedback dimensions (key, label, allowed values; e.g. product, module, user type): the exact keys '
+        "and values of `dims` and of feedback_get_metrics' dimensions `key`.",
         schema({}), _list_dimensions),
     GlobalTool(
         'memory_search', 'Search memory',
-        'Semantic search over the company and personal memory you can see: decisions, facts, preferences and '
-        'lessons the team recorded. Use it before proposing something, to respect what was already decided. '
-        '`query` (required), `k` results (default 8).',
+        'Semantic search of the company and personal memory you can see: decisions, facts, preferences, lessons. '
+        'Use it before proposing something, to respect what was decided.',
         schema({'query': {'type': 'string', 'maxLength': MAX_QUERY_LENGTH},
                  'k': {'type': 'integer', 'minimum': 1, 'maximum': MAX_MEMORY_K, 'default': DEFAULT_MEMORY_K}}, ('query',)),
         _search_memory),
     GlobalTool(
         'company_get_context', 'Get company context',
-        'Read the company context: its vision and strategic objectives (goals). Use it to align a proposal, '
-        'PR/FAQ, PRD or prioritization with what the company is trying to achieve.',
+        "Read the company's vision and strategic objectives (goals), to align a proposal, PR/FAQ, PRD or "
+        'prioritization with them.',
         schema({}), _company_context),
     GlobalTool(
         'projects_list', 'List projects',
-        'List the research projects you can see, with their ids and names. Start here to find the `project_id` '
-        'the projects_ and documents_ tools take.',
-        schema({}), _list_projects, _project_list),
+        'List the research projects you can see: names and the `project_id` the projects_ and documents_ tools '
+        'take.',
+        schema({}), _list_projects, _project_list, pinned_shape=_pinned_project_list),
     GlobalTool(
         'projects_get', 'Get a project',
-        'Read one research project: its details, personas (name, tagline) and documents in sections prd, prfaq, '
-        'prototypes, documents, last edit first in each (ids, types, titles, versions; no bodies: read one with '
-        'documents_get). The flat `documents` list is deprecated: read `document_sections`.',
+        'Read a research project: details, personas (name, tagline) and `document_sections` prd, prfaq, prototypes, '
+        'documents, last edit first (ids, types, titles, versions; bodies via documents_get). The flat `documents` '
+        'list is deprecated.',
         schema({'project_id': PROJECT_ID_SCHEMA}), _get_project, _project_overview, project_scoped=True),
     GlobalTool(
         'documents_get', 'Get a document',
-        'Read one project document in full by `document_id`: a PR/FAQ, PRD, research report or custom markdown '
-        'document, with its type, title, version and content.',
+        'Read a project document in full by `document_id` (a PR/FAQ, PRD, research report or custom document): '
+        'type, title, version, content.',
         schema({'project_id': PROJECT_ID_SCHEMA, 'document_id': ID_SCHEMA}, ('document_id',)),
         _get_document, _one_document, project_scoped=True),
     GlobalTool(
         'documents_list_prototype_feedback', 'List prototype feedback',
-        "Read the testers' pins on every version of a prototype `document_id`, grouped by screen and folded "
-        '("3 testers said this"), with their replies, status, version and pin ids; optional `status`. '
-        '`partial` names the versions not fully read. A flagged item has no text.',
+        'Read testers\' pins on every version of a prototype `document_id`, by screen and folded ("3 testers said '
+        'this"), with replies, status, version, pin ids; optional `status`. `partial` names versions not fully '
+        'read; a flagged item has no text.',
         schema({'project_id': PROJECT_ID_SCHEMA, 'document_id': ID_SCHEMA,
                 'status': {'type': 'string', 'enum': list(PIN_STATUSES)}}, ('document_id',)),
         _list_prototype_feedback, _prototype_feedback, project_scoped=True),
     GlobalTool(
         'library_search', 'Search the library',
         'Search the Documents Library (uploaded reports, transcripts, decks; not feedback) for passages answering '
-        f'`query`, in `items` (up to {MAX_LIBRARY_ITEMS} ids or slugs) or the items whose title or tags match. '
-        'Cite [#slug p.N].',
+        f'`query`, in `items` (up to {MAX_LIBRARY_ITEMS} ids or slugs) or the items whose title or tags match. Cite '
+        '[#slug p.N].',
         schema({'query': {'type': 'string', 'maxLength': MAX_QUERY_LENGTH},
                 'items': {'type': 'array', 'maxItems': MAX_LIBRARY_ITEMS, 'items': {'type': 'string'}}},
                ('query',)),
         _search_library, stripped),
-    GlobalTool(
-        'forms_get_results', 'Get form results',
-        "Read a feedback form's Results by `form_id`: responses, per question counts, NPS, CSAT, CES, latest open "
-        'answers, endings and link checks. Narrow with `from`/`to` (YYYY-MM-DD) and `hidden` ({field: value}); '
-        '`include_test` adds test responses.',
-        schema({'form_id': ID_SCHEMA, 'from': {'type': 'string', 'format': 'date'},
-                'to': {'type': 'string', 'format': 'date'}, 'include_test': BOOL_SCHEMA,
-                'hidden': {'type': 'object', 'maxProperties': MAX_FORM_HIDDEN_FILTERS,
-                           'additionalProperties': {'type': 'string', 'maxLength': MAX_HIDDEN_VALUE_CHARS}}},
-               ('form_id',)),
-        _get_form_results, stripped),
+    # A feedback form's list, definition, Results, responses and report, read only (shared/mcp_global_tools_forms.py).
+    *FORMS_TOOLS,
     GlobalTool(
         'agents_list', 'List agents',
-        'List the autonomous agents you can see, with their status. Use it to find the `agent_id` the agents_ '
-        'tools take.',
+        'List the autonomous agents you can see, with their status: the `agent_id` the agents_ tools take.',
         schema({}), _list_agents, stripped),
     GlobalTool(
         'agents_get_run', 'Get agent runs',
-        "Follow an autonomous agent's run: `agent_id` with `run_id` (from agents_run) for its status, current "
-        'step, project and error; without `run_id`, the agent\'s newest runs (`limit`).',
+        "Follow an agent's run: `agent_id` with `run_id` (from agents_run) for its status, current step, project "
+        "and error; without `run_id`, the agent's newest runs (`limit`).",
         schema({'agent_id': ID_SCHEMA, 'run_id': ID_SCHEMA,
                  'limit': {'type': 'integer', 'minimum': 1, 'maximum': MAX_RUNS_LIMIT,
                            'default': DEFAULT_RUNS_LIMIT}}, ('agent_id',)),
         _get_agent_run, stripped),
     GlobalTool(
         'feature_requests_search', 'Search feature requests',
-        'Search the feature requests and ideas people posted on feedback boards, with their +1 count '
-        '(`supporters`). They are NOT customer reviews: never add them to feedback counts or metrics; cite each '
-        'as [FR:<request_id>]. `query`; `board`, `category`, `status` (comma lists); `days` (0 = all time); '
-        '`limit`. `boards: true` lists the boards instead.',
+        'Search feature requests and ideas posted on feedback boards, with their +1 count (`supporters`). NOT '
+        'customer reviews: never in feedback counts or metrics; cite each as [FR:<request_id>]. `query`; `board`, '
+        '`category`, `status` (comma lists); `days`; `limit`. `boards: true` lists the boards instead.',
         schema({'query': {'type': 'string', 'maxLength': MAX_QUERY_LENGTH},
                  'board': {'type': 'string', 'maxLength': MAX_FEATURE_REQUEST_FILTER_LENGTH,
                            'description': 'Board id or slug.'},
                  'category': {'type': 'string', 'maxLength': MAX_FEATURE_REQUEST_FILTER_LENGTH},
                  'status': {'type': 'string', 'maxLength': MAX_FEATURE_REQUEST_FILTER_LENGTH},
                  'days': {'type': 'integer', 'minimum': 0, 'maximum': MAX_FEATURE_REQUEST_DAYS, 'default': 0,
-                          'description': 'Created in the last N days; 0 = all time.'},
+                          'description': '0 = all time.'},
                  'limit': {'type': 'integer', 'minimum': 1, 'maximum': MAX_FEATURE_REQUEST_LIMIT,
                            'default': DEFAULT_FEATURE_REQUEST_LIMIT},
                  'boards': BOOL_SCHEMA}),
         _search_feature_requests, _feature_requests, board_route=True),
     GlobalTool(
         'documents_create', 'Create a document',
-        'Create a custom markdown document (notes, analysis, report) in a project you can edit (write token): '
-        '`title` and `content`. Cite the feedback ids its claims rest on. Confirm with the user first.',
+        'Create a markdown document (notes, analysis, report) in a project you can edit: `title`, `content`. Cite '
+        'the feedback ids its claims rest on. Confirm with the user first.',
         schema({'project_id': PROJECT_ID_SCHEMA, 'title': {'type': 'string', 'maxLength': MAX_TITLE_LENGTH},
                  'content': {'type': 'string', 'maxLength': MAX_DOCUMENT_CHARS}}, ('title', 'content')),
         _create_document, stripped, write=True, project_scoped=True),
     GlobalTool(
         'documents_update', 'Update a document',
-        "Edit a project document: replace its `title` and/or `content` by `document_id` (write token); each "
-        'save is a new version, never an overwrite. A PRD or PR/FAQ keeps its series title and is refused unless '
-        'the user and the project owner work AI-driven; prototypes cannot be edited. Confirm with the user first.',
+        'Edit a project document `document_id`: its `title` and/or `content`, saved as a new version. A PRD or '
+        'PR/FAQ keeps its series title and needs the user and the project owner to work AI-driven; a prototype '
+        'cannot be edited. Confirm with the user first.',
         schema({'project_id': PROJECT_ID_SCHEMA, 'document_id': ID_SCHEMA,
                  'title': {'type': 'string', 'maxLength': MAX_TITLE_LENGTH},
                  'content': {'type': 'string', 'maxLength': MAX_DOCUMENT_CHARS}}, ('document_id',)),
         _update_document, stripped, write=True, project_scoped=True),
     GlobalTool(
         'agents_run', 'Run an agent',
-        'Start an autonomous agent run now by `agent_id` (write token minted by a current administrator). It '
-        'spends model budget: confirm with the user first; follow the run with agents_get_run.',
+        'Start an autonomous agent run now by `agent_id`. It spends model budget: confirm with the user first; '
+        'follow it with agents_get_run.',
         schema({'agent_id': ID_SCHEMA}, ('agent_id',)), _run_agent, stripped, write=True, admin_only=True),
     # Methodology steps, their jobs, Revise from comments, Radar and feedback edits (mcp_global_tools_steps.py).
     *STEP_TOOLS,
     # The feedback catalogue and sources, Prioritization, board writes and the leadership view
     # (shared/mcp_global_tools_work.py).
     *WORK_TOOLS,
+    # A project's product description: its form, sources, extract and proposal (7.104.00,
+    # shared/mcp_global_tools_product.py).
+    *PRODUCT_TOOLS,
     # The engineering runs, for an administrator's write token only (7.53.00, shared/mcp_global_tools_engineering.py).
     *ENGINEERING_TOOLS,
 )

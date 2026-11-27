@@ -61,7 +61,7 @@ from shared import prototype_validation as validation_card
 from shared.api import api_handler, create_api_resolver, get_caller_subject, get_raw_categories_config, validate_limit
 from shared.app_feedback_tag import APP_FEEDBACK_TEMPLATE_ID, RESERVED_MESSAGE, names_app_feedback
 from shared.audit_rows import put_new_audit_row
-from shared.aws import get_dynamodb_resource, get_s3_client, get_sqs_client
+from shared.aws import CONDITION_FAILED, cancellation_codes, get_dynamodb_resource, get_s3_client, get_sqs_client
 from shared.category_gate import scope_for_event
 from shared.delete_audit import actor_from_event, record_delete_first, record_delete_once
 from shared.dynamo_paging import iter_query
@@ -105,7 +105,6 @@ from shared.import_survey import check_mapping
 from shared.ingest_archive import prepare_messages, stamp_file_archive
 from shared.ingest_tables import table_view
 from shared.onboarding import forms_partition as _forms_partition
-from shared.persona_save import cancellation_codes
 from shared.project_gate import caller_from_event
 from shared.raw_versions import app_connector, put_raw_version, raw_root
 from shared.request_workspace import require_settings_admin
@@ -232,9 +231,9 @@ def _write_unpaused(scope: WorkspaceScope, entry: dict[str, Any]) -> None:
             [entry], unpaused_in=configured_table(get_workspaces_table(), 'Workspaces'))
     except ClientError as exc:
         codes = cancellation_codes(exc)
-        if len(codes) > 1 and codes[1] == 'ConditionalCheckFailed':
+        if len(codes) > 1 and codes[1] == CONDITION_FAILED:
             raise ConflictError(TRIAL_PAUSED, code=TRIAL_PAUSED_CODE) from exc
-        if codes and codes[0] == 'ConditionalCheckFailed':
+        if codes and codes[0] == CONDITION_FAILED:
             raise _LostRace from exc
         raise
 
@@ -2677,7 +2676,7 @@ def _view_filters(params: Mapping[str, Any]) -> dict[str, Any]:
         if len(value) > fv2.MAX_HIDDEN_VALUE_CHARS:
             raise ValidationError(f'{key} must be at most {fv2.MAX_HIDDEN_VALUE_CHARS} characters')
         return value
-    hidden = {key.removeprefix('hidden.'): text(key) for key in params if key.startswith('hidden.')}
+    hidden = {key.removeprefix(fv2.HIDDEN_PREFIX): text(key) for key in params if key.startswith(fv2.HIDDEN_PREFIX)}
     return {'date_from': text('from'), 'date_to': text('to'), 'language': text('language'),
             'ending': text('ending'), 'hidden': hidden}
 

@@ -94,6 +94,8 @@ RULE_TEXT_CHARS: Final = 200
 QUESTION_ID: Final = re.compile(r'q_[a-z0-9_]{1,40}')
 OPTION_CODE: Final = re.compile(r'[a-z0-9_]{1,40}')
 HIDDEN_ID: Final = re.compile(r'[a-z][a-z0-9_]{0,39}')
+#: A hidden field's name as a query parameter, a ``group_by`` and a stored view's filter: ``hidden.<id>``.
+HIDDEN_PREFIX: Final = 'hidden.'
 ENDING_ID: Final = re.compile(r'end_[a-z0-9_]{1,40}')
 #: A template's id (7.63.00: the app's templates, ``workshop``, ``nps``…) and the highest version a form may name.
 TEMPLATE_ID: Final = re.compile(r'[a-z][a-z0-9_]{0,39}')

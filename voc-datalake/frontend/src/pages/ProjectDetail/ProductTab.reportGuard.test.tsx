@@ -153,7 +153,7 @@ describe('ProductTab report guard', () => {
     renderWithQueryClient(<ProductTab canEdit projectId="proj-1" />)
 
     await waitFor(generateButton)
-    // DocsUpload lists docs for its own pane, so snapshot that and require the
+    // The Sources card lists the sources for itself, so snapshot that and require the
     // click to add nothing: the common path must not pay for the guard.
     const callsBeforeClick = mockListProductDocs.mock.calls.length
 

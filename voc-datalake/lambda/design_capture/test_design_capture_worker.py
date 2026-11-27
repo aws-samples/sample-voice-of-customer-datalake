@@ -225,7 +225,7 @@ def _run(table, cdp: FakeCdp, answer: str = ANSWER, public: bool = True, *,
     deps = cw.CaptureDeps(table=table, kit=_kit(cdp, sessions), summarise_images=vision, sleep=sleep,
                           clock=iter(range(1000)).__next__, now=now, s3=s3, bucket='raw' if s3 else '',
                           logo_fetch=fetch, pick_logo=pick_logo)
-    with patch.object(cw, 'validate_url', return_value=(True, '') if public else (False, 'private address')):
+    with patch('shared.url_policy.validate_url', return_value=(True, '') if public else (False, 'private address')):
         result = cw.run_capture({'action': 'design_capture', 'ref_id': REF_ID}, deps)
     stored = get_reference(table, REF_ID)
     assert stored is not None
@@ -259,7 +259,7 @@ class TestCapture:
 
     def test_final_url_on_a_private_address_is_refused_before_reading(self, table):
         cdp = FakeCdp(_styles(), final_url='http://169.254.169.254/latest/meta-data')
-        with patch.object(cw, 'validate_url', side_effect=[(True, ''), (False, 'private')]):
+        with patch('shared.url_policy.validate_url', side_effect=[(True, ''), (False, 'private')]):
             deps = cw.CaptureDeps(table=table, kit=_kit(cdp, []), summarise_images=MagicMock(), sleep=lambda _s: None,
                                   clock=iter(range(1000)).__next__)
             cw.run_capture({'ref_id': REF_ID}, deps)

@@ -13,7 +13,7 @@ import re
 import pytest
 
 from shared import custom_models
-from shared.model_config import PICKER_SURFACES, WEB_SEARCH_SURFACE
+from shared.model_config import PICKER_SURFACES, PRODUCT_EXTRACT_SURFACE, WEB_SEARCH_SURFACE
 from shared.test.repo_paths import repo_root
 
 CDK = (repo_root() / 'lib' / 'utils' / 'custom-models.ts').read_text(encoding='utf-8')
@@ -59,8 +59,10 @@ def test_the_cdk_surface_lists_match(name):
     assert _strings(CDK, name) == getattr(custom_models, name)
 
 
-def test_every_picker_surface_but_the_web_search_one_is_open_to_a_custom_model():
-    assert tuple(s for s in PICKER_SURFACES if s != WEB_SEARCH_SURFACE) == custom_models.CUSTOM_MODEL_SURFACES
+def test_every_picker_surface_but_the_web_search_one_and_the_product_extract_is_open_to_a_custom_model():
+    """The product extract (7.104.00) asks for adaptive thinking, an effort and a JSON schema: Claude's only."""
+    closed = (WEB_SEARCH_SURFACE, PRODUCT_EXTRACT_SURFACE)
+    assert tuple(s for s in PICKER_SURFACES if s not in closed) == custom_models.CUSTOM_MODEL_SURFACES
 
 
 def test_only_the_assistant_and_the_prototype_builder_parse_no_json():

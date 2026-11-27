@@ -128,8 +128,13 @@ def test_a_resume_at_a_flow_steps_decision_point_records_the_persons_decision(aw
     runs.needs_human(RUN, 'flow:approval', now=90_000)
     runs.resume(RUN, now=90_060, actor='admin-2')
     (decision,) = _rows(table, 'STEP#')
+    # (F1, 7.104.00 review) The decision's time in whole seconds, as the run's resumed_epoch: it covers task ends
+    # through the end of that second (conductor.decided_since states the window).
     assert (decision['step'], decision['record'], decision['by'], decision['at']) == (
         'approval', 'decision', 'admin-2', '1970-01-02T01:01:00Z')
+    resumed = runs.get(RUN)
+    assert resumed is not None
+    assert resumed.resumed_at == 90_060
     # Any other decision point's Resume decides no step.
     runs.needs_human(RUN, 'budget', now=90_100)
     runs.resume(RUN, now=90_200, actor='admin-2')

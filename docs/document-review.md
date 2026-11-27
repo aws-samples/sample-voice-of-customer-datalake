@@ -1,7 +1,7 @@
 # Review a PR/FAQ or PRD: margin comments, persona review, share link
 
 A PR/FAQ or PRD in a project shows its comment threads in the margin, like comments in a word
-processor. The team comments, asks the project's personas to review, and shares a review link with
+processor. The team comments, asks personas to review, and shares a review link with
 people outside the app. Comments, persona review and the link never edit the document, so every
 [way of working with AI](ways-of-working.md) has all of them; **Revise from comments** (below) proposes
 or writes changes only as far as the person's way of working allows. The document itself is shown and
@@ -29,9 +29,18 @@ edited on the [document canvas](document-canvas.md); the threads sit in its side
 
 ## Ask personas to review
 
-**Ask personas to review** (anyone who can edit the project; the document page's toolbar calls it **AI review**) sends this version to up to six of
-the project's personas, three at a time. It is one model call per persona on the `documents`
-surface (the model is set in Administration → AI models). Each persona answers with:
+**Ask personas to review** (anyone who can edit the project; on the document page it is **Persona review**, in the
+toolbar and in the **Review** menu) sends this version to up to six of the project's personas, three at a time. It
+is one model call per persona on the `documents` surface (the model is set in Administration → AI models).
+
+**Who reviews (7.104.00).** The project's own personas, when it has any. A project with none is reviewed by up to six
+of the [company personas](project-workspace.md#company-personas) (the newest first), at the same cost; the company
+library is the one of the project's own scope (a workspace's project reads its workspace's library, a deployment
+project the deployment's), never another workspace's. Before it starts, the button's tooltip and the menu entry say
+that the company's personas will review; afterwards the comment panel says that they did, and the job's result names
+the source (`persona_source`: `project` or `company`). With no persona in the project or the company library, the
+button and the menu entry read **Add personas** and open the project's Personas tab, and the API answers `400` with
+`code: no_personas`. Each persona answers with:
 
 - a **verdict** (positive, mixed or negative, with a short reaction), filed as that persona's
   comment on the whole document, and
@@ -44,7 +53,7 @@ quote). It is an assist job: `POST …/persona-review` answers 202 and the page 
 
 ## Revise from comments
 
-Once threads are answered (resolved, or open with a reply), **Revise from comments** (the toolbar's **AI rewrite**; anyone who can
+Once threads are answered (resolved, or open with a reply), **Revise from comments** (the toolbar's and the Review menu's **Rewrite from comments**; anyone who can
 edit the project) reads them and the document's evidence and suggests changes to the parts the threads
 are about. By default it takes every thread of the series that is resolved or replied to, not yet
 **addressed**, and either on the whole document or whose quote is found in this version; the canvas, an

@@ -26,7 +26,8 @@ export interface McpDelegates {
   feedbackEditLambda: lambda.Function;
   /** voc-integrations-api: `feedback_get_catalogue sources: true` reads GET /sources/status (docs/mcp.md). */
   integrationsLambda: lambda.Function;
-  /** voc-feedback-form-api: `forms_get_results` reads GET /feedback-forms/{id}/results (7.63.00, docs/mcp.md). */
+  /** voc-feedback-form-api: the read-only `forms_` tools (7.63.00's `forms_get_results`; 7.104.00's list, definition,
+   * responses and report) read its GET routes (docs/mcp.md). */
   feedbackFormLambda: lambda.Function;
 }
 

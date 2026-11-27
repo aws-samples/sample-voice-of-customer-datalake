@@ -26,8 +26,8 @@ its own: 7.71.04, 7.71.03's ``set_by`` gone). Since 7.71.03 an issue write whose
 a crash between its claim and its outcome) blocks the run's later ones only until that call is over
 (``STALE_CLAIM_SECONDS``): the labels, which the host adds idempotently, are put again, and the comment, which carries
 the run's marker (``issue_marker``), is looked for on the host first and posted only when the host has none (7.71.04:
-only the connection's own comment ending with the marker, among those updated since that call's claim). The claim row
-is read once before it is taken (7.71.04, ``_earlier``).
+only the connection's own comment ending with the marker; 7.104.00: among the issue's newest comments, whenever the
+call that posted it was claimed). The claim row is read once before it is taken (7.71.04, ``_earlier``).
 
 A pull request opens ready for review (7.50.00, the owner's decision: a person approves it without a "Ready for
 review" click), or as a draft when the run's flow says ``pr: draft`` (META's ``pull_request``, ``RunRecord.draft_pr``);
@@ -155,6 +155,7 @@ from engineering.connectors.write_policy import (
     check_text,
     docs_branch,
     docs_paths,
+    pushed_docs_branch,
 )
 from engineering.run_links import pull_request_link
 from engineering.runtime.outputs import TRIAGE_LABELS
@@ -414,9 +415,9 @@ class Broker:
 
     def _earlier(self, caller: Caller, operation: str, key: str) -> WriteClaim | None:
         """The earlier claim of a write's ``key`` (``write_key``, ``issue_write_key``), read once (7.71.04: what a
-        repeat is answered, ``_answered``, and what an issue write retried after a call that never answered looks for
-        on the host, ``_found_comment``), before the run's, the dial's and the board's checks. The role's permission
-        and the connection still come first."""
+        repeat is answered, ``_answered``, and whether an issue comment retried after a call that never answered is
+        looked for on the host first), before the run's, the dial's and the board's checks. The role's permission and
+        the connection still come first."""
         if not permitted(caller.role, operation):
             raise NotPermitted(f'The {caller.role} role may not {operation.replace("_", " ")}.')
         if self._connector is None:
@@ -437,7 +438,7 @@ class Broker:
         the pull request; once per run on its issue (7.71.02, ``issue_write_key``: a later caller, another
         understander, gets the first comment's URL back). A comment on the issue carries the run's marker
         (``issue_marker``, 7.71.03), so a later call whose earlier one has no outcome finds it on the host
-        (``_found_comment``), and posts only when the host has none."""
+        (``RepositoryHost.issue_comment``), and posts only when the host has none."""
         issue = on == 'issue'
         key = issue_write_key(number, POST_COMMENT) if issue else write_key(caller, attempt, POST_COMMENT, on, number,
                                                                             body)
@@ -459,10 +460,13 @@ class Broker:
             _wrote(caller, POST_COMMENT, run, on=on, number=number)
             return {'url': url}
 
+        def found() -> dict[str, object] | None:
+            url = connector.host.issue_comment(run.connection_id, number, marker)
+            return None if url is None else {'url': url}
+
         # (an earlier call on the issue that never answered, ``_answered`` having taken any other: what it wrote is
         # looked for on the host before anything is posted, once its claim is taken again)
-        made = (_found_comment(connector, run, number, marker, earlier.at)
-                if issue and earlier is not None and earlier.state != WRITE_REFUSED else None)
+        made = found if issue and earlier is not None and earlier.state != WRITE_REFUSED else None
         return str(_once(connector, caller, POST_COMMENT, key, comment, made)['url'])
 
     def label_issue(self, caller: Caller, number: int, labels: tuple[str, ...], attempt: int = 1) -> tuple[str, ...]:
@@ -710,9 +714,12 @@ class Broker:
         if opened is not None:
             _docs_repeated(connection, request.kind, recorded.version)
             return {**opened, 'repeated': True}
-        # (7.71.04) The branch a push already made is on (its claim's: before 7.71.04 two levels), else the kind's own.
+        # (7.71.04) The branch a push already made is on (its claim's: before 7.71.04 two levels), else the kind's own;
+        # (7.104.00, S2) a claim's branch only when it is the kind's own at this version, at one level or two.
         pushed_before = _earlier_done(claims, connection, key(PUSH_BUNDLE))
-        branch = str((pushed_before or {}).get('branch') or docs_branch(request.kind, recorded.version))
+        claimed = str((pushed_before or {}).get('branch') or '')
+        branch = (pushed_docs_branch(claimed, request.kind, recorded.version) if claimed
+                  else docs_branch(request.kind, recorded.version))
         default, run, ci = _docs_write_checks(connector, request, branch)
         commit = Commit(docs_commit_message(request.kind, recorded.version, recorded.digest), AUTHOR, AUTHOR,
                         tuple(FileChange(file.path, '100644', file.content) for file in rendering.files))
@@ -1051,11 +1058,6 @@ def issue_marker(run_id: str) -> str:
     return f'<!-- voc-engineering-run:{run_id} -->'
 
 
-#: (7.71.04) How long before an earlier issue comment's claim its look on the host starts (``_found_comment``): the
-#: call posted it after its claim, and the host's clock and the broker's may differ a little.
-CLAIM_CLOCK_MARGIN_SECONDS: Final = 60
-
-
 def _issue_key(key: str) -> bool:
     return key.startswith('issue#')
 
@@ -1068,20 +1070,6 @@ def _unknown(key: str) -> str:
 #: What an issue write retried after an earlier call with no outcome looks for first (7.71.03): that call's write on
 #: the host (its answer, the claim then closed done), None when the host has none.
 Made = Callable[[], dict[str, object] | None]
-
-
-def _found_comment(connector: Connector, run: RunRecord, number: int, marker: str, claimed_at: int) -> Made:
-    """The look for the run's comment on its issue ``number`` that an earlier call, which claimed it at
-    ``claimed_at`` and never heard back, may have posted (7.71.03): the connection's own comment ending with
-    ``marker`` (7.71.04: ``RepositoryHost.issue_comment``), among those updated since that claim
-    (``CLAIM_CLOCK_MARGIN_SECONDS`` before it), so the pages read are the ones that can hold it."""
-    since = max(0, claimed_at - CLAIM_CLOCK_MARGIN_SECONDS)
-
-    def made() -> dict[str, object] | None:
-        url = connector.host.issue_comment(run.connection_id, number, marker, since)
-        return None if url is None else {'url': url}
-
-    return made
 
 
 def _once(connector: Connector, caller: Caller, operation: str, key: str,

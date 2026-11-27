@@ -49,6 +49,9 @@ import { handlePersonaRoutes } from './mock-personas.js';
 import { focusGroupEvents, handleFocusGroupRoutes } from './mock-focus-groups.js';
 import { handleValidationRoutes } from './mock-validation.js';
 import { handleVoiceRoutes, handleVoiceUpgrade } from './mock-voice.js';
+import {
+  advanceProductDocs, handleProductSourceRoutes, isTwinRead, markPersonFields, productDocRow,
+} from './mock-product-sources.js';
 import { radarBrandError } from './mock-radar-brands.js';
 import {
   attributeFilterOf, dimensionsConfig, entityExtras, handleDimensionRoutes, seedDimensionFixtures, sourceProfiles,
@@ -59,9 +62,9 @@ import { corpusFeedback } from './mock-feedback-corpus.js';
 import { problemTree } from './mock-problems.js';
 import { facetedMetric, seedUsefulness, withoutParams } from './mock-facets.js';
 import { callerAccess, handleScopeRoutes, scopeAdmits, scopedCategoriesConfig, scopedMetric } from './mock-scope.js';
-import { handleProjectActionRoutes, startProjectAssistJob } from './mock-project-actions.js';
+import { handleProjectActionRoutes, startMockProjectJob, startProjectAssistJob } from './mock-project-actions.js';
 import { humanMethodology, projectMethodology, workflowMethodologyWarnings } from './mock-methodology.js';
-import { handleCompanyPersonaRoutes } from './mock-company-personas.js';
+import { companyLibraryPersonas, handleCompanyPersonaRoutes } from './mock-company-personas.js';
 import { handleDocumentReviewRoutes } from './mock-document-review.js';
 import { handleLibraryRoutes } from './mock-library.js';
 import { handleAssistJobRoutes, startOwnerAssistJob } from './mock-assist-jobs.js';
@@ -370,6 +373,7 @@ function mockModelAccess(modelId) {
 const mockSurfaceDefaults = {
   chat: 'global.anthropic.claude-sonnet-5-5',
   documents: 'global.anthropic.claude-sonnet-5-5',
+  product_extract: 'global.anthropic.claude-sonnet-5-5',
   prototype: 'global.anthropic.claude-opus-5-5',
   enrichment: 'global.anthropic.claude-haiku-5-5',
   utility: 'global.anthropic.claude-sonnet-5-5',
@@ -708,6 +712,8 @@ const handlers = {
       default_id: defaultId,
       selected: mockModelSurfaces[key] ?? null,
       allowlist: key === WEB_SEARCH_SURFACE ? 'web_search' : 'claude',
+      // shared/model_config.py keeps_own_default: the product extract and the web search surface keep their own default.
+      own_default: key === WEB_SEARCH_SURFACE || key === 'product_extract',
     })),
     model_id: null,
     // The model pinned at deploy (SETTINGS#model_default, 7.01.00): none, as a deployment without -c defaultModelId.
@@ -1523,6 +1529,10 @@ function handleDomainModules(req, res, url) {
     mockFeedbackForms, mockFormStats, mockProjectDetails, mockProductJobs,
     attributeFilterOf, sourceProfiles, dimensionsConfig, startOwnerAssistJob, startProjectAssistJob,
     mockProjectSharing, mockCaller: MOCK_CALLER, mockUsers, mockSub,
+    // (7.104.00: the Product tab's sources, extract and proposals, mock-product-sources.js)
+    mockProductDocs, getProductContext, startMockProjectJob,
+    // (7.104.00: a persona review of a project without personas asks the company library's, mock-document-review.js)
+    companyLibraryPersonas,
   };
   // (the Documents Library first: `/projects/library…` and its upload target `/mock-upload/library/…` are its own,
   // never a project's id or a product doc's upload)
@@ -1541,6 +1551,8 @@ function handleDomainModules(req, res, url) {
     || handleCompanyPersonaRoutes(req, res, url, send, shared)
     // (7.69.00: voice sessions and `/projects/voice/usage`, before the persona routes and any project-id route)
     || handleVoiceRoutes(req, res, url, send, shared)
+    // (7.104.00: the Product tab's links, answers, extract and proposals, before any project-id route)
+    || handleProductSourceRoutes(req, res, url, send, shared)
     || handlePersonaRoutes(req, res, url, send, shared)
     || handleFocusGroupRoutes(req, res, url, send, shared)
     || handleValidationRoutes(req, res, url, send, shared)
@@ -2603,7 +2615,7 @@ function handleProjectSharing(method, projectId, rest, body, params) {
 // exercisable against the mock.
 
 const emptyProductContext = () => ({
-  product_name: '', one_liner: '', target_users: '', problem_solved: '',
+  product_name: '', one_liner: '', product_summary: '', target_users: '', problem_solved: '',
   current_state: '', key_features: '', differentiators: '',
   known_limitations: '', non_goals: '', success_metrics: '', free_form_notes: '',
 });
@@ -4290,8 +4302,9 @@ const server = http.createServer((req, res) => {
   // browser's preflight rejects them before they reach this server.
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
   // X-Workspace-Id: the current workspace, sent on every call inside one (mock-workspaces.js). If-None-Match: the
-  // Documents Library's presigned PUT (written once, mock-library.js).
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Workspace-Id, If-None-Match');
+  // Documents Library's presigned PUT (written once, mock-library.js). x-amz-checksum-sha256: a product source's
+  // PDF, DOCX or PPTX PUT (its signed checksum, 7.104.00).
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Workspace-Id, If-None-Match, x-amz-checksum-sha256');
   res.setHeader('Content-Type', 'application/json');
 
   if (req.method === 'OPTIONS') {
@@ -4502,6 +4515,8 @@ const server = http.createServer((req, res) => {
             context[field] = body[field];
           }
         }
+        // field_meta: the form's saves are a person's (7.104.00; GET …/product-proposals/latest answers it).
+        markPersonFields(projectId, body, MOCK_CALLER.sub);
         sendJson(res, 200, { context });
       });
       return;
@@ -4512,7 +4527,8 @@ const server = http.createServer((req, res) => {
 
   // Product docs: list / presigned upload / delete (issue #179). The
   // "presigned URL" points back at this mock (/mock-upload/...), where the
-  // PUT flips the doc from pending to ready.
+  // PUT flips the doc from pending to ready. The 7.104.00 source routes (links,
+  // answers, …/uploaded, …/refresh) are mock-product-sources.js's.
   const productDocsMatch = url.pathname.match(/^\/projects\/([^/]+)\/product-docs(?:\/([^/]+))?$/);
   if (productDocsMatch) {
     const projectId = productDocsMatch[1];
@@ -4523,6 +4539,7 @@ const server = http.createServer((req, res) => {
     }
     const docs = mockProductDocs[projectId] ?? (mockProductDocs[projectId] = []);
     if (req.method === 'GET' && !docSegment) {
+      advanceProductDocs(docs);
       sendJson(res, 200, { docs });
       return;
     }
@@ -4532,19 +4549,30 @@ const server = http.createServer((req, res) => {
           sendJson(res, 400, { success: false, error: 'filename is required' });
           return;
         }
+        const contentType = typeof body.content_type === 'string' ? body.content_type : 'application/octet-stream';
+        // A PDF, DOCX or PPTX declares its SHA-256 (hex), which the server signs into the PUT as S3's checksum header
+        // (api/product_context.py create_upload_url); without one it is refused.
+        const sha256 = typeof body.sha256 === 'string' && /^[0-9a-fA-F]{64}$/.test(body.sha256) ? body.sha256.toLowerCase() : null;
+        if (isTwinRead(contentType) && sha256 === null) {
+          sendJson(res, 400, { success: false, error: 'sha256 must be 64 hexadecimal characters' });
+          return;
+        }
         const docId = nextMockId('doc');
-        docs.push({
+        // Every source carries the nine 7.104.00 fields (mock-product-sources.js productDocRow).
+        docs.push(productDocRow({
           doc_id: docId, filename: body.filename,
-          content_type: typeof body.content_type === 'string' ? body.content_type : 'application/octet-stream',
+          content_type: contentType,
           size_bytes: Number.isFinite(body.size_bytes) ? body.size_bytes : 0,
-          status: 'pending', error: null, extracted_chars: 0,
-          created_at: new Date().toISOString(),
-        });
+          status: 'pending',
+        }));
+        const checksum = isTwinRead(contentType) && sha256 !== null
+          ? { 'x-amz-checksum-sha256': Buffer.from(sha256, 'hex').toString('base64') }
+          : {};
         res.writeHead(200);
         res.end(JSON.stringify({
           doc_id: docId,
           presigned_url: `http://${req.headers.host}/mock-upload/${projectId}/${docId}`,
-          headers: { 'Content-Type': typeof body.content_type === 'string' ? body.content_type : 'application/octet-stream' },
+          headers: { 'Content-Type': contentType, ...checksum },
         }));
       });
       return;
@@ -4575,8 +4603,13 @@ const server = http.createServer((req, res) => {
         sendJson(res, 404, { success: false, error: 'Upload target not found' });
         return;
       }
-      doc.status = 'ready';
-      doc.extracted_chars = bytes; // bytes ≈ chars is close enough for a mock
+      // A PDF, DOCX or PPTX waits for its POST …/uploaded (the twin reads it, mock-product-sources.js); MD, TXT
+      // and images are read by the S3 extractor, which the PUT stands for here.
+      if (!isTwinRead(doc.content_type)) {
+        doc.status = 'ready';
+        doc.extracted_chars = bytes; // bytes ≈ chars is close enough for a mock
+        doc.method = doc.content_type.startsWith('image/') ? 'model' : 'text';
+      }
       sendJson(res, 200, { success: true });
     });
     return;

@@ -1,13 +1,18 @@
 """Guard test for the Python version, mirrored in `.python-version` and the CDK.
 
-The repo root's `.python-version` decides which interpreter CI runs on — both
-`.github/workflows/*.yml` resolve it via `actions/setup-python`'s
-`python-version-file`. The CDK stacks under `lib/` independently declare
+The repo root's `.python-version` decides which interpreter CI runs on — every
+`.github/workflows/*.yml` that sets up Python (the quality gates, whose py lane
+runs the full pytest suite, the MCP backend tests, the event-logging guard and
+the dependency audit; 7.104.00) resolves it via `actions/setup-python`'s
+`python-version-file`, and `test_every_workflow_takes_the_interpreter_from_the_file`
+below holds them to it. ruff and pyright keep 3.12 as their static target
+(ruff.toml, pyrightconfig.json), the local tooling floor, which no workflow
+installs. The CDK stacks under `lib/` independently declare
 `lambda.Runtime.PYTHON_3_*`, which decides which interpreter the deployed
 Lambdas actually execute on.
 
-Nothing tied the two together. Bumping `.python-version` to 3.15 while the
-stacks still deploy 3.14 leaves every check green — CI passes on an interpreter
+Nothing tied the two together. Bumping `.python-version` to 3.16 while the
+stacks still deploy 3.15 leaves every check green — CI passes on an interpreter
 no Lambda runs, and every Lambda runs an interpreter nothing tested. The bump in
 the other direction is worse: raising the CDK runtime with CI left behind means
 the first evidence of an incompatibility is a production invocation.
@@ -40,17 +45,18 @@ def _voc_root() -> Path:
 
 
 # `.python-version` is at the REPOSITORY root, one level above voc-datalake/ —
-# which is why both workflows reference it unprefixed while every other path
+# which is why the workflows reference it unprefixed while every other path
 # they use is `voc-datalake/`-prefixed.
 _PYTHON_VERSION_FILE = _voc_root().parent / '.python-version'
 _CDK_DIR = _voc_root() / 'lib'
+_WORKFLOWS_DIR = _voc_root().parent / '.github' / 'workflows'
 
 
 def _declared_ci_version() -> str | None:
     """The `major.minor` in `.python-version`, or None if unreadable.
 
-    A patch-qualified value (`3.14.7`) is truncated to `major.minor`, since that
-    is the granularity a Lambda runtime has — `PYTHON_3_14` names no patch.
+    A patch-qualified value (`3.15.2`) is truncated to `major.minor`, since that
+    is the granularity a Lambda runtime has — `PYTHON_3_15` names no patch.
     """
     if not _PYTHON_VERSION_FILE.exists():
         return None
@@ -85,8 +91,8 @@ class TestPythonRuntimeMirror:
     def test_the_ci_interpreter_is_declared_and_parses(self):
         """The positive control for the `.python-version` side."""
         assert _PYTHON_VERSION_FILE.exists(), (
-            f'.python-version moved: {_PYTHON_VERSION_FILE}. Both GitHub workflows '
-            "resolve CI's interpreter from it via setup-python's python-version-file, "
+            f'.python-version moved: {_PYTHON_VERSION_FILE}. Every GitHub workflow that sets '
+            "up Python resolves CI's interpreter from it via setup-python's python-version-file, "
             'so a move breaks them before any test runs.'
         )
         assert _declared_ci_version() is not None, (
@@ -129,3 +135,21 @@ class TestPythonRuntimeMirror:
             'in the same change, and check the runtime is actually available in Lambda '
             'before raising it.'
         )
+
+    def test_every_workflow_takes_the_interpreter_from_the_file(self):
+        """Every setup-python step reads `.python-version`, none names a version.
+
+        A workflow pinned to another version (the quality gates were on 3.12 until
+        7.104.00) would run its tests on an interpreter no Lambda runs, which the
+        equality above cannot see.
+        """
+        steps = pinned = 0
+        for workflow in sorted(_WORKFLOWS_DIR.glob('*.yml')):
+            text = workflow.read_text()
+            steps += len(re.findall(r'uses:\s*actions/setup-python@', text))
+            pinned += len(re.findall(r'^\s*python-version-file:\s*\.python-version\s*$', text, re.MULTILINE))
+            assert not re.findall(r'^\s*python-version:', text, re.MULTILINE), (
+                f'{workflow.name} names a Python version: use python-version-file: .python-version'
+            )
+        assert steps >= 4, f'found {steps} setup-python steps under {_WORKFLOWS_DIR} — parser drift?'
+        assert pinned == steps

@@ -50,7 +50,9 @@ _FORM_DRAFT_TAGS = ('form_brief', 'current_form')
 _FORM_REPORT_TAGS = ('form_answers',)
 # The Validate step (7.68.00, shared/validation_ai.py): the criteria and tasks, and the real testers' results.
 _VALIDATION_TAGS = ('validation_script', 'validation_results')
-EVERY_TAG = (*_FIRST_TAGS, *_PROTOTYPE_TAGS, *_FORM_DRAFT_TAGS, *_FORM_REPORT_TAGS, *_VALIDATION_TAGS)
+# The product description in the PRD / PR-FAQ / prototype prompts (7.104.00, api/product_context.py).
+_PRODUCT_TAGS = ('product_context',)
+EVERY_TAG = (*_FIRST_TAGS, *_PROTOTYPE_TAGS, *_FORM_DRAFT_TAGS, *_FORM_REPORT_TAGS, *_VALIDATION_TAGS, *_PRODUCT_TAGS)
 
 class TestEveryDataBlockTagIsFenced:
     def test_the_tag_tuple_is_exactly_this_in_this_order(self):

@@ -421,6 +421,31 @@ def test_a_mark_committed_during_the_turn_offs_stops_the_rest(world, turn_offs, 
     assert due_trials(world.workspaces, later) == []
 
 
+@pytest.mark.parametrize(('turn_offs', 'off'), [(1, {'plugins': 1, 'forms': 0}), (2, {'plugins': 2, 'forms': 0})],
+                         ids=['a-plugin-next', 'a-form-next'])
+def test_a_workspace_deactivated_during_the_turn_offs_ends_the_pause_as_not_active(world, turn_offs, off):
+    """Q6 (7.104.00): the turn-off's check of ``META`` refuses a workspace that stopped being active (its deletion
+    began) as it refuses a trial that changed; 7.71.04 answered both 409 ``trial_changed``, so the tick counted a
+    deleting workspace's pause as failed. One read of ``META`` tells them apart: nothing more to do, ``not_active``,
+    with what was turned off until then."""
+    turn_off = trial_pause.set_trial_plugin
+    done: list[str] = []
+
+    def then_deactivated(*args, **kwargs):
+        changed = turn_off(*args, **kwargs)
+        done.append(args[2])
+        if len(done) == turn_offs:
+            world.workspaces.update_item(Key={'pk': f'WS#{WS}', 'sk': 'META'}, UpdateExpression='SET #s = :d',
+                                         ExpressionAttributeNames={'#s': 'status'},
+                                         ExpressionAttributeValues={':d': 'deleting'})
+        return changed
+
+    with patch.object(trial_pause, 'set_trial_plugin', side_effect=then_deactivated):
+        assert pause(world.tables, WS, AFTER_END) == {'outcome': NOT_ACTIVE, **off}
+    assert len(_enabled(world)) == 2 - off['plugins']
+    assert (_form(world, 'live')['enabled'], _form(world, 'legacy')['enabled']) == (True, True)
+
+
 def test_a_mark_committed_just_before_a_turn_off_commits_refuses_it(world):
     """C4 (7.71.04): 7.71.03 read the rev before each turn-off, so a mark committed between that read and the turn-off
     was not seen, and that turn-off undid what the extension had just turned on. The check is in the turn-off's own

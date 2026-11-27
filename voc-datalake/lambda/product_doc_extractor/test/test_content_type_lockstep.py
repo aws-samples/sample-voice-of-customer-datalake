@@ -1,4 +1,10 @@
-"""The extractor's content-type maps must cover exactly the upload boundary's set.
+"""The extractor's content-type maps must cover exactly the upload boundary's S3-path set.
+
+Since 7.104.00 the boundary (api/product_context.py ``UPLOAD_CONTENT_TYPES``) has two halves: the
+uploads this handler reads, keyed under product_docs/raw/ (``ALLOWED_CONTENT_TYPES``: images and
+Markdown / text), and the PDF, DOCX and PPTX the projects API's assist twin reads, keyed under
+product_docs/source/ where this handler never looks (shared/product_sources.py
+``SOURCE_CONTENT_TYPES``). The lockstep below is with the first half only; the second is held apart.
 
 `handler.py` splits the processable types across two module constants —
 `TEXT_CONTENT_TYPES` (a decode is the whole extraction) and
@@ -22,8 +28,9 @@ reaches powertools and boto3 through `shared/`), but a TEST can — the same
 approach `test_default_model_lockstep.py` takes for the model default, which is
 why the pattern is already established next door.
 """
-from api.product_context import ALLOWED_CONTENT_TYPES
+from api.product_context import ALLOWED_CONTENT_TYPES, UPLOAD_CONTENT_TYPES
 from product_doc_extractor.handler import CONVERSE_IMAGE_FORMATS, TEXT_CONTENT_TYPES
+from shared.product_sources import SOURCE_CONTENT_TYPES
 
 
 class TestProcessableContentTypesLockstep:
@@ -40,6 +47,13 @@ class TestProcessableContentTypesLockstep:
             'with "This file type cannot be processed."; the second is dead code '
             'that reads as support. Change both, in the same commit.'
         )
+
+    def test_the_twins_types_are_the_boundarys_rest_and_none_of_this_handlers(self):
+        """The S3-path subset is the boundary less exactly the twin's types, and this handler lists none of them: a
+        PDF here would be a second reader of an object nothing routes to it."""
+        assert set(UPLOAD_CONTENT_TYPES) - set(SOURCE_CONTENT_TYPES) == set(ALLOWED_CONTENT_TYPES)
+        assert not (set(TEXT_CONTENT_TYPES) | set(CONVERSE_IMAGE_FORMATS)) & set(SOURCE_CONTENT_TYPES)
+        assert SOURCE_CONTENT_TYPES
 
     def test_the_two_halves_do_not_overlap(self):
         """`_process_record` tests text first, so an overlap would route an image

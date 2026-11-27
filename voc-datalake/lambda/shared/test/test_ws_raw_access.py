@@ -178,12 +178,13 @@ LAYER_MODULE: Final = 'shared.ws_repo'
 #: ``VOICEUSE#`` (the month's minutes and the live set), ``VOICEDAY#`` and ``VOICERATE#`` (a person's day and minute)
 #: are the voice sessions' (since 7.69.00): only shared/voice_sessions.py spells them, and they move with projects.
 #: ``AGENT_REGISTRY`` is a workspace's registry of its agents' partitions (since 7.80.00): only the layer spells it
-#: (``agent_registry_pk``).
+#: (``agent_registry_pk``). ``PRODUCTURL#`` is a project's and a person's link reads a day, ``PRODUCTFILE#`` a
+#: person's file reads a day (since 7.104.00): only shared/product_sources.py spells them, and they move with projects.
 UNSCOPED_KEY_PREFIXES: Final = ('SOURCE#', 'METRIC#', 'DATE#', 'CATEGORY#', 'URGENCY#', 'CHANNEL#', 'SOURCE_RUN#',
                                 'raw/', 'silver/', 'PROJECT#', 'TYPE#PROJECT', 'PROJECT_ID#', 'DOCUMENT_VERSIONS#',
                                 'STATUS#', 'LIST#', 'PERSON#', 'EMAIL#', 'LISTS', 'PEOPLE', 'DCOMMENTS#', 'DCRATE#',
                                 'DOCSHARE#', 'LIBRARY', 'library/', 'VOICE#', 'VOICEUSE#', 'VOICEDAY#', 'VOICERATE#',
-                                'AGENT_REGISTRY')
+                                'AGENT_REGISTRY', 'PRODUCTURL#', 'PRODUCTFILE#')
 #: The layer's claim writer (``claim_project_id``) and the one module that may call it: the project create.
 CLAIM_WRITER: Final = ('claim_project_id', frozenset({'lambda/shared/project_writes.py'}))
 #: The layer's review link route writer (``route_share_id``, since 7.37.00) and the one module that may call it: the
@@ -270,8 +271,10 @@ ALLOWED: Final[dict[str, tuple[int, dict[str, int]]]] = {
     # module-level voc-feedback and voc-aggregates the views are taken of. batch: a page's full items, its keys
     # checked by `WorkspaceTable.check_keys` in a workspace (`WorkspaceTable.batch_get_item` can take it over).
     'lambda/api/metrics_handler.py': (2, {'Table': 2, 'batch': 1, 'meta.client': 1}),
+    # 7.104.00: 2 accessor calls fewer: the product context's first write and an upload's record are put by their
+    # stores now (shared/product_proposals.py ``write_context``, shared/product_sources.py ``put_source``).
     'lambda/api/product_context.py': (3, {'generate_presigned_url': 1, 'get_projects_table': 1,
-                                          'project accessor(workspace=None)': 4}),
+                                          'project accessor(workspace=None)': 2}),
     # transact: 2, one of them the client's method kept as `transact` and called later.
     # voc-wiki's prototype builder (merged in 7.33.00): projects.py's prototype store reads the pin forms' table
     # (get_aggregates_table), projects_handler.py's prototype routes read the projects table five more times.
@@ -469,7 +472,9 @@ ALLOWED: Final[dict[str, tuple[int, dict[str, int]]]] = {
         2, {'CATEGORY#': 1, 'CHANNEL#': 1, 'DATE#': 1, 'SOURCE#': 1, 'URGENCY#': 1}),
     # The low-level client (``.meta.client``: transactions and batch reads) and getter references, counted since
     # 7.00.00 (ported from 6.14.00's audit). Phase 0: stays raw by design (the control plane, the handle plumbing).
-    'lambda/shared/aws.py': (0, {'meta.client': 1}),
+    # 7.104.00 (review round 1, Q4/F4): ``count_once``, the one rate-limit counter, counts several counters in one
+    # TransactWriteItems (all or none) on the table it is handed; the caller's table decides the scope.
+    'lambda/shared/aws.py': (0, {'meta.client': 2, 'transact': 1}),
     'lambda/shared/persona_feedback_preview.py': (2, {'meta.client': 1}),
     'lambda/shared/request_workspace.py': (0, {'cached_table': 1}),
     'lambda/shared/workspace_plugin_settings.py': (0, {'meta.client': 1, 'transact': 1}),
@@ -525,6 +530,18 @@ ALLOWED: Final[dict[str, tuple[int, dict[str, int]]]] = {
                                                        'project accessor(workspace=None)': 3}),
     'lambda/shared/validation_documents.py': (3, {'project accessor(workspace=None)': 1}),
     'lambda/shared/library_worker.py': (3, {'get_projects_table': 1}),
+    # The Product tab's sources (7.104.00, docs/project-workspace.md): their store, the deployment's until projects move
+    # (every key takes the workspace, every entry point refuses one: PRODUCT_SOURCES_STORE): the projects table, a
+    # source's text put at its derivable key, and the reads' counters, a project's and a person's link reads a day
+    # (PRODUCTURL#) and a person's file reads (PRODUCTFILE#, 7.104.00 round 1), kept 2 days; the routes' voc-aggregates
+    # handle for those counters.
+    'lambda/shared/product_sources.py': (3, {'PRODUCTFILE#': 1, 'PRODUCTURL#': 1, 'get_projects_table': 1,
+                                             'put_object': 1}),
+    'lambda/shared/product_source_routes.py': (3, {'get_aggregates_table': 1}),
+    # The Product tab's extract and proposals (7.104.00): the routes' voc-projects handle (the project's proposals,
+    # its context and its lock) and the extract limits' counters in voc-aggregates, the deployment's until projects
+    # move (3h).
+    'lambda/shared/product_proposal_routes.py': (3, {'get_aggregates_table': 1, 'get_projects_table': 1}),
     # The voice sessions (7.69.00, docs/voice-personas.md): their keys' one spelling (a session's own partition, the
     # month's usage, the live set, a person's day and minute: the deployment's until projects move), a session's
     # evidence put in scratch/, and the routes' handles (the project's persona and pointer rows, the deployment's

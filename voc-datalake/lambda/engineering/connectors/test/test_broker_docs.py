@@ -305,6 +305,23 @@ def test_docs_pushed_on_a_two_level_branch_open_their_pull_request_from_it() -> 
     assert world.host.ci_checks == [('conn-1', 'main', TWO_LEVEL)]
 
 
+@pytest.mark.parametrize('branch', ['main', 'voc-agent/01JD3R4NZXQ7Y2W8K4M6P9T0AB-fix', 'voc-agent/docs-knowledge-v4',
+                                    'voc-agent/docs/tenets-v3', 'voc-agent/docs-knowledge-v3/x',
+                                    'voc-agent/docs/knowledge-v3\n'],
+                         ids=['default-branch', 'a-runs-branch', 'another-version', 'another-kind', 'deeper',
+                              'newline'])
+def test_a_push_claim_naming_any_other_branch_opens_no_pull_request(branch: str) -> None:
+    # (S2, 7.104.00) The branch read back from the push claim is the docs write's own of this kind at this version, at
+    # one level (voc-agent/docs-<kind>-v<n>) or the two of 7.52.00-7.71.03, matched whole before any pull request
+    # opens from it: only the broker writes that claim, and a reader of it still checks.
+    world = World()
+    world.claims.claims[_claim_key('push_bundle')] = WriteClaim(WRITE_DONE, {
+        'branch': branch, 'tree_hash': TREE, 'base': BASE, 'ci': {}})
+    with pytest.raises(WriteRefused, match='no pull request opens from it'):
+        world.broker.push_approved_docs(START, request())
+    assert world.host.calls == []
+
+
 def test_a_write_whose_outcome_is_unknown_is_never_made_again() -> None:
     world = World()
     world.broker.push_approved_docs(START, request())
@@ -409,6 +426,18 @@ def test_the_docs_paths_and_branches_are_the_write_policys() -> None:
     for kind, version in (('code', 1), ('knowledge', 0), ('tenets', -1)):
         with pytest.raises(WriteRefused):
             docs_branch(kind, version)
+    # (S2, 7.104.00) A push claim's branch, read back: the kind's own at its version, one level or two (F2, 7.104.00
+    # review: compared whole with those two names, no pattern), and nothing else.
+    from engineering.connectors.write_policy import pushed_docs_branch
+    assert [pushed_docs_branch(branch, 'knowledge', 12) for branch in (
+        'voc-agent/docs-knowledge-v12', 'voc-agent/docs/knowledge-v12')] == [
+        'voc-agent/docs-knowledge-v12', 'voc-agent/docs/knowledge-v12']
+    for branch in ('voc-agent/docs-knowledge-v012', 'voc-agent/docs-knowledge-v1', 'voc-agent/docs/tenets-v12',
+                   'voc-agent/docs/knowledge-v12/x', 'voc-agent/docs/knowledge-v12\n', 'docs/knowledge-v12', ''):
+        with pytest.raises(WriteRefused, match='no pull request opens from it'):
+            pushed_docs_branch(branch, 'knowledge', 12)
+    with pytest.raises(WriteRefused, match='knowledge or tenets'):   # (a kind or version the docs write has not)
+        pushed_docs_branch('voc-agent/docs/code-v12', 'code', 12)
 
 
 def test_an_agent_reads_the_tenets_through_the_read_operation() -> None:

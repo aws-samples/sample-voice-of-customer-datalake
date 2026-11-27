@@ -46,8 +46,15 @@ A child run (7.51.00: a person's Resume of an ended run) takes the steps its par
 (``BoardState.inherited``), never a quality gate's: a gate judges again in the run whose patch it judges.
 
 A person's decision on a step (a Resume of the run at that step's decision point, ``runs.RunStore.resume``) passes a
-human decision point or a stopped step, and gives a blocked step one more try (each decision one more failed task;
-on a step after a map, one more on each shard, so one decision retries every shard that failed once).
+human decision point or a stopped step, and gives a blocked step another try: since 7.104.00 a step is blocked only by
+a task that ended without being done after its latest decision (``decided_since``: a task's ``updated_at`` never moves
+once it has ended), so one decision covers every failed task the step had when it was decided, on every shard after a
+map, a gate's or a board's two at a person included, and a decision recorded before 7.104.00 too (7.71.04 counted one
+failed task per decision). A task that ends unfinished after the second the decision was recorded in blocks the step
+again, on its own shard too (``decided_since`` states the window and why it is accepted).
+After a decision the step is ready again, its task at a person posted again by the Resume itself
+(``runtime/step_retry.py``): the conductor's plan says nothing more of it (7.104.00: 7.71.04's ``RETRY`` reason, which
+told the coordinator to post it, repeated that post).
 Several ways at once are followed together; a step after a join waits for every way that was taken. The flow has
 finished when no step is live and an end was reached.
 """
@@ -56,11 +63,13 @@ from __future__ import annotations
 from collections import deque
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from typing import Any, Final
 
 from engineering.board.store import COORDINATOR
 from engineering.flow.ledger import FINAL_GO_ROLE
 from engineering.flow.ledger import GATE_RUNNER_ROLE as GATE_RUNNER
+from shared.timestamps import parse_iso
 from shared.workflow_engineering import NODE_STOP_AT_PR, SCHEMA_V2
 
 #: A quality gate step's verdict, as the GO ledger reads it (``flow/ledger.py``; ``record.py`` reads it for the
@@ -100,10 +109,6 @@ NOT_RUN: Final = {
     'learning_loop': "a flow's learning loop is not run yet: the flow goes on (the run's retrospective still runs "
                      'at its end)',
 }
-#: (7.71.04) A step ready again after a person's decision on it (a task of it ended without being done): what the
-#: coordinator does there, which the live Bug fixer run's coordinator read as the person's to do and did not.
-RETRY: Final = ('a person decided to try this step again: post its task again as it was (naming the same patch) and '
-                'launch its agent')
 #: Where a flow's ``stop_at_pr`` ends it, as the run's pull request opens (``BoardState.draft_pr``).
 PR_END: Final = {False: 'the flow ends at the pull request, ready for review',
                  True: 'the flow ends at the draft pull request'}
@@ -243,8 +248,10 @@ class BoardState:
     fanned_out: Mapping[str, tuple[str, ...]] = field(default_factory=dict)
     #: The steps the run coordinator recorded done itself (its own agent steps, a closed board).
     completed: frozenset[str] = frozenset()
-    #: A person's decisions on each step (each Resume at its decision point).
-    decisions: Mapping[str, int] = field(default_factory=dict)
+    #: The steps a person decided (a Resume at the step's decision point), each with the latest task end its latest
+    #: decision covers (``decided_until``; None when none of its times reads): a task of it that ended without being
+    #: done by then is covered (``decided_since``).
+    decisions: Mapping[str, datetime | None] = field(default_factory=dict)
     #: The run's task cap is reached (a board ``until: caps`` closes only then).
     cap_reached: bool = False
     #: Each quality gate step's verdict, as the GO ledger reads it (``go``, ``no_go``; ``unread`` where the reader
@@ -280,10 +287,41 @@ class _Tally:
     failures: int
 
 
-def _tally(tasks: Sequence[StepTask]) -> _Tally:
+def decided_until(at: str | int) -> datetime | None:
+    """The latest task end a person's decision covers (``decided_since``): the end of the second it was recorded in.
+    ``at`` is a board time (a decision row's, ISO 8601; one without a zone read as UTC) or whole epoch seconds (a
+    Resume's ``resumed_epoch``; 0: none). None when ``at`` does not read."""
+    if isinstance(at, str):
+        moment = parse_iso(at)
+    else:
+        moment = datetime.fromtimestamp(at, UTC) if at > 0 else None
+    return None if moment is None else moment.replace(microsecond=999_999)
+
+
+def decided_since(decided: datetime | None, at: str) -> bool:
+    """A person's decision covering task ends until ``decided`` (``decided_until``; None: none) came at or after the
+    board time ``at`` (a task's ``updated_at``, which never moves once the task has ended): the rule both for a step's
+    decision covering its failed tasks (7.104.00) and for a Resume reopening a done coordinate task
+    (``runtime/board_bus.py``). Never for a time that does not parse.
+
+    The accepted window: a decision is recorded in whole seconds (its row's ``at`` and the run's ``resumed_epoch``,
+    ``RunStore.resume``) and covers through the end of its second, so a task that ends without being done after the
+    decision, within the rest of that second, is covered as if it had ended before it and does not block its step (its
+    shard) again. Accepted because a run's agents are held while it waits at a person, and a Resume's
+    ``signal_detailed`` resumes them before the decision is recorded (``runtime/handler.py`` ``signal_action``): only
+    an agent that Resume itself has just continued could end a task in that window. The coordinate task's reopen
+    accepts the same window: a coordinate task a coordinator finished done in the second of a person's Resume is
+    reopened for the coordinator that Resume launches, which is what the Resume asked for."""
+    ended = parse_iso(at)
+    return decided is not None and ended is not None and ended <= decided
+
+
+def _tally(tasks: Sequence[StepTask], decided: datetime | None) -> _Tally:
+    """``failures``: the tasks that ended without being done after the step's latest decision (``decided``)."""
     return _Tally(done=any(task.state == TASK_DONE for task in tasks),
                   live=any(task.state not in TASK_ENDED for task in tasks),
-                  failures=sum(task.state in TASK_ENDED and task.state != TASK_DONE for task in tasks))
+                  failures=sum(task.state in TASK_ENDED and task.state != TASK_DONE
+                               and not decided_since(decided, task.updated_at) for task in tasks))
 
 
 Refusal = tuple[str, str]
@@ -424,8 +462,11 @@ class _Conductor:
         for task in board.tasks:
             self.tasks.setdefault(task.step, []).append(task)
 
-    def _decided(self, step: str) -> int:
-        return max(0, int(self.board.decisions.get(step, 0)))
+    def _decided(self, step: str) -> bool:
+        return step in self.board.decisions
+
+    def _tally(self, step: str, tasks: Sequence[StepTask]) -> _Tally:
+        return _tally(tasks, self.board.decisions.get(step))
 
     def _state(self, step: Step, status: str, **more: Any) -> StepState:
         return StepState(step=step.id, type=step.type, status=status, task_count=len(self.tasks.get(step.id, ())),
@@ -507,14 +548,14 @@ class _Conductor:
             return self._state(step, DONE if step.id in self.board.completed else READY)
         if step.id in self.flow.region:
             return self._shards(step, role, self.flow.region[step.id])
-        tally = _tally(self.tasks.get(step.id, ()))
+        tally = self._tally(step.id, self.tasks.get(step.id, ()))
         if tally.done:
             return self._state(step, DONE)
         if tally.live:
             return self._state(step, RUNNING, roles=(role,))
-        if tally.failures > self._decided(step.id):
+        if tally.failures:
             return self._state(step, BLOCKED, reason=f'its {role} task ended without being done: a person decides')
-        return self._state(step, READY, roles=(role,), reason=RETRY if tally.failures else '')
+        return self._state(step, READY, roles=(role,))
 
     def _shards(self, step: Step, role: str, map_id: str) -> StepState:
         shards = self.board.fanned_out.get(map_id, ())
@@ -524,12 +565,12 @@ class _Conductor:
         left: list[str] = []
         live = False
         for shard in shards:
-            tally = _tally([task for task in mine if task.shard == shard])
+            tally = self._tally(step.id, [task for task in mine if task.shard == shard])
             if tally.done:
                 continue
             if tally.live:
                 live = True
-            elif tally.failures > self._decided(step.id):
+            elif tally.failures:
                 return self._state(step, BLOCKED,
                                    reason=f'its {role} task for {shard} ended without being done: a person decides')
             else:
@@ -548,11 +589,11 @@ class _Conductor:
                                      "repository's packages): a person decides")
 
     def _board(self, step: Step) -> StepState:
-        tally = _tally(self.tasks.get(step.id, ()))
+        tally = self._tally(step.id, self.tasks.get(step.id, ()))
         claimers = self._claimers(step)
         if tally.live:
             return self._state(step, RUNNING, roles=claimers)
-        if tally.failures > self._decided(step.id):
+        if tally.failures:
             return self._state(step, BLOCKED, reason='a task on the board ended without being done: a person decides')
         if step.id in self.board.completed:
             return self._state(step, DONE)
@@ -574,10 +615,10 @@ class _Conductor:
         # The final go only once a gate runner's task is done: it judges a gated change, never none.
         gated = any(task.role == GATE_RUNNER and task.state == TASK_DONE for task in tasks)
         roles = GATE_ROLES if gated else tuple(role for role in GATE_ROLES if role != FINAL_GO_ROLE)
-        tally = _tally(tasks)
+        tally = self._tally(step.id, tasks)
         if tally.live:
             return self._state(step, RUNNING, roles=roles)
-        if tally.failures > self._decided(step.id):
+        if tally.failures:
             return self._state(step, BLOCKED, reason='a task of the gate ended without being done: a person decides')
         return self._state(step, READY, roles=roles)
 

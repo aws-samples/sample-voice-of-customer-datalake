@@ -103,6 +103,9 @@ from shared import (
     persona_copy_routes,
     persona_evidence_marker,
     persona_grounding_routes,
+    product_proposal_routes,
+    product_source_routes,
+    product_source_worker,
     project_access,
     project_gate,
     project_request_scope,
@@ -131,7 +134,12 @@ from shared.api import (
     validate_days,
     validate_int,
 )
-from shared.aws import get_dynamodb_resource, invoke_lambda_async, is_conditional_check_failure
+from shared.aws import (
+    cancelled_by_condition,
+    get_dynamodb_resource,
+    invoke_lambda_async,
+    is_conditional_check_failure,
+)
 from shared.caller_claims import first_claim
 from shared.company_personas import is_company_container
 from shared.data_version import bump_config_version
@@ -274,10 +282,17 @@ def _family(slice_id: str, *routes: tuple[str, str]) -> dict[tuple[str, str], st
 #: deployment's rows; the flip (3h-S12) needs this map empty. The reviewer routes (``/review/…``) are here too, and
 #: never resolve a workspace (a reviewer is outside it: ``_resolves_its_own_scope``).
 NOT_YET: Final[dict[tuple[str, str], str]] = {
-    # The product documents.
+    # The product documents; since 7.104.00 the Product tab's sources (a file's reading, a link, typed answers) and
+    # its extract and proposals beside them (shared/product_source_routes.py, shared/product_proposal_routes.py: every
+    # store they reach refuses a workspace, PRODUCT_SOURCES_STORE; the extract's work also waits for 3h-S8's job store).
     **_family('3h-S3b', ('GET', f'{_P}/product-context'), ('PUT', f'{_P}/product-context'),
               ('GET', f'{_P}/product-docs'), ('POST', f'{_P}/product-docs/upload-url'),
-              ('DELETE', f'{_P}/product-docs/<doc_id>')),
+              ('DELETE', f'{_P}/product-docs/<doc_id>'),
+              ('POST', f'{_P}/product-docs/<doc_id>/uploaded'), ('POST', f'{_P}/product-docs/<doc_id>/refresh'),
+              ('POST', f'{_P}/product-docs/urls'), ('POST', f'{_P}/product-docs/answers'),
+              ('POST', f'{_P}/product-extract'), ('GET', f'{_P}/product-proposals/latest'),
+              ('POST', f'{_P}/product-proposals/<proposal_id>/accept'),
+              ('POST', f'{_P}/product-proposals/<proposal_id>/dismiss')),
     # The company persona library, the board, the persona copy and grounding, the decisions, the validation and voice.
     **_family('3h-S3c', ('GET', '/company-personas'), ('POST', '/company-personas/generate'),
               ('POST', '/company-personas/import'), ('GET', '/company-personas/jobs'),
@@ -301,7 +316,11 @@ NOT_YET: Final[dict[tuple[str, str], str]] = {
               ('POST', f'{_P}/validation/report'),
               ('GET', f'{_PERSONA}/voice-sessions'), ('POST', f'{_PERSONA}/voice-sessions'),
               ('GET', f'{_PERSONA}/voice-sessions/<session_id>'),
-              ('POST', f'{_PERSONA}/voice-sessions/<session_id>/end'), ('GET', '/projects/voice/usage')),
+              ('POST', f'{_PERSONA}/voice-sessions/<session_id>/end'), ('GET', '/projects/voice/usage'),
+              # The product interview (7.104.00), beside the persona sessions.
+              ('GET', f'{_P}/product-interview/voice-sessions'), ('POST', f'{_P}/product-interview/voice-sessions'),
+              ('GET', f'{_P}/product-interview/voice-sessions/<session_id>'),
+              ('POST', f'{_P}/product-interview/voice-sessions/<session_id>/end')),
     # The deletes.
     **_family('3h-S4', ('DELETE', _P), ('DELETE', _DOC), ('DELETE', _PERSONA), ('DELETE', f'{_P}/jobs/<job_id>')),
     # The document comments, the review links and the reviewer routes.
@@ -433,8 +452,7 @@ def _require_ai_writing(project_id: str, doc_type: object, workspace: WorkspaceS
     table = get_aggregates_table()
     caller_mode = ai_writing.require_ai_writing(table, subject, doc_type, kind)
     if kind == ai_writing.KIND_AUTONOMOUS:
-        owner = (_gate_meta(project_id, workspace) or {}).get('owner_sub')
-        if isinstance(owner, str) and owner and owner != subject and not project_access.is_synthetic_subject(owner):
+        for owner in ai_writing.written_for(subject, (_gate_meta(project_id, workspace) or {}).get('owner_sub'))[1:]:
             ai_writing.require_ai_writing(table, owner, doc_type, kind)
     return caller_mode
 
@@ -858,7 +876,8 @@ def api_delete_persona(project_id: str, persona_id: str):
 
 
 def _delete_actor() -> dict[str, str]:
-    """Who is deleting (``shared.delete_audit``): the request's caller, an agent / MCP token / plan as such."""
+    """The request's caller, an agent / MCP token / plan as such: who is deleting (``shared.delete_audit``), and who
+    wrote a product field (``field_meta``) or added a product source (``created_by``)."""
     return actor_from_event(app.current_event.raw_event)
 
 
@@ -1414,7 +1433,7 @@ def _job_status(project_id: str, job_id: str) -> dict:
         'progress': item.get('progress', 0), 'current_step': item.get('current_step'),
         'job_type': item.get('job_type'), 'created_at': item.get('created_at'),
         'updated_at': item.get('updated_at'), 'completed_at': item.get('completed_at'),
-        'error': item.get('error'), 'result': item.get('result'),
+        'error': item.get('error'), 'error_code': item.get('error_code'), 'result': item.get('result'),
         'initiated_by': item.get('initiated_by'),
     }
 
@@ -1462,8 +1481,8 @@ def _job_list(project_id: str) -> dict:
         'job_type': i.get('job_type'), 'status': i.get('status'),
         'progress': i.get('progress', 0), 'current_step': i.get('current_step'),
         'created_at': i.get('created_at'), 'updated_at': i.get('updated_at'),
-        'completed_at': i.get('completed_at'), 'error': i.get('error'), 'result': i.get('result'),
-        'initiated_by': i.get('initiated_by'),
+        'completed_at': i.get('completed_at'), 'error': i.get('error'), 'error_code': i.get('error_code'),
+        'result': i.get('result'), 'initiated_by': i.get('initiated_by'),
     } for i in _project_job_rows(project_id)]
     return {'success': True, 'jobs': jobs}
 
@@ -1597,8 +1616,9 @@ ROW_ID_BYTES = 16
 # `_ballot_transact_items` builds — the ballot's own write is first, the row's second.
 #
 # Named because the save READS THE CANCELLATION REASON AT THIS INDEX. A
-# `TransactionCanceledException` does not mean a condition failed (see
-# `_cancelled_by_condition`), and the only condition in that transaction is on the
+# `TransactionCanceledException` does not mean a condition failed (contention and
+# throttling cancel with it too, and botocore does not retry it: see
+# `shared.aws.cancelled_by_condition`), and the only condition in that transaction is on the
 # row, so "the row went away" is a claim about this position specifically rather
 # than about the exception.
 
@@ -3597,49 +3617,6 @@ def _row_ballot_sort_keys(table, row_id: str) -> list[str]:
     raise ServiceError('Too many ballots on this row to read in one request')
 
 
-def _cancelled_by_condition(e: ClientError, index: int | None = None) -> bool:
-    """Did a CONDITION cancel this transaction, or did contention?
-
-    A `TransactionCanceledException` IS NOT ONLY A FAILED CONDITION. DynamoDB
-    cancels a transaction with the same exception for `TransactionConflict`
-    (another in-flight transaction touching one of the same items),
-    `ThrottlingError`, `ProvisionedThroughputExceeded`,
-    `ItemCollectionSizeLimitExceeded` and `ValidationError` — and botocore does not
-    auto-retry it, so every one of those arrives at the caller's `except`. Reading
-    the exception as "the condition failed" therefore reports a TRANSIENT failure
-    as a settled fact about the world, which is the worst direction to be wrong in:
-    the page treats a 4xx as a refusal retrying cannot fix, so the reviewer is told
-    to reload a row that is still there and their ballot is simply gone, where a
-    500 would have been released for a retry and saved.
-
-    `TransactionConflict` is not theoretical on these writes. Every ballot on a row
-    `ADD`s to the SAME row record, so two reviewers scoring one row at the same
-    moment — the ordinary case — contend on one item, and an admin's delete of that
-    row is a third contender.
-
-    `index`, when given, is the position in the `TransactItems` list whose condition
-    the caller is asking about, so a condition failure somewhere else in the same
-    transaction cannot be mistaken for this one. `None` asks "did any condition
-    fail", which is what a caller answers the same way whichever of its conditions
-    it was.
-
-    A MISSING or SHORT `CancellationReasons` answers False, so an unreadable
-    cancellation is handled as the transient failure it might be rather than as the
-    condition it might not be.
-    """
-    reasons = e.response.get('CancellationReasons')
-    if not isinstance(reasons, list):
-        return False
-    if index is not None:
-        if index >= len(reasons):
-            return False
-        reasons = [reasons[index]]
-    return any(
-        reason.get('Code') == 'ConditionalCheckFailed'
-        for reason in reasons
-    )
-
-
 def _transact_delete_row(
     table, row: dict, row_id: str, ballot_sks: list[str], sibling_sk: str | None
 ) -> None:
@@ -3675,7 +3652,7 @@ def _transact_delete_row(
     the property this path is built on. A cancellation for any other reason
     (contention, throttling) is a 500, because "reload the page and try again" is
     advice about a state that did not actually change; see
-    `_cancelled_by_condition`.
+    `shared.aws.cancelled_by_condition`.
     """
     items: list[dict] = []
     if sibling_sk:
@@ -3720,7 +3697,7 @@ def _transact_delete_row(
             # was does not change the answer. What DOES change it is a cancellation
             # that no condition caused — that is contention, and it is a 500 the page
             # will retry rather than a 409 it will not.
-            or not _cancelled_by_condition(e)
+            or not cancelled_by_condition(e)
         ):
             logger.exception(f'Failed to delete a prioritization row: {e}')
             raise ServiceError('Failed to delete the prioritization row') from e
@@ -4536,7 +4513,7 @@ def _write_ballot_transaction(table, update_kwargs: dict, row_id: str, now: str)
             # retry. Answering 404 there told a reviewer whose save merely
             # lost a race to reload a row that is still there, and dropped
             # their ballot on advice that could never work.
-            or not _cancelled_by_condition(e, BALLOT_TRANSACT_ROW_INDEX)
+            or not cancelled_by_condition(e, BALLOT_TRANSACT_ROW_INDEX)
         ):
             raise
         # The row's own condition failed, and the only thing it asserts is
@@ -4820,7 +4797,10 @@ def api_get_product_context(project_id: str):
 @app.put("/projects/<project_id>/product-context")
 @tracer.capture_method
 def api_update_product_context(project_id: str):
-    return pc_update_context(project_id, json_body_value(app))
+    # Who writes, and for an agent, a plan step or an MCP client whether its person's way of working lets the AI
+    # write the product description (shared/product_proposal_routes.py writer_of, tenet 3).
+    return pc_update_context(project_id, json_body_value(app),
+                             actor=product_proposal_routes.writer_of(app.current_event.raw_event, project_id))
 
 
 @app.get("/projects/<project_id>/product-docs")
@@ -4832,7 +4812,7 @@ def api_list_product_docs(project_id: str):
 @app.post("/projects/<project_id>/product-docs/upload-url")
 @tracer.capture_method
 def api_create_product_doc_upload_url(project_id: str):
-    return pc_create_upload_url(project_id, json_object_body(app))
+    return pc_create_upload_url(project_id, json_object_body(app), actor=_delete_actor())
 
 
 @app.delete("/projects/<project_id>/product-docs/<doc_id>")
@@ -5503,9 +5483,12 @@ def api_generate_product_report(project_id: str):
     )
 
 
-def _started_generator_job(project_id: str, job_type: str, doc_config: dict, message: str) -> dict:
-    """Record a pending job and hand it to the document-generator Lambda; the route's 202-style answer."""
-    job_id = _started_job(project_id, job_type, 'doc_config', doc_config, status='pending')
+def _started_generator_job(project_id: str, job_type: str, doc_config: dict, message: str, *,
+                           precheck: Callable[[], None] | None = None) -> dict:
+    """Record a pending job and hand it to the document-generator Lambda; the route's 202-style answer.
+    ``precheck`` (the product extract's, shared/product_proposal_routes.py) runs after the project's existence check
+    and before the job row (``_started_job``)."""
+    job_id = _started_job(project_id, job_type, 'doc_config', doc_config, status='pending', precheck=precheck)
     invoke_lambda_async(DOCUMENT_GENERATOR_FUNCTION, _job_event({
         'project_id': project_id,
         'job_id': job_id,
@@ -5566,6 +5549,8 @@ def _avatar_assist_work(config: dict) -> dict:
 #
 # Reviews, never writes: allowed in every way of working with AI (no _require_ai_writing).
 # EDIT on the project (the gate's default for a POST): it spends up to six model calls.
+# The project's own personas review; a project without any is reviewed by the company personas of its
+# own scope (document_review.reviewers; the deployment's, as every project route is until the switch, 3h).
 
 ASSIST_PERSONA_REVIEW = 'assist_persona_review'
 
@@ -5573,15 +5558,14 @@ ASSIST_PERSONA_REVIEW = 'assist_persona_review'
 @app.post("/projects/<project_id>/documents/<document_id>/persona-review")
 @tracer.capture_method
 def start_persona_review(project_id: str, document_id: str):
-    """202 + an assist job: ``{persona_ids?: [≤6]}``; ``result`` = ``{personas, filed, …}``."""
+    """202 + an assist job: ``{persona_ids?: [≤6]}``; ``result`` = ``{personas, filed, persona_source, …}``; 400
+    ``no_personas`` when neither the project nor its company library has a persona."""
     persona_ids = document_review.validate_persona_ids(json_object_body(app))
     table = get_projects_table()
     if not table:
         raise ConfigurationError('Projects table not configured')
     document_series.series_of(project_id, document_series.find_document(table, project_id, document_id, workspace=None))
-    personas = document_review.project_personas(table, project_id, workspace=None)
-    if not document_review.pick_personas(personas, persona_ids):
-        raise ValidationError('This project has no personas to ask yet')
+    document_review.require_reviewers(document_review.reviewers(table, project_id, persona_ids, workspace=None))
     return _started_assist(project_id, ASSIST_PERSONA_REVIEW, {
         'project_id': project_id, 'document_id': document_id, 'body_json': json.dumps({'persona_ids': persona_ids}),
     })
@@ -5597,11 +5581,10 @@ def _assist_document(config: dict) -> tuple[Any, str, dict, dict]:
 
 def _persona_review_work(config: dict) -> dict:
     table, project_id, document, series = _assist_document(config)
-    personas = document_review.pick_personas(
-        document_review.project_personas(table, project_id, workspace=None), _assist_body(config).get('persona_ids'))
+    chosen = document_review.reviewers(table, project_id, _assist_body(config).get('persona_ids'), workspace=None)
     return document_review.run_review(
         table, project_id=project_id, series_id=series['series_id'], document=document,
-        document_type=series['document_type'], personas=personas, workspace=None)
+        document_type=series['document_type'], personas=chosen.personas, source=chosen.source, workspace=None)
 
 
 # ---- Revise a PR/FAQ / PRD from its comments (shared/document_revision.py, docs/document-review.md) ----
@@ -5712,6 +5695,11 @@ app.include_router(project_validation_routes.app)
 app.include_router(voice_session_routes.app)
 # The Documents Library (shared/library_routes.py, docs/documents-library.md): its own scope's roles, not a project's.
 app.include_router(library_routes.app)
+# The Product tab's sources, its extract and the proposals it makes (shared/product_source_routes.py and
+# shared/product_proposal_routes.py, 7.104.00); an extract is a document-generator job, started like the report's.
+product_proposal_routes.configure(_started_generator_job)
+app.include_router(product_source_routes.app)
+app.include_router(product_proposal_routes.app)
 
 
 # ============================================
@@ -5770,6 +5758,8 @@ def lambda_handler(event: dict, context: Any) -> dict:
         return assist_jobs.run(event, ASSIST_WORK)
     if library_worker.is_extract_event(event):
         return library_worker.run(event)
+    if product_source_worker.is_extract_event(event):
+        return product_source_worker.run(event)
     try:
         # Never log the raw event or the resolved result here (issue #245).
         # The event carries the caller's Authorization header (Cognito bearer

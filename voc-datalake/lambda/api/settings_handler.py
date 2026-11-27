@@ -121,6 +121,7 @@ from shared.model_config import (
     WEB_SEARCH_MODELS,
     WEB_SEARCH_SURFACE,
     clear_model_cache,
+    keeps_own_default,
     offered_picker_surfaces,
     surface_allowlist,
     web_search_offered,
@@ -267,7 +268,9 @@ def get_model_settings():
     default and the admin-selected override (``selected`` is null when the
     surface is on Automatic). ``model_id`` is a legacy global override kept
     for backward compatibility with the earlier single-model picker; when
-    set it applies to any surface left on Automatic.
+    set it applies to any surface left on Automatic, as the deployment's
+    default does, except one whose ``own_default`` is true (7.104.00: the
+    product extract and the web search surface keep their own default).
 
     Each surface names the list it picks from (``allowlist``): ``claude``
     (``available_models``) or, for the web search surface, ``web_search``
@@ -296,6 +299,9 @@ def get_model_settings():
                 'selected': custom_models.shown_id(stored.get(key), admin=admin)
                 if stored.get(key) in surface_allowlist(key) else None,
                 'allowlist': 'web_search' if key == WEB_SEARCH_SURFACE else 'claude',
+                # Whether Automatic keeps the surface's own default under the pick for all surfaces or the
+                # deployment's default (7.104.00: the product extract and the web search surface).
+                'own_default': keeps_own_default(key),
             }
             for key in offered_picker_surfaces()
         ]

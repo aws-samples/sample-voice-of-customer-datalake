@@ -51,6 +51,7 @@ from engineering.rows import number_value as _number
 from engineering.rows import text_value as _text
 from engineering.runtime.outputs import TenetsError, tenets_record
 from engineering.workspace.layout import ID
+from shared.aws import cancelled_by_condition
 
 DRAFT, ACCEPTED, REJECTED = 'draft', 'accepted', 'rejected'
 COUNTER: Final = 'TENETS'
@@ -151,12 +152,6 @@ class AcceptedTenets:
     version: TenetsVersion
     #: The digest of its TENETS.md rendering, as its acceptance recorded it.
     digest: str
-
-
-def _cancelled(exc: ClientError, index: int) -> bool:
-    reasons = exc.response.get('CancellationReasons') or []
-    return (exc.response.get('Error', {}).get('Code') == 'TransactionCanceledException' and len(reasons) > index
-            and reasons[index].get('Code') == 'ConditionalCheckFailed')
 
 
 def _held_to_the_grant(items: Sequence[Mapping[str, Any]]) -> None:
@@ -277,11 +272,11 @@ class TenetsStore:
             try:
                 self.client.transact_write_items(TransactItems=items)
             except ClientError as exc:
-                if run_id and _cancelled(exc, 3):
+                if run_id and cancelled_by_condition(exc, 3):
                     return None
-                if _cancelled(exc, 0):
+                if cancelled_by_condition(exc, 0):
                     continue   # (another draft took the number: the next one)
-                if any(_cancelled(exc, index) for index in (1, 2)):
+                if any(cancelled_by_condition(exc, index) for index in (1, 2)):
                     raise PackConflict(f'version {version} already has a row: the counter is behind') from exc
                 raise
             return TenetsVersion.from_item(item)
@@ -310,7 +305,7 @@ class TenetsStore:
         try:
             self.client.transact_write_items(TransactItems=items)
         except ClientError as exc:
-            if any(_cancelled(exc, index) for index in range(len(items))):
+            if cancelled_by_condition(exc):
                 raise PackConflict('the version or the accepted one changed meanwhile: read it again') from exc
             raise
 

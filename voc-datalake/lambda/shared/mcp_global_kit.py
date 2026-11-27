@@ -25,6 +25,11 @@ DOMAIN_FEEDBACK_EDIT: Final = 'feedback_edit'
 DOMAIN_INTEGRATIONS: Final = 'integrations'
 DOMAIN_FORMS: Final = 'forms'
 
+#: A tool result's text past this many characters is cut (and says so; ``api/mcp_global_handler._tool_content``), so
+#: the response stays far below API Gateway's 10 MB and Lambda's 6 MB payload ceilings. Here so that a tool's shape can
+#: fit a page to it (``mcp_global_tools_forms.MAX_PAGE_TEXT_CHARS``).
+MAX_RESULT_TEXT_CHARS: Final = 200_000
+
 # Keys never forwarded to an MCP client: storage keys, index keys, and anything
 # carrying a signed URL.
 _HIDDEN_KEYS: Final = frozenset({'pk', 'sk', 'gsi1pk', 'gsi1sk', 'gsi2pk', 'gsi2sk', 'secret_hash',
@@ -66,6 +71,10 @@ def _no_follow_ups(_args: Mapping[str, Any]) -> tuple[FollowUp, ...]:
     return ()
 
 
+def _as_shaped(payload: Any, _pin: str) -> Any:
+    return payload
+
+
 @dataclass(frozen=True)
 class GlobalTool:
     name: str
@@ -83,8 +92,13 @@ class GlobalTool:
     # A feedback-board route (`/feature-requests/*`): the delegated claims also carry the app pool's
     # issuer and the minter's verified email (``board_route_claims``), which the board scope reads.
     board_route: bool = False
-    # Reaches data of every project the minter can view (not one project): refused to a project-pinned token.
+    # Reaches data beyond one project (every project the minter can view, or the scope's own, such as its feedback
+    # forms and their respondents' contact answers): neither offered nor let call to a project-pinned token.
     workspace_wide: bool = False
+    # The shaped answer as a token pinned to project ``pin`` gets it (the handler calls it for a pinned token only):
+    # ``projects_list`` keeps only the pin's project; since 7.104.00 the feedback reads leave out a stored item's
+    # contact fields (``mcp_global_tools.without_contact`` names them), which a pinned token never reads.
+    pinned_shape: Callable[[Any, str], Any] = _as_shaped
     # (7.53.00) The engineering run operation the tool serves (one of project_access.MCP_DELEGATED_OPS), '' for none.
     # Such a tool is ``admin_only`` and needs a write token even to read (``needs_write_token``); its delegated call
     # carries that one operation as ``voc:mcp_op`` (an admin-only tool without one: its own name).

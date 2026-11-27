@@ -233,3 +233,41 @@ class TestTheRefusalTexts:
 
     def test_a_missing_person_on_an_interactive_call_gets_the_coaching_text(self):
         assert _refusal(MagicMock(), '', 'prd', INTERACTIVE).message == HD_PRD_COACHING
+
+
+class TestTheProductDescription:
+    """7.104.00 (round 2, F1): an autonomous write of the product description reads a person's way of working as a
+    PR/FAQ's does (``_mode_of``), for the people ``written_for`` names, the PR/FAQ and PRD gate's own rule."""
+
+    @pytest.mark.parametrize(('owner', 'people'), [
+        ('sub-owner', ('sub-ada', 'sub-owner')), ('sub-ada', ('sub-ada',)), ('', ('sub-ada',)), (None, ('sub-ada',)),
+        (7, ('sub-ada',)), ('agent:ag_1', ('sub-ada',)), ('mcp:tok_1', ('sub-ada',)),
+    ], ids=['another-person', 'the-same-person', 'blank', 'none', 'not-text', 'an-agent', 'a-token'])
+    def test_it_is_written_for_the_caller_and_an_owner_who_is_another_person(self, owner: object, people: tuple):
+        assert ai_writing.written_for('sub-ada', owner) == people
+
+    @pytest.mark.parametrize(('row', 'refused'), [
+        (None, False), ({'mode': 'ai_driven'}, False), ({'mode': 'ai_assisted'}, True),
+        ({'mode': 'human_driven', 'ai_writing_prd': True, 'ai_writing_prfaq': True}, True)])
+    def test_only_ai_driven_people_have_it_written(self, row: dict | None, refused: bool):
+        table = _table_with(row)
+        if not refused:
+            ai_writing.require_autonomous_writing(table, ('sub-ada', 'sub-owner'))
+            assert table.get_item.call_count == 2
+            return
+        with pytest.raises(AuthorizationError) as caught:
+            ai_writing.require_autonomous_writing(table, ('sub-ada', 'sub-owner'))
+        assert (caught.value.status_code, caught.value.code) == (403, 'ai_writing_refused')
+        assert caught.value.message.startswith(ai_writing.AUTONOMOUS_REFUSAL_PREFIX)
+
+    @pytest.mark.parametrize('subject', ['', 'agent:ag_1'])
+    def test_no_person_or_an_unreadable_mode_fails_closed(self, subject: str):
+        table = _table_with({'mode': 'ai_driven'})
+        with pytest.raises(AuthorizationError) as caught:
+            ai_writing.require_autonomous_writing(table, (subject,))
+        assert caught.value.code == 'ai_writing_refused'
+        table.get_item.assert_not_called()
+        failing = MagicMock()
+        failing.get_item.side_effect = BotoCoreError()
+        with pytest.raises(ai_writing.ModeUnreadableError):
+            ai_writing.require_autonomous_writing(failing, ('sub-ada',))

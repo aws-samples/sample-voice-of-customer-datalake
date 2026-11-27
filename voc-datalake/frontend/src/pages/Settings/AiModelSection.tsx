@@ -178,9 +178,11 @@ function AiModelEditor({ data }: { readonly data: ModelSettings }) {
           // What Automatic actually resolves to for this surface. The pin does not
           // touch `selected`: a stored per-surface choice still outranks it. The web
           // search surface picks its own GPT models, and a pin (a Claude model) never
-          // reaches it (shared/model_config.py).
+          // reaches it; nor does it reach a surface that keeps its own default, the
+          // product extract (`own_default`, shared/model_config.py).
           const ownFamily = surface.allowlist === 'web_search'
-          const automaticId = ownFamily ? surface.default_id : pinnedId ?? surface.default_id
+          const ownDefault = ownFamily || surface.own_default
+          const automaticId = ownDefault ? surface.default_id : pinnedId ?? surface.default_id
           const stored = surface.selected ?? ''
           const draft = drafts[surface.key] ?? stored
           const resolvedId = draft === '' ? automaticId : draft

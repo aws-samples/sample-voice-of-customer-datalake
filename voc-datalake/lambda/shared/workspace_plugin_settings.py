@@ -43,8 +43,8 @@ from typing import Any, Final
 from botocore.exceptions import ClientError
 
 from shared.audit_rows import put_new_audit_row
+from shared.aws import CONDITION_FAILED, TRANSACTION_CONFLICT, cancellation_codes
 from shared.exceptions import AuthorizationError, ConflictError, NotFoundError, ValidationError
-from shared.persona_save import cancellation_codes
 from shared.plugin_identity import S3_IMPORT_SOURCE, is_valid_plugin_identifier
 from shared.request_body import reject_unknown_fields
 from shared.timestamps import now_iso
@@ -197,13 +197,13 @@ def set_plugin_enabled(table: Any, context: WorkspaceContext, plugin_id: str, en
                      _checks(table.name, context, actor, enabling=enabled))
     except ClientError as exc:
         codes = cancellation_codes(exc)
-        if codes[2:3] == ['ConditionalCheckFailed']:
+        if codes[2:3] == [CONDITION_FAILED]:
             raise AuthorizationError(NO_LONGER_ADMIN) from exc
-        if codes[1:2] == ['ConditionalCheckFailed']:
+        if codes[1:2] == [CONDITION_FAILED]:
             if enabled and is_paused(stored_trial(table, ws)):
                 raise ConflictError(TRIAL_PAUSED, code=TRIAL_PAUSED_CODE) from exc
             raise NotFoundError(NOT_FOUND) from exc
-        if codes[:1] == ['ConditionalCheckFailed'] or 'TransactionConflict' in codes:
+        if codes[:1] == [CONDITION_FAILED] or TRANSACTION_CONFLICT in codes:
             raise ConflictError(CHANGED_MEANWHILE) from exc
         raise
     return {'id': plugin_id, 'enabled': enabled, **({'enabled_at': at, 'enabled_by': actor} if enabled else {})}
@@ -226,7 +226,7 @@ def set_trial_plugin(table: Any, ws: str, plugin_id: str, enabled: bool, actor: 
         _commit(table, ws, plugin_id, enabled, {**actor, 'reason': reason}, [check])
     except ClientError as exc:
         codes = cancellation_codes(exc)
-        if 'ConditionalCheckFailed' in codes and (rev is None or codes[-1:] != ['ConditionalCheckFailed']):
+        if CONDITION_FAILED in codes and (rev is None or codes[-1:] != [CONDITION_FAILED]):
             # Changed meanwhile (the row: already what was asked) or, without ``rev``, no longer active: nothing for
             # the trial to do. A conflict with another transaction propagates: the caller runs again (an expiry is
             # retried).

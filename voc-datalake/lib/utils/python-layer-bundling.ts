@@ -18,8 +18,8 @@ export const BUILD_VENV = '"$venv"';
 /**
  * What the bundling deletes from `python/` after pip, relative to it (globs).
  *
- * The first group is the AWS SDK closure the Lambda Python 3.14 runtime ships in
- * `/var/lang/lib/python3.14/site-packages` (boto3, botocore, s3transfer, jmespath,
+ * The first group is the AWS SDK closure the Lambda Python 3.15 runtime ships in
+ * `/var/lang/lib/python3.15/site-packages` (boto3, botocore, s3transfer, jmespath,
  * python-dateutil, six, urllib3: `RUNTIME_PROVIDED` in scripts/audit/layer_dists.py,
  * checked against the image by its test). A layer copy SHADOWS the runtime's
  * (`/opt/python` precedes it on `sys.path`), so the runtime's botocore would run on
@@ -32,7 +32,7 @@ export const BUILD_VENV = '"$venv"';
  * `sys.path`), type stubs (`*-stubs` packages; `*.pyi` files are deleted by a `find`
  * below) and the test suites some wheels ship (`certifi/tests`, `websocket/tests`;
  * no library module imports them). `.pyc` and `*.dist-info` stay: the bytecode is
- * compiled for 3.14 by the same image (no compile at cold start), and the metadata
+ * compiled for 3.15 by the same image (no compile at cold start), and the metadata
  * is what `importlib.metadata` reads.
  */
 export const LAYER_STRIP = [
@@ -101,7 +101,7 @@ export function pythonLayerCode(layerDir: string): lambda.Code {
   return lambda.Code.fromAsset(layerDir, {
     exclude: ['python', LAYER_BUILD_STAMP, 'README.md', '**/.DS_Store'],
     bundling: {
-      image: lambda.Runtime.PYTHON_3_14.bundlingImage,
+      image: lambda.Runtime.PYTHON_3_15.bundlingImage,
       platform: 'linux/arm64',
       command: [
         'bash', '-c',

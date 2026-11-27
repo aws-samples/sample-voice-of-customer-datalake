@@ -28,7 +28,7 @@ from dataclasses import dataclass
 from typing import Any, Final
 
 from shared.exceptions import ValidationError
-from shared.forms_v2 import HIDDEN_ID, MATRIX, OTHER_CODE, QUESTION_ID, SINGLE, answer_shape
+from shared.forms_v2 import HIDDEN_ID, HIDDEN_PREFIX, MATRIX, OTHER_CODE, QUESTION_ID, SINGLE, answer_shape
 from shared.forms_v2_responses import headline_of
 from shared.forms_v2_results import ResultRow, measured_questions, score_summary
 
@@ -40,7 +40,6 @@ MIN_SEGMENT: Final = 5
 MAX_COMPARED_FORMS: Final = 10
 #: At most this many segments are answered by name (the rest go to the merged group).
 MAX_SEGMENTS: Final = 50
-_HIDDEN_PREFIX: Final = 'hidden.'
 INVALID_GROUP_BY: Final = 'group_by_invalid'
 #: Why a named segment of ``MIN_SEGMENT`` or more is withheld: with the withheld merged group beside it.
 COMPLEMENT: Final = 'complement'
@@ -82,8 +81,8 @@ def parse_group_by(definition: Mapping[str, Any], raw: object, *, hidden_only: b
     ``group_by_invalid`` naming why: a hidden field the form has, one of its single choices, or a row of one of its
     matrices. ``hidden_only``: a comparison's ``by``, a hidden field only."""
     text = raw if isinstance(raw, str) else ''
-    if text.startswith(_HIDDEN_PREFIX):
-        hidden_id = text.removeprefix(_HIDDEN_PREFIX)
+    if text.startswith(HIDDEN_PREFIX):
+        hidden_id = text.removeprefix(HIDDEN_PREFIX)
         known = {str(field.get('id')) for field in definition.get('hidden_fields') or [] if isinstance(field, Mapping)}
         if not HIDDEN_ID.fullmatch(hidden_id) or hidden_id not in known:
             raise _refuse(f'{text[:60]} is not a hidden field of this form')

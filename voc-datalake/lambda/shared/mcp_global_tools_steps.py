@@ -64,7 +64,7 @@ MAX_RADAR_LIMIT: Final = 50
 DEFAULT_RADAR_LIMIT: Final = 20
 MAX_LABEL_CHARS: Final = 128
 _JOB_FIELDS: Final = ('job_id', 'status', 'progress', 'current_step', 'job_type', 'created_at', 'updated_at',
-                      'completed_at', 'error', 'result')
+                      'completed_at', 'error', 'error_code', 'result')
 _START_FIELDS: Final = ('job_id', 'status', 'message', 'methodology')
 _REVISE_FIELDS: Final = ('job_id', 'status', 'message')
 TOOL_REVISE: Final = 'documents_revise_from_comments'
@@ -300,13 +300,11 @@ _THREAD_IDS = {'type': 'array', 'items': {'type': 'string'}, 'minItems': 1, 'max
 STEP_TOOLS: Final[tuple[GlobalTool, ...]] = (
     GlobalTool(
         'projects_generate', 'Start a methodology step',
-        'Start one methodology step in a research project (write token): `step` personas (adds `count` personas, '
-        'never replaces), research (`brief` = the research question), prfaq or prd (`brief` = the feature idea; '
-        'drafts a PR/FAQ or PRD from customer feedback), prototype (from the newest PRD or PR/FAQ), '
-        'validation_plan or validation_report. Answers a job_id and a `methodology` block (skipped upstream '
-        'steps, warnings: tell the user); follow the job with projects_get_job. A PR/FAQ or PRD is refused '
-        'unless the user and the project owner work AI-driven; a prototype without a PRD or PR/FAQ is '
-        'refused. Confirm with the user first.',
+        'Start a methodology step in a project: `step` personas (adds `count`, never replaces), research (`brief` = '
+        'the question), prfaq or prd (`brief` = the idea; from customer feedback), prototype (from the newest PRD '
+        'or PR/FAQ; refused without one), validation_plan or validation_report. Answers a job_id for '
+        'projects_get_job and a `methodology` block: tell the user its skipped steps and warnings. A PR/FAQ or PRD '
+        'needs the user and the project owner to work AI-driven. Confirm with the user first.',
         schema({'project_id': PROJECT_ID_SCHEMA, 'step': {'type': 'string', 'enum': list(GENERATE_STEPS)},
                 'title': {'type': 'string', 'maxLength': MAX_TITLE_CHARS},
                 'brief': {'type': 'string', 'maxLength': MAX_BRIEF_CHARS},
@@ -314,65 +312,60 @@ STEP_TOOLS: Final[tuple[GlobalTool, ...]] = (
         _generate, _started, write=True, project_scoped=True),
     GlobalTool(
         'projects_get_job', 'Get a project job',
-        "Read a project job's status, progress and result by `job_id`: a methodology step started by "
-        'projects_generate or a pass started by documents_revise_from_comments. Poll until `status` is completed '
-        '(the result names the document and carries its methodology block, or the revision outcome) or failed.',
+        'Read a project job by `job_id` (from projects_generate, documents_revise_from_comments or a draft tool): '
+        'status, progress, result. Poll until `status` is completed (the result names the document with its '
+        'methodology block, or the revision outcome) or failed.',
         schema({'project_id': PROJECT_ID_SCHEMA, 'job_id': ID_SCHEMA}, ('job_id',)),
         _get_job, _job, project_scoped=True),
     GlobalTool(
         'documents_revise_from_comments', 'Revise from comments',
-        'Start "Revise from comments" on a PR/FAQ or PRD (write token): the AI reads the answered review comment '
-        'threads (resolved or replied to, not yet addressed) and the evidence, and suggests changes. '
-        '`document_id`; optional `thread_ids` (up to 50) instead of every waiting thread. Answers a job_id: read '
-        'the result with projects_get_job: `recommendations` (nothing written), or `applied` (a new version '
-        'written and its threads marked addressed) when the user and the project owner work AI-driven.',
+        '"Revise from comments" on a PR/FAQ or PRD `document_id`: the AI reads the answered review threads not yet '
+        'addressed (or `thread_ids`, up to 50) and the evidence, and suggests changes. Answers a job_id for '
+        'projects_get_job: `recommendations` (nothing written), or, if the user and the project owner work '
+        'AI-driven, `applied` (a new version, its threads marked addressed).',
         schema({'project_id': PROJECT_ID_SCHEMA, 'document_id': ID_SCHEMA, 'thread_ids': _THREAD_IDS},
                ('document_id',)),
         _revise, _revise_started, write=True, project_scoped=True),
     GlobalTool(
         'documents_mark_comments_addressed', 'Mark comments addressed',
-        'Mark review comment threads of a PR/FAQ or PRD as addressed by the version `document_id` names, after '
-        'saving a version that answers them, or clear that mark with `addressed: false` (write token). '
-        '`thread_ids`: 1 to 50 comment ids. Answers the threads.',
+        'Mark review threads (`thread_ids`, 1 to 50) of a PR/FAQ or PRD addressed by the version `document_id`, '
+        'after saving one that answers them; `addressed: false` clears the mark. Answers the threads.',
         schema({'project_id': PROJECT_ID_SCHEMA, 'document_id': ID_SCHEMA, 'thread_ids': _THREAD_IDS,
                 'addressed': {'type': 'boolean', 'default': True}}, ('document_id', 'thread_ids')),
         _mark_addressed, stripped, write=True, project_scoped=True),
     GlobalTool(
         'documents_get_prototype_outline', 'Get a prototype outline',
-        "Read a prototype version's outline: its screens (routes), headings and visible text, extracted from its "
-        'HTML (no code, no tester pins; capped, `truncated` says so). Use it to name what to change before '
-        'documents_draft_prototype_revision.',
+        "Read a prototype version's outline: screens (routes), headings and visible text from its HTML (no code, no "
+        'pins; capped: `truncated`), to name what to change before documents_draft_prototype_revision.',
         schema({'project_id': PROJECT_ID_SCHEMA, 'document_id': ID_SCHEMA}, ('document_id',)),
         _get_outline, stripped, project_scoped=True),
     GlobalTool(
         'documents_get_prototype_walkthrough', 'Get a prototype walkthrough',
-        "Read a prototype version's guided walkthrough: its steps (title, body, selector or anchor), [] when it has "
-        'none.',
+        "Read a prototype version's guided walkthrough: its steps (title, body, selector or anchor), [] when none.",
         schema({'project_id': PROJECT_ID_SCHEMA, 'document_id': ID_SCHEMA}, ('document_id',)),
         _get_walkthrough, stripped, project_scoped=True),
     GlobalTool(
         'documents_set_prototype_walkthrough', 'Set a prototype walkthrough',
-        "Save a prototype's walkthrough as its next version (write token): `steps` (up to 10, each a `title` of at "
-        'most 80 characters, a plain-text `body` of at most 280, and a `selector` or an `anchor` {route, bbox}; [] '
-        'removes the steps) on the version `document_id`, which must be the newest. Optional `edit_id` makes a retry '
-        'the same version. Confirm with the user first.',
+        "Save a prototype's walkthrough as its next version: `steps` (up to 10, each a `title` of at most 80 "
+        'characters, a plain-text `body` of at most 280, a `selector` or an `anchor` {route, bbox}; [] removes '
+        'them) on `document_id`, the newest version. `edit_id` makes a retry the same version. Confirm with the '
+        'user first.',
         schema({'project_id': PROJECT_ID_SCHEMA, 'document_id': ID_SCHEMA,
                 'steps': {'type': 'array', 'maxItems': MAX_WALKTHROUGH_STEPS, 'items': {'type': 'object'}},
                 'edit_id': ID_SCHEMA}, ('document_id', 'steps')),
         _set_walkthrough, _applied, write=True, project_scoped=True),
     GlobalTool(
         'documents_draft_prototype_walkthrough', 'Draft a prototype walkthrough',
-        "Ask the AI for walkthrough steps from the prototype's screens and the PRD / PR/FAQ it was built from "
-        '(write token); nothing is saved. Answers a job_id: its result is `steps` (projects_get_job), to show the '
-        'user and save with documents_set_prototype_walkthrough.',
+        "Ask the AI for walkthrough steps from a prototype's screens and its PRD / PR/FAQ; nothing is saved. "
+        'Answers a job_id whose result (projects_get_job) is `steps`, to show the user and save with '
+        'documents_set_prototype_walkthrough.',
         schema({'project_id': PROJECT_ID_SCHEMA, 'document_id': ID_SCHEMA}, ('document_id',)),
         _draft_walkthrough, _revise_started, write=True, project_scoped=True),
     GlobalTool(
         'documents_draft_prototype_revision', 'Draft a prototype revision',
-        'Ask for a change to a prototype (write token): `document_id` (any version of it) and either '
-        '`instruction` (words) or `pin_ids` (up to 50 tester pins from documents_list_prototype_feedback to '
-        'incorporate). The AI drafts it on the newest version; nothing is saved. Answers a job_id: its result is '
-        'the `draft_id` (projects_get_job); read it with documents_get_prototype_draft.',
+        'Ask the AI for a change to a prototype `document_id` (any version): `instruction` (words) or `pin_ids` (up '
+        'to 50 tester pins from documents_list_prototype_feedback). Drafted on the newest version, nothing saved. '
+        'Answers a job_id whose result (projects_get_job) is the `draft_id` for documents_get_prototype_draft.',
         schema({'project_id': PROJECT_ID_SCHEMA, 'document_id': ID_SCHEMA,
                 'instruction': {'type': 'string', 'maxLength': MAX_INSTRUCTION_CHARS},
                 'pin_ids': {'type': 'array', 'items': ID_SCHEMA, 'minItems': 1, 'maxItems': MAX_BATCH_PINS}},
@@ -380,41 +373,39 @@ STEP_TOOLS: Final[tuple[GlobalTool, ...]] = (
         _start_draft, _revise_started, write=True, project_scoped=True),
     GlobalTool(
         'documents_get_prototype_draft', 'Get a prototype draft',
-        "Read a prototype draft: its instruction, the AI's summary of what changed and the version it was "
-        'drafted on (`base_version`); a draft from pins (`kind` feedback) adds `outcomes` per pin (done / not_done '
-        'and a note), `withheld` and `ignored` pin ids. No preview: the user sees it on the prototype page.',
+        "Read a prototype draft: its instruction, the AI's summary of the change, `base_version`; a draft from pins "
+        '(`kind` feedback) adds `outcomes` per pin (done / not_done, a note), `withheld` and `ignored` pin ids. No '
+        'preview: the user sees it on the prototype page.',
         schema({'project_id': PROJECT_ID_SCHEMA, 'document_id': ID_SCHEMA, 'draft_id': ID_SCHEMA},
                ('document_id', 'draft_id')),
         _get_draft, stripped, project_scoped=True),
     GlobalTool(
         'documents_apply_prototype_draft', 'Apply a prototype draft',
-        'Save a prototype draft as the next version (write token); earlier versions are kept, and applying it '
-        'again gives the same version. A draft from pins also marks its done pins addressed and replies to the '
-        'others (`incorporation`). Refused when a version was saved since the draft: ask again. Confirm with the '
-        'user first.',
+        'Save a prototype draft as the next version (earlier ones kept; applying again gives the same). A draft '
+        'from pins also marks its done pins addressed and replies to the others (`incorporation`). Refused if a '
+        'version was saved since: ask again. Confirm with the user first.',
         schema({'project_id': PROJECT_ID_SCHEMA, 'document_id': ID_SCHEMA, 'draft_id': ID_SCHEMA},
                ('document_id', 'draft_id')),
         _apply_draft, _applied, write=True, project_scoped=True),
     GlobalTool(
         'documents_discard_prototype_draft', 'Discard a prototype draft',
-        'Discard a prototype draft by `document_id` and `draft_id` (write token): it is gone for everyone. '
-        'Saved versions are untouched.',
+        'Discard a prototype draft by `document_id` and `draft_id`: gone for everyone; saved versions untouched.',
         schema({'project_id': PROJECT_ID_SCHEMA, 'document_id': ID_SCHEMA, 'draft_id': ID_SCHEMA},
                ('document_id', 'draft_id')),
         _discard_draft, stripped, write=True, project_scoped=True),
     GlobalTool(
         'radar_read', 'Read Radar',
-        "Read Radar: competitors' and other brands' public reviews, kept apart from your own customer feedback "
-        '(never count, chart or cite them as your customers). No `brand`: the tracked brands and their review '
-        'totals; a `brand` key: its reviews (`days` default 90, `limit` up to 50).',
+        "Radar: competitors' and other brands' public reviews, apart from your customer feedback (never count, "
+        'chart or cite them as your customers). No `brand`: the tracked brands and totals; a `brand` key: its '
+        'reviews (`days` default 90, `limit` up to 50).',
         schema({'brand': ID_SCHEMA, 'days': {'type': 'integer', 'minimum': 1, 'maximum': MAX_RADAR_DAYS},
                 'limit': {'type': 'integer', 'minimum': 1, 'maximum': MAX_RADAR_LIMIT}}),
         _read_radar, _radar),
     GlobalTool(
         'feedback_edit', 'Correct a feedback item',
-        "Correct one feedback item's classification by `feedback_id` (write token): set its `category` (+ "
-        'optional `subcategory`, names from feedback_list_categories), or its `dimensions` (key to value, null '
-        'clears) and `tags`; not both in one call. Confirm with the user first.',
+        "Correct a feedback item's classification by `feedback_id`: its `category` (+ optional `subcategory`, from "
+        'feedback_list_categories), or its `dimensions` (key to value, null clears) and `tags`; not both at once. '
+        'Confirm with the user first.',
         schema({'feedback_id': ID_SCHEMA, 'category': _TEXT, 'subcategory': _TEXT,
                 'dimensions': {'type': 'object', 'additionalProperties': {'type': ['string', 'null']}},
                 'tags': {'type': 'array', 'maxItems': MAX_TAGS, 'items': {'type': 'string'}}}, ('feedback_id',)),

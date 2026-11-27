@@ -156,7 +156,8 @@
     "picker": {
       "title": "Choisir un espace de travail",
       "intro": "Vous êtes membre de plusieurs espaces de travail. Choisissez celui à ouvrir.",
-      "lastUsed": "Dernier utilisé"
+      "lastUsed": "Dernier utilisé",
+      "create": "Créer un espace de travail"
     },
     "notFound": {
       "title": "Espace de travail introuvable",
@@ -640,7 +641,7 @@
     "expiryDays_other": "{{count, number}} jours",
     "expiryDays_many": "{{count, number}} jours",
     "projectLabel": "Projet",
-    "projectHint": "Facultatif : limiter les outils de projet à un seul projet.",
+    "projectHint": "Facultatif : limiter les outils de projet à un seul projet. Un jeton ainsi limité n’obtient pas les outils de formulaires de feedback, pas même pour le formulaire de validation de son projet. Ses lectures du feedback omettent l’e-mail et le nom enregistrés de l’expéditeur, les réponses de contact des formulaires et l’expéditeur d’un e-mail de la boîte de réception ; tout le reste, comme un e-mail saisi dans une réponse libre, suit la politique de données personnelles de la source.",
     "projectAll": "Tous mes projets",
     "mintFailed": "Impossible de créer le jeton. Vérifiez les champs et réessayez.",
     "minting": "Création…",

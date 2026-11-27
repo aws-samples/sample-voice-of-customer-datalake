@@ -458,7 +458,7 @@ export class VocCoreStack extends VocStack {
 
     const productDocExtractor = new lambda.Function(this, 'ProductDocExtractorLambda', {
       functionName: this.uniqueName('voc-product-doc-extractor'),
-      runtime: lambda.Runtime.PYTHON_3_14,
+      runtime: lambda.Runtime.PYTHON_3_15,
       architecture: lambda.Architecture.ARM_64,
       handler: 'handler.lambda_handler',
       // NO `bundling` block, mirroring CdnSigningKeysLambda: the handler is

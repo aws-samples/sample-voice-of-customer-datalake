@@ -3,6 +3,8 @@
  * reaches the system prompt of a project page whose caller may edit, asks about exactly
  * the product-context fields, once each, and is absent where it could not end in a write.
  */
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import type { PageKind } from '../contract.js';
 import { buildCatalogue } from './catalogue.js';
@@ -34,9 +36,18 @@ describe('the product interview questions', () => {
 
   it('start with what the product is and end with the free-form notes', () => {
     expect(PRODUCT_INTERVIEW_QUESTIONS.map((q) => q.field)).toStrictEqual([
-      'product_name', 'one_liner', 'target_users', 'problem_solved', 'current_state', 'key_features',
-      'differentiators', 'success_metrics', 'known_limitations', 'non_goals', 'free_form_notes',
+      'product_name', 'one_liner', 'product_summary', 'target_users', 'problem_solved', 'current_state',
+      'key_features', 'differentiators', 'success_metrics', 'known_limitations', 'non_goals', 'free_form_notes',
     ]);
+  });
+
+  // The Product tab's gaps panel asks the same fields before any extract, in nine languages (7.104.00).
+  it('are the fields the Product tab\'s default questions cover (projectDetail product.questions)', () => {
+    const locale: unknown = JSON.parse(readFileSync(join(__dirname, '../../../../../frontend/public/locales/en/projectDetail.json'), 'utf8'));
+    const questions = typeof locale === 'object' && locale !== null && 'product' in locale && typeof locale.product === 'object'
+      && locale.product !== null && 'questions' in locale.product ? locale.product.questions : {};
+    const camel = (field: string) => field.replaceAll(/_([a-z])/g, (_match, letter: string) => letter.toUpperCase());
+    expect(Object.keys(questions ?? {}).sort(byName)).toStrictEqual(PRODUCT_INTERVIEW_QUESTIONS.map((q) => camel(q.field)).sort(byName));
   });
 
   it('name every lifecycle value the write accepts for current_state', () => {

@@ -587,7 +587,7 @@ export class VocApiStack extends VocStack {
 
     return new lambda.Function(this, `${pascalPluginId}Webhook`, {
       functionName: this.uniqueName(`voc-webhook-${plugin.id}`),
-      runtime: lambda.Runtime.PYTHON_3_14,
+      runtime: lambda.Runtime.PYTHON_3_15,
       architecture: lambda.Architecture.ARM_64,
       handler: 'handler.lambda_handler',
       code: webhookCode,

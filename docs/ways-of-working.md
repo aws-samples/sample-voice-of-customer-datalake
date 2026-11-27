@@ -88,7 +88,13 @@ Gated routes (PR/FAQ / PRD only):
   a person's own edit is their text and stays allowed in every mode. This covers MCP
   `documents_update` and plan `update_document` steps;
 - `POST /projects/{id}/documents` with `document_type` `prfaq` / `prd` for autonomous callers
-  (a person writing by hand is always allowed).
+  (a person writing by hand is always allowed);
+- the Product tab's product description (7.104.00), which PRD and PR/FAQ generation read, for
+  autonomous callers only: `PUT /projects/{id}/product-context` and
+  `POST /projects/{id}/product-proposals/{proposal_id}/accept` (MCP `product_write` `accept`, a plan
+  or agent step) are written only when the person it acts as and the project's owner work
+  AI-driven, else 403 `ai_writing_refused` (`shared/ai_writing.py` `require_autonomous_writing`).
+  A person's own edit or accept passes in every mode.
 
 A refused agent step fails with a plain sentence in the run log. A refused MCP call is audited as
 `denied`.

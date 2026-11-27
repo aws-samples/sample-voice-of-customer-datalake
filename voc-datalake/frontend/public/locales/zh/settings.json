@@ -66,6 +66,10 @@
         "description": "PRD、PR/FAQ、用户画像和研究报告",
         "label": "文档生成"
       },
+      "product_extract": {
+        "description": "读取项目的产品来源（文档、链接、图片、回答）并提出产品描述",
+        "label": "产品描述提取"
+      },
       "enrichment": {
         "description": "对每条采集项进行情感、类别和紧急度分析",
         "label": "反馈增强"

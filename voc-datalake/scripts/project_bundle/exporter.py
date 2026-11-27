@@ -4,7 +4,9 @@ What a project owns on main (enumerated from `api/projects.py` `delete_project`,
 `shared/document_versions.py`, `shared/document_comments.py`, `shared/prototype_pins.py`):
 
 * projects table, `PROJECT#{id}`: META, personas, PR/FAQs, PRDs, prototypes, custom and
-  research documents, decision records, product-doc rows: the whole partition;
+  research documents, decision records, product-doc rows, the product context and its product
+  proposals (`PRODUCT_PROPOSAL#…`, 7.104.00): the whole partition, but the product extract's lock
+  (`PRODUCT_EXTRACT`, a running extract's), meaningless on another deployment;
 * projects table, `DOCUMENT_VERSIONS#PROJECT#{id}`: the version counters and allocations;
 * projects table, `DCOMMENTS#{id}#{series}`: comment threads (`C#…`), WITHOUT the `SHARE`
   row, which points at a review link;
@@ -43,6 +45,9 @@ CONTAINER_ATTRIBUTE = 'kind'
 # Credential-shaped rows are never exported, wherever they sit.
 CREDENTIAL_ATTRIBUTES = frozenset({'token_hash', 'secret_hash'})
 CREDENTIAL_SK_PREFIXES = ('TOKEN#', 'MCPTOKEN', 'APITOKEN')
+# A running job's state in the project's partition, meaningless once copied: the product extract's lock
+# (lambda/shared/project_keys.py PRODUCT_EXTRACT_SK, 7.104.00). Not exported.
+TRANSIENT_SKS = frozenset({'PRODUCT_EXTRACT'})
 # The document rows of a project's partition: `shared/deleted_sources.py` DOCUMENT_SORT_KEY_PREFIXES, which the
 # project read lists (that module needs the Lambda layer's packages; the test keeps the two the same).
 DOCUMENT_SORT_KEY_PREFIXES = ('PRD#', 'PRFAQ#', 'RESEARCH#', 'DOC#', 'PRODUCT_REPORT#', 'PROTOTYPE#')
@@ -59,6 +64,10 @@ def is_tombstone(meta: dict[str, Any]) -> bool:
 def is_credential(item: dict[str, Any]) -> bool:
     sk = str(item.get('sk', ''))
     return sk == SHARE_INDEX_SK or sk.startswith(CREDENTIAL_SK_PREFIXES) or bool(CREDENTIAL_ATTRIBUTES & item.keys())
+
+
+def is_transient(item: dict[str, Any]) -> bool:
+    return str(item.get('sk', '')) in TRANSIENT_SKS
 
 
 def _paged(call: Any, **kwargs: Any) -> Iterator[dict[str, Any]]:
@@ -208,7 +217,8 @@ class Exporter:
         versions_pk = project_keys().version_partition_key(project_id, workspace=None)
         project_rows = (_partition(self.projects, f'PROJECT#{project_id}') + _partition(self.projects, versions_pk)
                         + comments)
-        kept = [row for row in project_rows if not is_credential(row)]
+        rows = [row for row in project_rows if not is_transient(row)]
+        kept = [row for row in rows if not is_credential(row)]
         aggregate_rows = pin_rows(self.aggregates, project_id)
         for row in kept:
             writer.add_row(project_id, 'projects', row)
@@ -224,6 +234,6 @@ class Exporter:
             'project_id': project_id, 'name': meta.get('name'), 'owner_sub': meta.get('owner_sub'),
             'owner_email': meta.get('owner_email'), 'members': member_summary(meta),
             'rows': len(kept) + len(aggregate_rows), 'objects': objects,
-            'skipped_credentials': len(project_rows) - len(kept),
+            'skipped_credentials': len(rows) - len(kept),
             'document_sections': document_section_counts(project_id, kept),
         }

@@ -164,7 +164,9 @@ const RETENTION_DEPLOYMENT_PARTITIONS = ['PROJECT#*', 'DCOMMENTS#*', 'DOCSHARE#*
  * What the worker's Queries of those partitions may read (`dynamodb:Attributes`, 7.48.00): the keys, what the erasure
  * by email judges of each kind of row (a thread's authors, replies and resolver; a link's audience, names, revocation
  * and project; a META's owner, members and delete state; a persona's research notes; a product document's upload, type, status,
- * extracted text and filename; a library item's title, source, tags and who made and changed it), a registry row's
+ * extracted text and filename, and a link's address, where it ended and its title (7.104.00); a product proposal's id, fields
+ * (values, notes, quotes), questions and sources (7.104.00); the product context's text fields (7.104.00 round 2);
+ * a library item's title, source, tags and who made and changed it), a registry row's
  * `deleted_at`, the backfill marker's time, release and counts, and the lineage marks' id lists and mark. The statement also requires `dynamodb:Select` `SPECIFIC_ATTRIBUTES`, so a Query
  * that names no attribute (which `ForAllValues` alone would let through, reading whole rows) is refused; every
  * deployment Query of the code names its attributes and says so (lambda/shared/project_walk.py `query_page`;
@@ -173,7 +175,11 @@ const RETENTION_DEPLOYMENT_PARTITIONS = ['PROJECT#*', 'DCOMMENTS#*', 'DOCSHARE#*
  */
 const DEPLOYMENT_QUERY_ATTRIBUTES = ['pk', 'sk', 'author', 'replies', 'status_by', 'audience', 'created_by_name',
   'revoked_by', 'revoked', 'project_id', 'owner_email', 'members', 'research_notes', 's3_raw_key', 'content_type',
-  'status', 's3_extracted_key', 'filename', 'deleted_at', 'deletion_started_at', 'completed_at', 'release',
+  'status', 's3_extracted_key', 'filename', 'url', 'final_url', 'proposal_id', 'fields', 'questions', 'sources',
+  // The text fields of the product context (lambda/shared/product_fields.py STRING_FIELDS; 7.104.00 round 2).
+  'product_name', 'one_liner', 'product_summary', 'target_users', 'problem_solved', 'key_features', 'differentiators',
+  'known_limitations', 'non_goals', 'success_metrics', 'free_form_notes',
+  'deleted_at', 'deletion_started_at', 'completed_at', 'release',
   'links_found', 'series_found', 'projects_found', 'input_feedback_ids', 'evidence_feedback_ids',
   'input_feature_request_ids', 'evidence_updates', 'erased_evidence', 'title', 'source', 'tags', 'created_by', 'updated_by'];
 /**
@@ -747,7 +753,7 @@ export function createRetentionWorker(scope: Construct, id: string, props: Reten
 
   const fn = new lambda.Function(worker, 'Retention', {
     functionName,
-    runtime: lambda.Runtime.PYTHON_3_14,
+    runtime: lambda.Runtime.PYTHON_3_15,
     architecture: lambda.Architecture.ARM_64,
     handler: RETENTION_HANDLER,
     code: retentionCode(),

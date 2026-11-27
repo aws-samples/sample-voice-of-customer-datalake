@@ -167,6 +167,10 @@
     {
       "key": "FEEDBACK_BY_DATE_POSITION|INDEX_ATTRIBUTES::lambda/jobs/retention/registries.py,lambda/shared/indexes.py",
       "reason": "what the retention worker's IAM lets its registries check read of voc-projects' gsi1-by-type (jobs/retention/registries.py, 7.93.00; held to lib/stacks/retention-worker.ts PROJECTS_INDEX_ATTRIBUTES by a test) and a voc-feedback row's key and gsi1-by-date position, the workspace export's resume key and the reprocess day walk's cursor (shared/indexes.py FEEDBACK_BY_DATE_POSITION, 7.94.00): both tables name their keys and gsi1's alike, two tables and two rules that move apart"
+    },
+    {
+      "key": "MODES|TRIES_AGAIN::lambda/engineering/runtime/restart.py,lambda/engineering/runtime/run_signals.py",
+      "reason": "the same two words in two vocabularies: how a person starts a child run of an ended run (engineering/runtime/restart.py MODES, 7.51.00: a Resume inherits its done steps, a Restart starts over) and the two agent signals a task that ended needing a person answers with ENDED_AT_A_PERSON (engineering/runtime/run_signals.py TRIES_AGAIN, 7.104.00; a subset of AGENT_SIGNALS); a run's restart modes and an agent's signals move apart"
     }
   ]
 }

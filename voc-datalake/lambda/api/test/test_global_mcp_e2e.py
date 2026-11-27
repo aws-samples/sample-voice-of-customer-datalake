@@ -5,7 +5,7 @@ session against ``mcp_global_handler.lambda_handler`` — ``initialize`` →
 ``notifications/initialized`` → ``tools/list`` → ``tools/call`` — over the REST
 proxy event API Gateway delivers, with tokens minted through the REAL token API
 (``mcp_tokens_handler``) and every tool delegated to the REAL domain handlers
-(projects, agents) against moto tables. The user directory (Cognito) is an
+(projects, agents, metrics) against moto tables. The user directory (Cognito) is an
 in-memory fake at the boto3 surface, and Step Functions is a mock; nothing else
 between the JSON-RPC frame and the DynamoDB row is stubbed.
 
@@ -14,19 +14,37 @@ The cases the spec names:
   (b) a write token creates (and updates) a document;
   (c) a revoked or an expired token is refused — at the handshake too;
   (d) a project-scoped token is refused outside its project;
-  (e) a non-admin token is refused ``agents_run`` (and an admin's works, until demoted).
+  (e) a non-admin token is refused ``agents_run`` (and an admin's works, until demoted);
+  (f) a project-scoped token reads a form's response, and an email to the inbox, without the contact fields the
+      pin removes, and an address typed into an open answer as the source's PII policy stored it (7.104.00).
 
 Live testing with Cowork / Copilot / Amazon Quick / Kiro needs a deployment
 (docs/mcp.md); this is the strongest check possible without one.
 """
 from __future__ import annotations
 
-from collections.abc import Generator
+from collections.abc import Generator, Iterable
 from contextlib import contextmanager
 from unittest.mock import MagicMock, patch
 
 import pytest
-from global_mcp_world import ALPHA, ALPHA_DOC, BETA, GAMMA, global_mcp_world, tool_payload
+from global_mcp_world import (
+    ALPHA,
+    ALPHA_DOC,
+    BETA,
+    FORM_CONTACT_ANSWER,
+    FORM_FEEDBACK_ID,
+    FORM_METADATA,
+    FORM_TEXT,
+    FORM_TYPED_EMAIL,
+    GAMMA,
+    INBOX_FEEDBACK_ID,
+    INBOX_SENDER,
+    McpReply,
+    global_mcp_world,
+    inbox_item,
+    tool_payload,
+)
 
 from shared import mcp_global_tokens as gt
 
@@ -36,12 +54,21 @@ READ_TOOLS = {'feedback_search', 'feedback_get', 'feedback_get_metrics', 'feedba
               'documents_list_prototype_feedback', 'agents_list', 'agents_get_run',
               'feature_requests_search', 'radar_read', 'prioritization_get', 'documents_get_prototype_draft',
               'documents_get_prototype_outline', 'documents_get_prototype_walkthrough', 'library_search',
-              'forms_get_results'}
+              'forms_get_results', 'forms_list', 'forms_get', 'forms_get_responses', 'forms_get_report', 'product_get'}
 WRITE_TOOLS = {'documents_create', 'documents_update', 'documents_revise_from_comments',
                'documents_mark_comments_addressed', 'projects_generate', 'feedback_edit', 'prioritization_score',
                'feature_requests_write', 'documents_draft_prototype_revision', 'documents_apply_prototype_draft',
                'documents_discard_prototype_draft', 'documents_set_prototype_walkthrough',
-               'documents_draft_prototype_walkthrough'}
+               'documents_draft_prototype_walkthrough', 'product_write'}
+
+
+def _values_in(reply: McpReply, values: Iterable[str]) -> set[str]:
+    """Which of ``values`` a tool result's text holds, anywhere in it (``structuredContent`` is the same payload). The
+    text is decoded out of the JSON-RPC body first (7.104.00 review, Q1): a split of the body on quotes found a value
+    only as a whole string of ``structuredContent``, never inside a longer one or in the escaped text."""
+    assert reply.body is not None
+    text = reply.body['result']['content'][0]['text']
+    return {value for value in values if value in text}
 
 
 @pytest.fixture
@@ -190,6 +217,96 @@ class TestDeadTokens:
 
 
 class TestProjectScopedToken:
+    def test_is_neither_offered_nor_let_call_the_forms_tools(self, world):
+        # (S1, 7.104.00 review) The forms are the scope's, never one project's, and a form's responses carry its
+        # respondents' contact answers: a pinned token, even a read-only one, gets none of the five forms tools.
+        minted = world.mint('alice', scope='read', project_id=ALPHA)
+        client = _connected(world, minted)
+        forms = sorted(name for name in READ_TOOLS if name.startswith('forms_'))
+        assert len(forms) == 5
+        assert set(client.tool_names()) == READ_TOOLS - set(forms)
+        calls_before = len(world.lambdas.calls)
+        for name in forms:
+            is_error, message = tool_payload(client.call(name, {} if name == 'forms_list' else {'form_id': 'ff_1'}))
+            assert is_error
+            assert message == f'{name} reaches beyond one project; this token is scoped to one project'
+        assert len(world.lambdas.calls) == calls_before
+        assert [event['outcome'] for event in world.audit('alice', minted['token_id'])[:5]] == [gt.OUTCOME_DENIED] * 5
+
+    def test_reads_a_form_response_without_its_respondents_contact_fields(self, world):
+        # (S1, 7.104.00 review) What the Connect page promises: a pinned token, which gets no forms tool, does not
+        # read a respondent's contact fields through the feedback reads either. feedback_get and feedback_search (the
+        # newest, and a query) leave out metadata's submitter_email, submitter_name and email and every contact_info
+        # answer: no value of the contact answer is anywhere in the three answers. The response's other answers, its
+        # path and the item itself stay; the item has no author, and is as an unpinned token reads it but for metadata.
+        client = _connected(world, world.mint('alice', scope='read', project_id=ALPHA))
+        kept = {key: value for key, value in FORM_METADATA.items()
+                if key not in ('submitter_email', 'submitter_name', 'email')}
+        kept['form_answers'] = {qid: answer for qid, answer in FORM_METADATA['form_answers'].items()
+                                if qid != 'q_contact'}
+
+        replies = [client.call('feedback_get', {'feedback_id': FORM_FEEDBACK_ID}),
+                   *(client.call('feedback_search', arguments)
+                     for arguments in ({'days': 1}, {'days': 1, 'query': 'refunds'}))]
+        is_error, item = tool_payload(replies[0])
+        assert not is_error
+        assert (item['feedback_id'], item['original_text'], item['metadata']) == (FORM_FEEDBACK_ID, FORM_TEXT, kept)
+        for reply in replies[1:]:
+            is_error, found = tool_payload(reply)
+            assert not is_error
+            assert [(row['feedback_id'], row['metadata']) for row in found['items']] == [(FORM_FEEDBACK_ID, kept)]
+        assert [_values_in(reply, FORM_CONTACT_ANSWER.values()) for reply in replies] == [set()] * 3
+        _, whole = tool_payload(_connected(world, world.mint('alice', scope='read')).call(
+            'feedback_get', {'feedback_id': FORM_FEEDBACK_ID}))
+        assert 'author' not in item
+        assert {key: value for key, value in item.items() if key != 'metadata'} == {
+            key: value for key, value in whole.items() if key != 'metadata'}
+
+    def test_an_email_typed_into_an_open_answer_follows_the_source_policy_not_the_pin(self, world):
+        # (S1, S3, S4, 7.104.00 review) The pin removes the named contact fields only. An address typed into an
+        # open-text question (an email-typed input) is the respondent's own words: a pinned token reads it as the
+        # source's PII policy stored it, in form_answers and in the item's text (here allow, so as typed; redact would
+        # have run it through the PII redaction before it was stored).
+        client = _connected(world, world.mint('alice', scope='read', project_id=ALPHA))
+
+        is_error, item = tool_payload(client.call('feedback_get', {'feedback_id': FORM_FEEDBACK_ID}))
+        assert (is_error, item['metadata']['form_answers']['q_reply']) == (False, FORM_TYPED_EMAIL)
+        assert FORM_TYPED_EMAIL in item['original_text']
+        found = client.call('feedback_search', {'days': 1, 'query': 'refunds'})
+        assert _values_in(found, [FORM_TYPED_EMAIL]) == {FORM_TYPED_EMAIL}
+
+    def test_reads_an_inbox_email_without_its_sender(self, world):
+        # (S2, 7.104.00 review) The email inbox keeps its sender's name, else address, as the item's top-level author
+        # and the address as metadata.email: a pinned token reads neither, through feedback_get or feedback_search,
+        # and the rest of the item as stored.
+        world.feedback.put_item(Item=inbox_item())
+        client = _connected(world, world.mint('alice', scope='read', project_id=ALPHA))
+        stored = {key: value for key, value in inbox_item()['metadata'].items() if key != 'email'}
+
+        replies = [client.call('feedback_get', {'feedback_id': INBOX_FEEDBACK_ID}),
+                   client.call('feedback_search', {'days': 1, 'query': 'export'})]
+        is_error, item = tool_payload(replies[0])
+        assert (is_error, 'author' in item, item['metadata']) == (False, False, stored)
+        is_error, found = tool_payload(replies[1])
+        assert [(row['feedback_id'], 'author' in row) for row in found['items']] == [(INBOX_FEEDBACK_ID, False)]
+        assert [_values_in(reply, INBOX_SENDER.values()) for reply in replies] == [set()] * 2
+
+    def test_an_unpinned_token_reads_the_contact_fields_as_before(self, world):
+        world.feedback.put_item(Item=inbox_item())
+        client = _connected(world, world.mint('alice', scope='read'))
+
+        form = client.call('feedback_get', {'feedback_id': FORM_FEEDBACK_ID})
+        is_error, item = tool_payload(form)
+        assert (is_error, item['metadata']) == (False, FORM_METADATA)
+        is_error, found = tool_payload(client.call('feedback_search', {'days': 1, 'query': 'refunds'}))
+        assert (is_error, [row['metadata'] for row in found['items']]) == (False, [FORM_METADATA])
+        inbox = client.call('feedback_get', {'feedback_id': INBOX_FEEDBACK_ID})
+        is_error, mail = tool_payload(inbox)
+        assert (is_error, mail['author'], mail['metadata']) == (False, INBOX_SENDER['author'], inbox_item()['metadata'])
+        # (Q1) The pinned tests' check finds every value in these answers, so it fails once one reaches a pinned token.
+        assert (_values_in(form, FORM_CONTACT_ANSWER.values()), _values_in(inbox, INBOX_SENDER.values())) == (
+            set(FORM_CONTACT_ANSWER.values()), set(INBOX_SENDER.values()))
+
     def test_is_confined_to_its_project(self, world):
         minted = world.mint('alice', scope='write', project_id=ALPHA)
         client = _connected(world, minted)

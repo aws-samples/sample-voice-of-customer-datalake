@@ -11,7 +11,6 @@ from moto import mock_aws
 
 from engineering.board.test.table import TABLE, create_table
 from engineering.connectors.broker import (
-    CLAIM_CLOCK_MARGIN_SECONDS,
     STALE_CLAIM_SECONDS,
     Broker,
     NotNow,
@@ -227,9 +226,8 @@ def test_a_crash_between_an_issue_writes_claim_and_its_outcome_blocks_the_run_on
     assert (url, labelled) == ('https://code.example.com/issue/42#comment-1', ('voc-triage/bug', 'voc-severity/s2'))
     [(*_, posted)] = [call for call in host.calls if call[0] == 'post_comment']
     assert posted == f'A bug: the refund total drops the tax.\n\n{issue_marker(RUN)}'
-    # (7.71.04) The look reads the comments updated since the first call's claim, a minute's margin before it.
     looked = [call for call in host.calls if call[0] == 'issue_comment']
-    assert looked == [('issue_comment', 'conn-1', 42, issue_marker(RUN), 1_000 - CLAIM_CLOCK_MARGIN_SECONDS)]
+    assert looked == [('issue_comment', 'conn-1', 42, issue_marker(RUN))]
     assert host.writes() == ['post_comment', 'label_issue', 'label_issue']
     assert _states(client) == {'issue#42#label_issue': WRITE_DONE, 'issue#42#post_comment': WRITE_DONE}
     # Once done, a third caller gets the answers back and nothing more is written.
@@ -245,8 +243,7 @@ def test_an_issue_comment_retried_after_a_crash_is_posted_when_the_host_has_none
     assert broker.post_comment(Caller('understander', RUN, 5), 'issue', 42, 'The refund total is wrong.') == (
         'https://code.example.com/issue/42#comment-1')
     looked = [call for call in host.calls if call[0] == 'issue_comment']
-    assert looked == [('issue_comment', 'conn-1', 42, issue_marker(RUN),
-                       writes.now - STALE_CLAIM_SECONDS - CLAIM_CLOCK_MARGIN_SECONDS)]
+    assert looked == [('issue_comment', 'conn-1', 42, issue_marker(RUN))]
     assert (host.writes(), writes.claims[(RUN, 'issue#42#post_comment')].state) == (['post_comment'], WRITE_DONE)
 
 
@@ -277,9 +274,8 @@ def test_an_issue_write_reads_its_claim_row_once_and_looks_on_the_host_only_afte
 
 def test_a_look_on_the_host_that_fails_leaves_the_issue_comment_unknown_and_writes_nothing():
     class Unreadable(FakeHost):
-        def issue_comment(self, connection_id: str, number: int, marker: str, since: int) -> str | None:
-            raise HostError(f'The host answered 500 to the comment read ({connection_id}, #{number}, {marker}, '
-                            f'{since}).')
+        def issue_comment(self, connection_id: str, number: int, marker: str) -> str | None:
+            raise HostError(f'The host answered 500 to the comment read ({connection_id}, #{number}, {marker}).')
 
     writes, host = FakeWrites(), Unreadable()
     broker = Broker(connector(host=host, writes=writes))
@@ -287,6 +283,52 @@ def test_a_look_on_the_host_that_fails_leaves_the_issue_comment_unknown_and_writ
     with pytest.raises(HostError):
         broker.post_comment(Caller('understander', RUN, 5), 'issue', 42, 'The refund total is wrong.')
     assert (host.writes(), writes.claims[(RUN, 'issue#42#post_comment')].state) == ([], WRITE_UNKNOWN)
+
+
+class FlakyLook(FakeHost):
+    """A host whose first comment post's answer is lost (a host error: the comment is made) and whose first look for
+    it fails."""
+
+    lost: bool = True
+    unread: bool = True
+
+    def post_comment(self, connection_id: str, on: Any, number: int, body: str) -> str:
+        url = super().post_comment(connection_id, on, number, body)
+        if self.lost:
+            self.lost = False
+            raise HostError('The repository host\'s answer to a write was lost: the write may have happened.')
+        return url
+
+    def issue_comment(self, connection_id: str, number: int, marker: str) -> str | None:
+        if self.unread:
+            self.unread = False
+            self.calls.append(('issue_comment', connection_id, number, marker))
+            raise HostError('The repository host answered 502 to the comment read.')
+        return super().issue_comment(connection_id, number, marker)
+
+
+def test_an_issue_comment_after_a_lost_answer_and_a_failed_look_is_found_on_the_host_not_posted_twice(client: Any):
+    # (Q3/F4, 7.104.00) The claim and look sequence of the reviewer's case: the first call's comment is made but its
+    # answer is lost (unknown); the claim, taken again once stale, looks on the host and that look fails (unknown
+    # again); taken again once stale, the third call looks again, finds the comment and posts nothing. What it pins is
+    # that sequence (one post, two looks, the claim done). FakeHost's look has no time bound, so it cannot reproduce
+    # 7.71.04's ``since`` passing the first comment: test_github.py's
+    # test_the_look_reads_the_newest_comments_first_however_long_the_thread guards that.
+    now = [1_000]
+    host = FlakyLook()
+    broker = Broker(connector(host=host, writes=WriteClaims(client, TABLE, clock=lambda: now[0])))
+    with pytest.raises(OutcomeUnknown):
+        broker.post_comment(Caller('understander', RUN, 2), 'issue', 42, 'A bug: the refund total drops the tax.')
+    now[0] += STALE_CLAIM_SECONDS
+    with pytest.raises(HostError):
+        broker.post_comment(Caller('understander', RUN, 5), 'issue', 42, 'The refund total is wrong.')
+    assert _states(client) == {'issue#42#post_comment': WRITE_UNKNOWN}
+    now[0] += STALE_CLAIM_SECONDS
+    url = broker.post_comment(Caller('understander', RUN, 7), 'issue', 42, 'The refund total is wrong.')
+    assert (url, host.writes(), _states(client)) == ('https://code.example.com/issue/42#comment-1', ['post_comment'],
+                                                     {'issue#42#post_comment': WRITE_DONE})
+    assert [call for call in host.calls if call[0] == 'issue_comment'] == [
+        ('issue_comment', 'conn-1', 42, issue_marker(RUN))] * 2
 
 
 def _states(client: Any) -> dict[str, str]:

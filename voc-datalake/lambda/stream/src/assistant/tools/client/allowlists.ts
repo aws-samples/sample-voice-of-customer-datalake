@@ -13,8 +13,9 @@
  *     regenerate-avatar flow; a model-chosen URL would be rendered as an <img>)
  *     and `research_notes` (replacing the list would delete notes; use
  *     add_persona_note). Sections follow `schemas/persona.schema.json`.
- *   - product context: `lambda/api/product_context.py` STRING_FIELDS (with their
- *     max lengths) + `current_state` ∈ LIFECYCLE_STATES. LIST_FIELDS is empty.
+ *   - product context: `lambda/shared/product_fields.py` STRING_FIELDS (with their
+ *     max lengths) + `current_state` ∈ LIFECYCLE_STATES, pinned against the two
+ *     constants below by `lambda/shared/test/test_product_fields.py`.
  *   - feedback form (schema version 2 since 7.55.00): what every form takes.
  *     From `feedback_form_handler.py::UPDATABLE_FIELDS`, `enabled`, `name` and
  *     `dimension_defaults` / `tags` (docs/dimensions.md, flat maps/lists the
@@ -99,10 +100,11 @@ export const personaUpdatesShape = {
 
 export const personaUpdatesSchema = changesSomething(z.object(personaUpdatesShape).strict());
 
-/** product_context.py STRING_FIELDS, name → max length. */
+/** shared/product_fields.py STRING_FIELDS, name → max length. */
 export const PRODUCT_CONTEXT_STRING_FIELDS = {
   product_name: 200,
   one_liner: 200,
+  product_summary: 3000,
   target_users: 1000,
   problem_solved: 2000,
   key_features: 2000,
@@ -121,6 +123,7 @@ const F = PRODUCT_CONTEXT_STRING_FIELDS;
 export const productContextUpdatesShape = {
   product_name: textField(F.product_name).optional(),
   one_liner: textField(F.one_liner).optional(),
+  product_summary: textField(F.product_summary).optional(),
   target_users: textField(F.target_users).optional(),
   problem_solved: textField(F.problem_solved).optional(),
   key_features: textField(F.key_features).optional(),

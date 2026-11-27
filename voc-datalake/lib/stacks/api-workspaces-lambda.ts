@@ -142,7 +142,7 @@ export function createWorkspacesLambda(ctx: ApiStackContext, inputs: WorkspacesI
     functionName,
     role,
     environment,
-    runtime: lambda.Runtime.PYTHON_3_14,
+    runtime: lambda.Runtime.PYTHON_3_15,
     architecture: lambda.Architecture.ARM_64,
     handler: WORKSPACES_HANDLER_FILE.replace(/\.py$/, '.lambda_handler'),
     code: ctx.apiCode(WORKSPACES_HANDLER_FILE),

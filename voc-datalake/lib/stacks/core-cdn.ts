@@ -226,7 +226,7 @@ export function createCoreCdn(ctx: CoreBuildContext, inputs: CdnInputs): CoreCdn
 
   const cdnSigningKeysLambda = new lambda.Function(stack, 'CdnSigningKeysLambda', {
     functionName: ctx.uniqueName('voc-cdn-signing-keys'),
-    runtime: lambda.Runtime.NODEJS_24_X,
+    runtime: lambda.Runtime.NODEJS_26_X,
     architecture: lambda.Architecture.ARM_64,
     handler: 'cdn_signing_keys.handler',
     // Node rather than Python: crypto.generateKeyPairSync is stdlib, so this

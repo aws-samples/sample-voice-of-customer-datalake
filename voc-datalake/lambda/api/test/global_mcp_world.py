@@ -2,7 +2,10 @@
 
 ``global_mcp_world()`` builds, inside one ``mock_aws``: the projects table (with
 its type index), the jobs table (audit), the agents/aggregates tables
-(``agents_env``), a user directory with ``alice`` (a user), ``bob`` (a user)
+(``agents_env``), the feedback table (its date and feedback-id indexes) with one
+feedback form's response (``_form_item``, its respondent's contact fields included; an email inbox item,
+``inbox_item``, is for a test to add),
+a user directory with ``alice`` (a user), ``bob`` (a user)
 and ``root`` (an admin) — ``FakeDirectory``, because moto's Cognito backend needs
 a package this venv lacks — three projects and one agent.
 
@@ -26,19 +29,21 @@ from collections.abc import Generator
 from contextlib import ExitStack, contextmanager
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
+from decimal import Decimal
 from typing import Any
 from unittest.mock import patch
 
 from botocore.exceptions import ClientError
-from moto_helpers import pk_sk_table, rest_event
+from moto_helpers import indexed_table, pk_sk_table, rest_event
 
 import agents_handler
 import mcp_global_handler
 import mcp_tokens_handler
+import metrics_handler
 import projects
 import projects_handler
 from shared import mcp_global_tokens as gt
-from shared.indexes import PROJECTS_BY_TYPE_INDEX
+from shared.indexes import FEEDBACK_BY_DATE_INDEX, FEEDBACK_BY_ID_INDEX, PROJECTS_BY_TYPE_INDEX
 from shared.test.agents_fixtures import agent_body, agents_env
 
 PROTOCOL_VERSION = '2025-06-18'
@@ -47,6 +52,26 @@ FUNCTIONS = {'PROJECTS_FUNCTION': 'projects-fn', 'AGENTS_FUNCTION': 'agents-fn',
              'MEMORY_FUNCTION': 'memory-fn'}
 ALPHA, BETA, GAMMA = 'proj_alpha', 'proj_beta', 'proj_gamma'
 ALPHA_DOC = 'doc_alpha_brief'
+FORM_FEEDBACK_ID = 'fb_form_1'
+#: A feedback form's response as the processor stores it (shared/forms_v2_responses.py answers) under the allow
+#: policy: its respondent's contact fields in ``metadata`` (the submit route's ``submitter_email`` /
+#: ``submitter_name``, and ``email``, the key the inbox keeps its sender's address under) and in its contact_info
+#: answer, ``q_contact``; and an open-text question whose input is email-typed, ``q_reply``, answered with an address:
+#: the respondent's own words like any open answer, so also in the item's text (response_text).
+FORM_CONTACT_ANSWER = {'name': 'Ana Example', 'email': 'ana@example.com', 'phone': '+1 555 0100', 'company': 'Example Co'}
+FORM_TYPED_EMAIL = 'ana.work@example.com'
+FORM_TEXT = f'Why?\nRefunds take too long\n\nYour work email\n{FORM_TYPED_EMAIL}'
+FORM_METADATA = {
+    'form_id': 'ff_checkout', 'form_name': 'Checkout survey', 'form_version': '3.0', 'form_revision': 1,
+    'form_language': 'en', 'form_path': ['q_why', 'q_reason', 'q_rate', 'q_reply', 'q_contact'],
+    'form_answers': {'q_why': 'Refunds take too long', 'q_reason': {'code': 'slow'}, 'q_rate': 2,
+                     'q_reply': FORM_TYPED_EMAIL, 'q_contact': FORM_CONTACT_ANSWER},
+    'submitter_email': 'ana@example.com', 'submitter_name': 'Ana Example', 'email': 'ana@example.com',
+}
+INBOX_FEEDBACK_ID = 'fb_inbox_1'
+#: The email inbox's sender as an item of it keeps them under the allow policy (email_intake/compose.py
+#: build_message): the name, else the address, as the top-level ``author``, the address as ``metadata.email``.
+INBOX_SENDER = {'author': 'Ben Sender', 'email': 'ben.sender@example.com'}
 
 
 class InProcessLambda:
@@ -174,6 +199,7 @@ class World:
     subs: dict[str, str]
     agent_id: str
     lambdas: InProcessLambda
+    feedback: Any
 
     def claims(self, username: str) -> dict:
         claims = {'sub': self.subs[username], 'cognito:username': username, 'email': f'{username}@example.com'}
@@ -220,6 +246,33 @@ def _project(table: Any, project_id: str, *, owner: str, visibility: str, name: 
     })
 
 
+def _form_item() -> dict[str, Any]:
+    """Today's response of a feedback form, in its source partition and both indexes."""
+    today = datetime.now(UTC).strftime('%Y-%m-%d')
+    return {
+        'pk': 'SOURCE#feedback_form', 'sk': f'FEEDBACK#{FORM_FEEDBACK_ID}', 'feedback_id': FORM_FEEDBACK_ID,
+        'gsi4pk': f'FEEDBACK#{FORM_FEEDBACK_ID}', 'gsi1pk': f'DATE#{today}', 'gsi1sk': f'{today}T09:00:00+00:00',
+        'date': today, 'source_platform': 'feedback_form', 'source_channel': 'form_ff_checkout',
+        'created_at': f'{today}T09:00:00+00:00', 'original_text': FORM_TEXT, 'category': 'billing',
+        'sentiment_label': 'negative', 'sentiment_score': Decimal('-0.6'), 'problem_summary': 'Slow refunds',
+        'metadata': FORM_METADATA,
+    }
+
+
+def inbox_item() -> dict[str, Any]:
+    """Today's email to the inbox, in its source partition and both indexes, an hour after the form's response."""
+    today = datetime.now(UTC).strftime('%Y-%m-%d')
+    return {
+        'pk': 'SOURCE#email_intake', 'sk': f'FEEDBACK#{INBOX_FEEDBACK_ID}', 'feedback_id': INBOX_FEEDBACK_ID,
+        'gsi4pk': f'FEEDBACK#{INBOX_FEEDBACK_ID}', 'gsi1pk': f'DATE#{today}', 'gsi1sk': f'{today}T10:00:00+00:00',
+        'date': today, 'source_platform': 'email_intake', 'source_channel': 'feedback',
+        'created_at': f'{today}T10:00:00+00:00', 'original_text': 'The export button crashes the app',
+        'category': 'bugs', 'sentiment_label': 'negative', 'sentiment_score': Decimal('-0.7'),
+        'problem_summary': 'Export crashes', 'author': INBOX_SENDER['author'],
+        'metadata': {'email': INBOX_SENDER['email'], 'thread_id': 'thr_1', 'is_reply': False, 'forwarded': False},
+    }
+
+
 def _users() -> tuple[FakeDirectory, dict[str, str]]:
     directory = FakeDirectory(('alice', 'bob', 'root'), admins={'root'})
     return directory, {name: user['sub'] for name, user in directory.users.items()}
@@ -241,11 +294,15 @@ def global_mcp_world(lambda_context: Any) -> Generator[World, None, None]:
     with agents_env() as env, ExitStack() as stack:
         projects_table = pk_sk_table('e2e-projects', gsi1_index=PROJECTS_BY_TYPE_INDEX)
         jobs_table = pk_sk_table('e2e-jobs')
+        feedback_table = indexed_table(env.resource, 'e2e-feedback', {FEEDBACK_BY_DATE_INDEX: ('gsi1pk', 'gsi1sk'),
+                                                                     FEEDBACK_BY_ID_INDEX: ('gsi4pk', None)})
+        feedback_table.put_item(Item=_form_item())
         cognito, subs = _users()
         pool_id = 'us-east-1_e2e'
         _seed(projects_table, subs)
 
-        lambdas = InProcessLambda({'projects-fn': projects_handler, 'agents-fn': agents_handler}, lambda_context)
+        lambdas = InProcessLambda({'projects-fn': projects_handler, 'agents-fn': agents_handler,
+                                   'metrics-fn': metrics_handler}, lambda_context)
         stack.enter_context(patch.dict(os.environ, {**FUNCTIONS, 'USER_POOL_ID': pool_id}))
         for module in (mcp_global_handler, mcp_tokens_handler, projects_handler):
             stack.enter_context(patch.object(module, 'get_projects_table', return_value=projects_table))
@@ -253,6 +310,8 @@ def global_mcp_world(lambda_context: Any) -> Generator[World, None, None]:
             stack.enter_context(patch.object(module, 'get_jobs_table', return_value=jobs_table))
         stack.enter_context(patch.object(projects, 'projects_table', projects_table))
         stack.enter_context(patch.object(agents_handler, 'get_aggregates_table', return_value=env.aggregates))
+        stack.enter_context(patch.object(metrics_handler, 'feedback_table', feedback_table))
+        stack.enter_context(patch.object(metrics_handler, 'aggregates_table', env.aggregates))
         stack.enter_context(patch.object(mcp_global_handler, '_cognito_client', return_value=cognito))
         stack.enter_context(patch('shared.mcp_delegate.get_delegate_lambda_client', return_value=lambdas))
         # A fresh table has no backfill marker: never inherit a warm "index complete".
@@ -261,7 +320,8 @@ def global_mcp_world(lambda_context: Any) -> Generator[World, None, None]:
         created = agents_handler.lambda_handler(_agent_event(subs['root']), lambda_context)
         assert created['statusCode'] == 201, created['body']
         agent_id = json.loads(created['body'])['agent']['agent_id']
-        yield World(lambda_context, projects_table, jobs_table, env, cognito, pool_id, subs, agent_id, lambdas)
+        yield World(lambda_context, projects_table, jobs_table, env, cognito, pool_id, subs, agent_id, lambdas,
+                    feedback_table)
 
 
 def _agent_event(admin_sub: str) -> dict:

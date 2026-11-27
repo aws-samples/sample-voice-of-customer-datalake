@@ -91,7 +91,7 @@ export function createPlanStepFunction(scope: Construct, props: PlanStepProps): 
     entry: path.join(STREAM_ROOT, 'src/plan-step/handler.ts'),
     depsLockFilePath: path.join(STREAM_ROOT, 'package-lock.json'),
     handler: 'handler',
-    runtime: lambda.Runtime.NODEJS_24_X,
+    runtime: lambda.Runtime.NODEJS_26_X,
     architecture: lambda.Architecture.ARM_64,
     role,
     // Like the streaming assistant: a think step is a bounded tool loop.

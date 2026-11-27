@@ -118,8 +118,9 @@ export function s3ObjectSuppressions(objectArns: readonly string[]): NagAck[] {
  * reviewer: avatars/ (projects API, persona generator and importer), company-context/ (settings API),
  * company-context/design/logo_preview_ and icons_ (design capture, logo previews and copied icons only),
  * library/ (the projects API's Documents Library, 7.62.00), memory-imports/ (memory API and extractor),
- * projects/{@literal *}/product_docs/ (projects API; extracted/ for the
- * document generator), prototypes/ (projects API, document generator, agent nodes and persona panel),
+ * projects/{@literal *}/product_docs/ (projects API), and for the document generator, read only, its extracted/ and,
+ * since 7.104.00, raw/ subfolders (the extract sends an uploaded image itself; never source/), prototypes/
+ * (projects API, document generator, agent nodes and persona panel),
  * raw/github_issues/ (the GitHub webhook), raw/feedback_form/ (the feedback-form API), raw/feature_requests/ (the
  * engagement API's board copies) and raw/email_intake/ (the opt-in email inbox), those three write-once puts only
  * (lambda/shared/raw_copy.py); scratch/document_jobs/ and scratch/research_jobs/ (the document and research
@@ -128,7 +129,8 @@ export function s3ObjectSuppressions(objectArns: readonly string[]): NagAck[] {
  */
 export type RawDataPrefix =
   | 'avatars/*' | 'company-context/*' | 'company-context/design/logo_preview_*' | 'company-context/design/icons_*'
-  | 'library/*' | 'memory-imports/*' | 'projects/*/product_docs/*' | 'projects/*/product_docs/extracted/*' | 'prototypes/*'
+  | 'library/*' | 'memory-imports/*' | 'projects/*/product_docs/*' | 'projects/*/product_docs/extracted/*'
+  | 'projects/*/product_docs/raw/*' | 'prototypes/*'
   | 'raw/github_issues/*' | 'raw/feedback_form/*' | 'raw/feature_requests/*' | 'raw/email_intake/*'
   | 'scratch/document_jobs/*' | 'scratch/research_jobs/*' | 'scratch/voice/*';
 

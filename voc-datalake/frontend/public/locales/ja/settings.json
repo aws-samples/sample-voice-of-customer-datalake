@@ -66,6 +66,10 @@
         "description": "PRD、PR/FAQ、ペルソナ、調査レポート",
         "label": "ドキュメント生成"
       },
+      "product_extract": {
+        "description": "プロジェクトの製品ソース（ドキュメント、リンク、画像、回答）を読み、製品説明を提案します",
+        "label": "製品説明の抽出"
+      },
       "enrichment": {
         "description": "取り込んだ全項目のセンチメント・カテゴリ・緊急度",
         "label": "フィードバック強化"

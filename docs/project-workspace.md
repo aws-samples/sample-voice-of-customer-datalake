@@ -103,21 +103,129 @@ Workflows (agents) get the same advice at design time: see [autonomous-agents.md
 
 The **Product** tab (`/projects/<id>/product`) holds the project's product description, which PRD, PR/FAQ,
 product-report and prototype generation read as context. It shows one header (what the tab is for, how many of the
-11 fields are filled, when it was last saved), the company context it inherits (read-only, edited in Knowledge →
+12 fields are filled, when it was last saved), the company context it inherits (read-only, edited in Knowledge →
 Company), the description in five sections (the product · customers and problem · offering · goals and boundaries
-· notes; every field saves on its own when you leave it), and two side cards: internal documents (images and text,
-extracted for the generators) and **Generate report**. A viewer sees the fields and documents read-only, without
-the assistant button, uploads or the report.
+· notes; every field saves on its own when you leave it; "What the product does", `product_summary`, is the first
+field of the product), and beside it three cards: **Sources**, **Questions** and **Generate report**. A viewer sees
+the fields, the sources, an open proposal and the questions read-only, without the assistant button, uploads, links,
+Extract, accepts, answers or the report; the project gate refuses each of those writes anyway (a POST is an edit).
 
-**Fill with AI assistant** (editors) opens the AI assistant on a new conversation with the request "Interview me to
-fill in this project's product description." drafted; nothing is sent until you press send. The assistant then reads
-the current description (`get_product_context`) and asks about the fields that are still empty, one question per
-message, in this order: product name, one-liner, target users, problem solved, current state (idea, MVP, beta,
-generally available, mature), key features, competitors/alternatives and differentiators, goals and success
-metrics, constraints and known limitations, non-goals, anything else. After the last answer it proposes ONE
+### Sources, Extract and the review (7.104.00)
+
+**Sources** replaces the internal documents card. It takes, at most 20 in all and 10 links among them: a working-set
+limit, checked before each add (two adds at once may both take the last place, and a voice interview the project
+filled up during is saved past it, not lost). What an extract costs is bounded by the characters and images it sends
+and by the read and extract counters below, never by how many sources there are:
+
+- **files**: PDF, Word (`.docx`) and PowerPoint (`.pptx`) up to 25 MB, Markdown and text up to 10 MB, and PNG, JPEG,
+  GIF and WebP images (downscaled in the browser first, as before), by drop, pick or paste. A PDF, DOCX or PPTX
+  declares its SHA-256 at `POST …/product-docs/upload-url` (required: 400 `sha256_required` without it), which is
+  signed into the presigned PUT as its checksum (`x-amz-checksum-sha256`), so S3 refuses any other body, and its
+  reading checks it again (a record that declares none is not read: it fails as not the file announced);
+- **links**: one public `https://` page each (the page only, its links are not followed; a page behind a sign-in or
+  rendered by scripts fails with its reason: save it as PDF and upload that instead; the fetch's guard is in
+  [source-policies.md → Product source links](source-policies.md#product-source-links));
+- **answers**: the gaps panel's typed answers and the voice interviewer's transcript, each one `interview` source (a
+  question at most 200 characters, the extract's and the voice interviewer's cap too).
+
+Reading costs are capped a UTC day: 30 link reads a project (an add or a Fetch again) and 60 a person across every
+project, both counted together or neither, and 60 reads of a PDF, DOCX or PPTX a person (an announced upload or a
+Retry); past one, 429 `rate_limited` with its reason. A count that meets another request counting the same limits at
+that moment answers 503 `busy` (nothing counted): try again.
+
+Each source shows its own status: uploading, waiting to be read, reading (a link: fetching), then **Ready** with the
+characters read, its pages and "cut at the reading limit" when its text was cut, or **Failed** with its reason; a
+failed PDF, DOCX or PPTX offers Retry, a link Fetch again, and any other failed file Delete only (it is read once,
+when it is added: add it again). A refused Retry or Fetch again, or a refused delete, says why on the card in the
+server's words (a day's reads used up, a read under way); Retry and Fetch again wait, off, while one is under way. A
+source whose text reads like instructions to an AI model gets a note that it is read as data only; it is never
+refused. The card reads its list every 3 s for a minute after a source starts reading, then every 15 s up to 16
+minutes, and a list it could not read says so with **Try again**, never as an empty card. The prototype card's visual
+picker reads the same list.
+
+**Extract product description** (the card's foot) starts one background job, listed in Background Jobs as "Product
+Description Extract": it reads every ready source and the form and proposes a value for each of the 12 fields, each
+with its citations (the source, the page, a quote). It is off until a source is ready, and with sources still being
+read it asks first, since those are left out. While it runs the card shows its step (reading the sources, thinking
+with the time so far, checking the citations). A failed extract says why and offers Try again: the model refused (its
+reason), it ran out of room, or its answer could not be read; after a time-out (12 minutes) it also offers **Retry at
+xhigh**, a lower reasoning effort that finishes sooner, which runs only when you choose it; both wait, off, while
+their start is under way. An extract that reports no progress for 10 minutes (the Background Jobs panel's threshold)
+reads as stopped, with Try again; the project's extract lock still holds it until about 16 minutes after it started,
+and a Try again before then says so and when to try again. A second Extract while one runs, or more than 1 a minute
+and 10 a day per project (20 a day per person), is refused with its reason.
+
+When the extract finishes, its proposal is reviewed full width above the form, and each field it proposes shows a
+**Proposed** badge that scrolls to its row. The rows are grouped as Proposed, Conflicts (a value someone typed that a
+source contradicts), Gaps (no source answered) and Unchanged. A row shows the current value and who wrote it (typed
+by you or a teammate, the assistant's approval card included since you approved it; from an extract; or from the AI
+assistant, an MCP client, an agent or a plan), the proposed value, which you can edit before you accept it, the
+confidence, and the citations; a quote is verified only when it is at least 4 words or 20 characters and found in its
+source as sent (a shorter one verifies nothing); one that is not stays, marked unverified, and its value is low
+confidence ("no verified source"), and a source deleted since is marked. **Accept selected**, **Accept all proposed**
+and **Dismiss**: nothing is written until you accept, and an accept writes a field only while it still holds the
+value the proposal was made against. **Accept all proposed** takes the Proposed rows only: a conflict is accepted
+only when you select it on its own. A field changed since the extract says so: Accept all leaves it out, and
+selecting it on its own accepts it against its new value. A row you selected (or that started selected) whose field
+then changes (someone typed in the form, and the proposal was read again) is unselected until you select it again, so
+Accept selected never writes over a value nobody chose to replace. A value you edit before you accept it is recorded
+as yours (`by: person`, the proposal and its sources kept), not the extract's. After an accept the form shows the new
+values at once, and the review says each field that was not written and why; a proposal replaced or dismissed
+meanwhile says so in words of its own, above the review (the answer reads the proposal again, which removes the
+review or shows the newer one), until the next accept or dismiss or another proposal arrives. A proposal that could
+not be read says so with **Try again**. A later Extract replaces an open proposal. Two accepts at once never lose
+each other's marks (each is conditional on the proposal as it read it, and read again once), and a race lost twice
+answers 503 `busy`.
+
+Deleting a source takes its citations, and so the words they quoted from it, out of every proposal of the project
+(open, applied or dismissed alike), and out of the proposal of an extract that was reading it then, once that
+proposal is written. That is all it removes: each proposal keeps its values, notes and questions, and the source's
+name, marked deleted. An erasure by email judges the proposals and the product description's text fields, and lists
+one that holds the address for review ([source-policies.md](source-policies.md#retention-and-erasure)).
+
+An MCP client, an agent or a plan never replaces a value a person typed: not by accepting a proposal, and not through
+`PUT /projects/{id}/product-context` either. A value a person typed is one whose `field_meta` says `by: person`, or one
+with no `field_meta` entry at all (a value written before 7.104.00 recorded who wrote it is taken for a person's): one
+rule, `shared/product_proposals.py` `person_typed`, for an accept, a PUT, both writes' conditions and the extract's
+Conflicts. Such a field is answered as a conflict (`person_value`) and left as it is, the rest of the write applies,
+and when every field is one the write is refused (409 `conflict`, the conflicts in the body). Each field records who
+last wrote it (`field_meta`, read by `GET …/product-proposals/latest`). `shared/product_proposals.py` is the context's
+one reader (`context_state`) and one writer: the PUT is an accept of the values it just read.
+
+**The way of working decides an autonomous write too** (tenet 3, [ways-of-working.md](ways-of-working.md)). An MCP
+client's or an agent's accept, and an agent's, a plan step's or an MCP client's `PUT …/product-context`, write the
+product description only for people working **AI-driven**: the person the caller acts as and, when that is someone
+else, the project's owner. Otherwise the write is refused, 403 `ai_writing_refused` ("Agents and plans write a product
+description only for people working AI-driven…"), nothing written; a way of working that cannot be read refuses it too
+(fail closed). A person's own accept and PUT (the Product tab, the assistant's approval card) pass in every way of
+working, as a hand-written document does. The extract itself, adding a source and typed answers make no change to the
+description and are not gated.
+
+The structured fields reach the PRD, PR/FAQ, product-report and prototype prompts inside a `product_context` DATA
+block (`shared/prompt_safety.py`), never as prompt lines of their own: an accepted value is someone's text.
+
+### Questions, and the assistant's interview
+
+The **Questions** card lists the questions for the fields the extract could not fill (one a field: the extract asks
+at most one per field, and of a proposal that holds two the card and the voice interviewer take the first), or,
+before any extract, one default question for each empty field. Answer them by typing (**Type answers**, then **Save
+answers**: one `interview` source) or, with `-c voicePersonas=true`, by voice (**Talk it through**: an AI interviewer
+asks the same questions out loud, consent first, within the voice sessions' own limits and budget; at the end the
+transcript, both the person's turns and the interviewer's (it repeats what it heard) through the personal-data
+redaction, becomes one `interview` source, never a document: [voice-personas.md → The product
+interviewer](voice-personas.md#the-product-interviewer)). Either way the card then offers **Extract again**.
+
+**Fill with AI assistant** (the header, and **Answer in the AI chat** on the Questions card; editors) opens the AI
+assistant on a new conversation with the request "Interview me to fill in this project's product description."
+drafted; nothing is sent until you press send. The assistant then reads the current description
+(`get_product_context`) and asks about the fields that are still empty, one question per message, in this order:
+product name, one-liner, what the product does, target users, problem solved, current state (idea, MVP, beta,
+generally available, mature), key features, competitors/alternatives and differentiators, goals and success metrics,
+constraints and known limitations, non-goals, anything else. After the last answer it proposes ONE
 `update_product_context` approval card with every answer; nothing is saved until you approve it, and the form shows
-the approved values at once. The questions live in one place, the assistant's guidance
-(`lambda/stream/src/assistant/tools/product-interview.ts`), offered only when the caller may edit the project.
+the approved values at once. Its questions live in one place, the assistant's guidance
+(`lambda/stream/src/assistant/tools/product-interview.ts`), offered only when the caller may edit the project; the
+Questions card's default questions cover the same fields in the nine languages.
 
 ## Which feedback a generation reads
 
@@ -457,8 +565,9 @@ With `-c voicePersonas=true` (7.69.00, off by default) a project persona's heade
 loud through Amazon Nova Sonic, grounded in the same evidence pack as a focus group (read as the person, at the
 session's start), with live captions, barge-in and the reviews the persona cites. The transcript, a summary and key
 quotes are saved as a synthetic `persona_interview` document, the person's turns redacted; audio is never stored. A
-persona's voice (`voice_id`, one of the model's 16, or the default pick) is editable on its form. Everything else,
-the limits, cost, data and the security review: [voice-personas.md](voice-personas.md).
+persona's voice (`voice_id`, one of the model's 16, or the default pick) is editable on its form. The same flag offers
+**Talk it through** on the Product tab's Questions card (7.104.00, [above](#questions-and-the-assistants-interview)).
+Everything else, the limits, cost, data and the security review: [voice-personas.md](voice-personas.md).
 
 ## Managed Document Versions
 
@@ -573,7 +682,7 @@ The **Company** page (`/company`) has a **Personas** tab (`/company/personas`) b
 
 Generation reads the same feedback and SHARED company knowledge as project generation (never personal memories), with web search off.
 
-**The assistant stays project-scoped.** `@persona` / `@all` mentions, `consult_personas`, persona review and the agents' persona panel only see the current project's personas. To use a company persona there, copy it into the project.
+**The assistant stays project-scoped.** `@persona` / `@all` mentions, `consult_personas` and the agents' persona panel only see the current project's personas. To use a company persona there, copy it into the project. One exception (7.104.00): a document's **persona review** of a project with no personas of its own is done by up to six company personas of the project's own scope, and says so ([document-review.md](document-review.md#ask-personas-to-review)).
 
 **Storage.** The library is a reserved persona container, `company_personas` (`lambda/shared/company_personas.py`): rows `PROJECT#company_personas` / `PERSONA#{id}`, a META row created on the first write and never listed as a project, and jobs under the same partition in voc-jobs. The id is not a project: every `/projects/company_personas/...` route answers `404 Project not found`, for admins too, and `GET /projects?ids=` leaves it out.
 

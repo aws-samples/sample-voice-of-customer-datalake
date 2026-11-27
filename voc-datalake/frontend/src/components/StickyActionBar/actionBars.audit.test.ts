@@ -55,16 +55,19 @@ const REGISTERED: Readonly<Record<string, string>> = {
   UploadStep: 'Data sources → Import a file → Upload: Continue (7.67.00)',
   MapStep: 'Data sources → Import a file → Columns: Back and Continue (7.67.00)',
   ConfirmStep: 'Data sources → Import a file → Confirm: Back and Start import (7.67.00)',
+  ProductGapsPanel: 'Project → Product → Questions → Type answers: Save answers and Cancel (7.104.00)',
+  ProductProposalReview: 'Project → Product → the proposal\'s review: Accept selected, Accept all proposed and Dismiss (7.104.00)',
 }
 
 /** Module name → why its primary button is not a form's save / submit row. */
 const EXEMPT: Readonly<Record<string, string>> = {
   CategoryGeneratePanel: 'Generate categories sits at the top of the Categories tab, above the list (saves are automatic)',
+  ProductExtractPanel: 'Project → Product → Sources: Extract product description, the card\'s foot, starts a background job at once; no form, nothing left unsaved (7.104.00)',
   PrototypeRenderer: 'the submit lives inside the sandboxed prototype preview, not the app page',
   DocumentToolbar: 'Share is the document page\'s toolbar action (it opens the review link dialog), not a form\'s save row',
   GoHomeLink: 'error-state navigation link, centred in the page',
   AddMemberForm: 'Members → Add a member: a one-line add form (email, role, Add) above the list, nothing left unsaved',
-  CreateWorkspaceForm: 'Administration → Workspaces: a two-field create form above the list, nothing left unsaved',
+  CreateWorkspaceForm: 'Administration → Workspaces: a two-field create form above the list, nothing left unsaved; also the workspace gate\'s picker (7.104.00), outside the layout: no launcher',
   WorkspaceExportCard: 'Workspace settings → Export: Start an export and Download act at once on the server; no form, nothing left unsaved',
   ProposalReview: 'Revise from comments: per-change Accept and Accept all put text into the draft; the save is the page bar\'s own Save',
   BlankDocumentDraft: 'Documents → New PRD / PR/FAQ → Blank: Start writing sits right under the name being typed, at the top of the pane (Enter does the same); nothing else is left unsaved',

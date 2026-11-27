@@ -27,9 +27,8 @@ SUPPORTED_INPUT_TYPES = ('text', 'image')
 
 # Intended, but not possible yet: the importer reads pasted text or an image, never a PDF (the Documents Library
 # extracts PDFs, shared/library_extract.py, but a persona import does not go through it).
-# Kept separate from "unsupported" (mirroring
-# ``product_context.DEFERRED_CONTENT_TYPES``) because "not yet" and "never" are
-# different answers and a caller has to be able to tell them apart.
+# Kept separate from "unsupported" because "not yet" and "never" are different
+# answers and a caller has to be able to tell them apart.
 DEFERRED_INPUT_TYPES = {'pdf': 'PDF'}
 
 # Absent or blank keeps this endpoint's long-standing default, so no caller that

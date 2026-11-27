@@ -66,6 +66,10 @@
         "description": "PRDs, PR/FAQs, Personas und Forschungsberichte",
         "label": "Dokumenterstellung"
       },
+      "product_extract": {
+        "description": "Liest die Produktquellen eines Projekts (Dokumente, Links, Bilder, Antworten) und schlägt seine Produktbeschreibung vor",
+        "label": "Produktbeschreibung aus Quellen"
+      },
       "enrichment": {
         "description": "Stimmung, Kategorien und Dringlichkeit für jedes erfasste Element",
         "label": "Feedback-Anreicherung"

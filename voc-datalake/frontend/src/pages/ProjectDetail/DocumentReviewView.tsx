@@ -1,10 +1,12 @@
 /**
  * @fileoverview A PR/FAQ or PRD on the document canvas, with margin comments in the rail (docs/document-review.md),
- * and the two AI flows the page's toolbar runs: "Ask personas to review" (AI review) and "Revise from comments" (AI
- * rewrite). This view owns them (their state, their routes) and reports them to the page (`onActions`, the toolbar's
- * `ReviewActions`); what they say stays here: a review's outcome in the rail (the panel opens for it), a revision's
- * failure and its outcome (recommendations, the proposed changes, the applied version) above the canvas
- * (DocumentCanvas/revise). The rail is "Comments | Evidence" when the page gives evidence. Every way of working with
+ * and the two AI flows the page's toolbar and its Review menu run: "Ask personas to review" (Persona review) and
+ * "Revise from comments" (Rewrite from comments). This view owns them (their state, their routes) and reports them to
+ * the page (`onActions`, the toolbar's `ReviewActions`); what they say stays here: a review's outcome in the rail (the
+ * panel opens for it; a review by the company's personas, the project having none, says so), a revision's failure and
+ * its outcome (recommendations, the proposed changes, the applied version) above the canvas (DocumentCanvas/revise).
+ * Who a review asks is useReviewPersonas'; with nobody to ask, the review is "Add personas" (`onAddPersonas`: the
+ * project's Personas tab). The rail is "Comments | Evidence" when the page gives evidence. Every way of working with
  * AI may ask personas: they review and comment, they never write the document. "Share for review" is the page's
  * toolbar's (DocumentToolbar).
  *
@@ -25,10 +27,13 @@ import RevisePanel from '../../components/DocumentCanvas/revise/RevisePanel'
 import { reviseBlockedReason, threadsToConsider } from '../../components/DocumentCanvas/revise/reviseChanges'
 import { useRevisePass } from '../../components/DocumentCanvas/revise/useRevisePass'
 import { useDocumentComments } from './useDocumentComments'
+import { useReviewPersonas } from './useReviewPersonas'
 import { serverReason } from '../../lib/errors'
 import { assignRef } from '../../utils/assignRef'
 import type { ReactNode, Ref } from 'react'
-import type { ReviewActions } from '../../components/DocumentCanvas/actions/toolbarItems'
+import type { TFunction } from 'i18next'
+import type { ReviewActions, ReviewPersonas } from '../../components/DocumentCanvas/actions/toolbarItems'
+import type { PersonaReviewResult } from '../../api/documentReviewSchema'
 import type { ReviseCanvas } from '../../components/DocumentCanvas/revise/useRevisePass'
 import type { CanvasEditorHandle } from '../../components/Document/edit/editor/CanvasEditor'
 import type { OutlineItem } from '../../components/Document/types'
@@ -41,7 +46,10 @@ interface DocumentReviewViewProps {
   readonly document: ProjectDocument
   /** The markdown the canvas shows (stored content when editable, display text when read-only). */
   readonly markdown: string
+  /** The project holds personas of its own (else its company's review it, or nobody: useReviewPersonas). */
   readonly hasPersonas: boolean
+  /** "Add personas": the project's Personas tab (the page's tab navigation). */
+  readonly onAddPersonas: () => void
   readonly editable: boolean
   readonly onChange?: (markdown: string) => void
   readonly handleRef?: Ref<CanvasEditorHandle>
@@ -60,20 +68,23 @@ interface DocumentReviewViewProps {
 }
 
 type ReviewState = { readonly kind: 'idle' } | { readonly kind: 'running' }
-  | { readonly kind: 'done'; readonly filed: number; readonly personas: number } | { readonly kind: 'failed'; readonly message: string }
+  | { readonly kind: 'done'; readonly filed: number; readonly personas: number; readonly company: boolean }
+  | { readonly kind: 'failed'; readonly message: string }
 
 /**
  * "Ask personas to review": started from the toolbar, or by an applied revision's "Review again". Its outcome is said
  * in the rail, so the panel opens for it (`onDone`).
  */
-function usePersonaReview(run: () => Promise<{ filed: number; personas: readonly unknown[] }>, onDone: (() => void) | undefined) {
+function usePersonaReview(run: () => Promise<PersonaReviewResult>, onDone: (() => void) | undefined) {
   const { t } = useTranslation('components')
   const [state, setState] = useState<ReviewState>({ kind: 'idle' })
   const start = async () => {
     setState({ kind: 'running' })
     try {
       const result = await run()
-      setState({ kind: 'done', filed: result.filed, personas: result.personas.length })
+      setState({
+        kind: 'done', filed: result.filed, personas: result.personas.length, company: result.persona_source === 'company',
+      })
     } catch (failure) {
       setState({ kind: 'failed', message: serverReason(failure) ?? t('documentComments.personaReviewFailed') })
     }
@@ -82,14 +93,24 @@ function usePersonaReview(run: () => Promise<{ filed: number; personas: readonly
   return { state, start }
 }
 
-/** A persona review's outcome, at the top of the rail: how many comments it filed, or why it failed. */
+/** What a finished review says (else nothing): the comments it filed, and whose personas filed them. */
+function doneText(state: ReviewState, t: TFunction<'components'>): string | null {
+  if (state.kind !== 'done') return null
+  const counts = { count: state.filed, personas: state.personas }
+  return state.company
+    ? t('documentComments.personaReviewDoneCompany', counts)
+    : t('documentComments.personaReviewDone', counts)
+}
+
+/**
+ * A persona review's outcome, at the top of the rail: how many comments it filed (and, the company's personas having
+ * reviewed, that they did: the project has none of its own), or why it failed.
+ */
 function PersonaReviewStatus({ state }: Readonly<{ state: ReviewState }>) {
   const { t } = useTranslation('components')
   return (
     <>
-      <span role="status" className="text-xs text-muted">
-        {state.kind === 'done' ? t('documentComments.personaReviewDone', { count: state.filed, personas: state.personas }) : null}
-      </span>
+      <span role="status" className="text-xs text-muted">{doneText(state, t)}</span>
       {state.kind === 'failed' ? <span role="alert" className="text-xs text-danger">{state.message}</span> : null}
     </>
   )
@@ -98,7 +119,7 @@ function PersonaReviewStatus({ state }: Readonly<{ state: ReviewState }>) {
 interface ActionFacts {
   /** The comments' own rule: their editor may ask personas. */
   readonly canAsk: boolean
-  readonly hasPersonas: boolean
+  readonly personas: ReviewPersonas
   readonly asking: boolean
   /** A "Revise from comments" pass has run (the review is "again"). */
   readonly again: boolean
@@ -111,14 +132,18 @@ interface ActionFacts {
  * The flows as the toolbar runs them, one object for as long as what it shows stays the same (`facts`); its starts
  * run the latest of each flow.
  */
-function useReviewActions(facts: ActionFacts, startReview: () => void, startRevise: () => void): ReviewActions | null {
-  const starts = useRef({ startReview, startRevise })
-  useLayoutEffect(() => { starts.current = { startReview, startRevise } })
-  const { canAsk, hasPersonas, asking, again, canRevise, revising, reviseBlocked } = facts
+function useReviewActions(facts: ActionFacts, startReview: () => void, startRevise: () => void,
+  addPersonas: () => void): ReviewActions | null {
+  const starts = useRef({ startReview, startRevise, addPersonas })
+  useLayoutEffect(() => { starts.current = { startReview, startRevise, addPersonas } })
+  const { canAsk, personas, asking, again, canRevise, revising, reviseBlocked } = facts
   return useMemo(() => (canAsk ? {
-    review: { running: asking, blocked: !hasPersonas, again, start: () => { starts.current.startReview() } },
+    review: {
+      running: asking, personas, again, start: () => { starts.current.startReview() },
+      addPersonas: () => { starts.current.addPersonas() },
+    },
     rewrite: canRevise ? { running: revising, reason: reviseBlocked, start: () => { starts.current.startRevise() } } : null,
-  } : null), [again, asking, canAsk, canRevise, hasPersonas, reviseBlocked, revising])
+  } : null), [again, asking, canAsk, canRevise, personas, reviseBlocked, revising])
 }
 
 /** Hands the page the flows whenever what they show changes, and nothing once this view is gone. */
@@ -148,8 +173,8 @@ function useEditedText({ generation }: ReviseCanvas, onChange: ((markdown: strin
 }
 
 export default function DocumentReviewView({
-  projectId, document, markdown, hasPersonas, editable, onChange, handleRef, onOutlineChange, evidence, canvas,
-  railHidden, onRevealRail, autoFocus, onActions,
+  projectId, document, markdown, hasPersonas, onAddPersonas, editable, onChange, handleRef, onOutlineChange, evidence,
+  canvas, railHidden, onRevealRail, autoFocus, onActions,
 }: DocumentReviewViewProps) {
   const { t } = useTranslation('components')
   const { t: tProject } = useTranslation('projectDetail')
@@ -194,11 +219,12 @@ export default function DocumentReviewView({
   const showThread = useCallback((threadId: string) => { commenting.current?.showThread(threadId) }, [])
   // Revising writes the canvas's draft: an editor of the project on its editable canvas.
   const canRevise = comments.canEdit && editable
+  const personas = useReviewPersonas(hasPersonas, comments.canEdit)
   const aiActions = useReviewActions({
-    canAsk: comments.canEdit, hasPersonas, asking: personaReview.state.kind === 'running', again: revise.passed, canRevise,
+    canAsk: comments.canEdit, personas, asking: personaReview.state.kind === 'running', again: revise.passed, canRevise,
     revising: revise.pass.kind === 'running',
     reviseBlocked: reviseBlockedReason(threadsToConsider(threads).length, revise.holdsAccepted, tProject),
-  }, () => { void personaReview.start() }, () => { void revise.start() })
+  }, () => { void personaReview.start() }, () => { void revise.start() }, onAddPersonas)
   useReportActions(aiActions, onActions)
   const toolbar = comments.canEdit ? <PersonaReviewStatus state={personaReview.state} /> : null
   return (
@@ -212,7 +238,7 @@ export default function DocumentReviewView({
       {canRevise ? <ReviseFailure pass={revise.pass} /> : null}
       {canRevise ? (
         <RevisePanel controls={revise} draft={draft} threads={threads} onShowThread={showThread}
-          onReviewAgain={() => void personaReview.start()} canReview={hasPersonas && personaReview.state.kind !== 'running'} />
+          onReviewAgain={() => void personaReview.start()} canReview={personas !== 'none' && personaReview.state.kind !== 'running'} />
       ) : null}
       <CanvasEditor markdown={markdown} editable={editable} ariaLabel={document.title} onChange={change}
         onOutlineChange={onOutlineChange} onCommentSelection={canComment ? onCommentSelection : undefined}

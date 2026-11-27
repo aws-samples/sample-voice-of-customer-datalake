@@ -151,7 +151,7 @@ export class GlobalMcp extends Construct {
     return new lambda.Function(this, id, {
       ...extra,
       functionName,
-      runtime: lambda.Runtime.PYTHON_3_14,
+      runtime: lambda.Runtime.PYTHON_3_15,
       architecture: lambda.Architecture.ARM_64,
       handler: `${handlerFile.replace(/\.py$/, '')}.lambda_handler`,
       code: createApiLambdaCode(handlerFile),

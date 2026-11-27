@@ -92,7 +92,7 @@ The infrastructure is five CDK stacks: `VocCoreStack` (tables, buckets, Cognito,
 
 ## 🚀 Quick Start
 
-You need the AWS CLI with credentials, Node.js 24.15+, Python 3.12+ for the local tooling (the Lambdas run Python 3.14) and Docker or Finch.
+You need the AWS CLI with credentials, Node.js 24.15+, Python 3.12+ for the local tooling (the Lambdas run Python 3.15) and Docker or Finch.
 
 ```bash
 # Clone and install
@@ -217,7 +217,7 @@ See [Getting Started with Plugins](docs/getting-started-plugins.md).
 
 | Layer | Technologies |
 |-------|-------------|
-| Infrastructure | AWS CDK 2 (TypeScript, 5 stacks), Lambda on ARM64 (Python 3.14; Node.js 24 for the AI assistant), DynamoDB, S3, SQS, API Gateway, Step Functions, EventBridge, CloudFront |
+| Infrastructure | AWS CDK 2 (TypeScript, 5 stacks), Lambda on ARM64 (Python 3.15; Node.js 26 for the AI assistant), DynamoDB, S3, SQS, API Gateway, Step Functions, EventBridge, CloudFront |
 | AI/ML | Amazon Bedrock (Claude), Bedrock AgentCore (web search, browser), Comprehend, Translate |
 | Frontend | React 19, Vite 8, Tailwind CSS 4, Zustand, TanStack Query, i18next, AWS Amplify (Cognito sign-in) |
 | Security | Cognito, IAM, KMS, Secrets Manager, signed CloudFront URLs |

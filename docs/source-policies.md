@@ -139,6 +139,32 @@ Routes that serve pre-computed counters fall back to the item path whenever the 
 source rule hides anything, the same way they already do for a category restriction. The AI
 assistant and MCP tokens act as the calling user, so the same rules apply to them.
 
+## Product source links
+
+A link added as a Product tab source (7.104.00, `POST /projects/{id}/product-docs/urls` and `…/{doc}/refresh`,
+[project-workspace.md → Product tab](project-workspace.md#product-tab)) is a URL a person names, fetched server-side
+on the projects API's assist twin (`lambda/shared/product_source_links.py`). The fetch is guarded at every step:
+
+- **https only, a public address**: `shared/url_policy.py` `require_public` (the guard a design reference's capture
+  takes) refuses any other scheme and any host that resolves to a private, loopback, link-local (the instance
+  metadata address included), multicast or otherwise non-public address, at the route (400 `url_not_allowed`) and
+  again on the twin before the fetch;
+- **every hop judged**: `shared/http_utils.py` `fetch_public_url` judges each redirect by the same policy before it
+  asks for it, pins every socket to an address the policy vetted (no second DNS answer is trusted), never follows
+  https down to http, and stops after 5 redirects; the address the page ended on is judged once more
+  (`require_public(final=True)`, `final_url_not_allowed`);
+- **bounded**: at most 5 MB of the page is read (a larger page fails as too large) within a 20 s timeout, and only
+  HTML, PDF or plain text is read; a text page is decoded in the charset it declares only when that is a plain
+  character set (UTF-16 or 32, ASCII, the ISO 8859 and Windows code pages, Shift JIS and the like), else as UTF-8:
+  never by a codec such as `punycode` (whose decode of 5 MB would outlast the twin), `idna`, `utf-7` or
+  `unicode_escape` (`_text_codec`);
+- **one page**: nothing the page links to is fetched, and its `<title>` is kept for display only (a prompt names the
+  link by its address).
+
+A page behind a sign-in (a 401 or 403, an address that ended on a sign-in path, another host's password form) and one
+drawn by scripts fail with their reason. The reads are capped a UTC day: 30 a project and 60 a person (an add or a
+Fetch again), 429 `rate_limited`.
+
 ## Retention and erasure
 
 Customer data is deleted by two paths only, each for a legal obligation and each stating its
@@ -460,8 +486,19 @@ How it works:
   comment series or an unlisted deleted project; the marker is read again at each invocation's start.
   It reaches every row the stores had written when it read that part (provided every writer since the backfill ran 7.48.00 or later: a VocApiStack-only rollback below 7.48.00, or a bundle imported from an older checkout, breaks this until `--unmark`; a thread written to a series it already walked is the next erasure's). A
   product document is judged by its extracted text, whatever its kind (a PDF's text, an image's description): one
-  whose filename or text holds the address is listed in `files_needing_review`, one with no text yet (pending, failed)
-  in `files_not_checked`. The job row of this erasure says whether it walked the deployment's projects
+  whose filename, text or (a link's, 7.104.00) address, final address or title holds the address is listed in
+  `files_needing_review`, one with no text yet (pending, failed) in `files_not_checked`. A product proposal
+  (7.104.00, an extract of the sources: `PRODUCT_PROPOSAL#` rows) holds its sources' words and names: one whose field
+  values, the form's values they were proposed against, notes, quotes, questions or source names hold the address is
+  listed in `files_needing_review` by its route, `projects/<id>/product-proposals/<proposal_id>` (nothing in it is
+  changed: a person reviews it on the Product tab). The product description (`PRODUCT_CONTEXT`, 7.104.00) is judged by
+  its text fields the same way, typed or accepted from a proposal alike, and listed by
+  `projects/<id>/product-context`. A source's delete takes only its quotes out of every proposal: a proposal's values,
+  notes and the source's name stay, which is what this lists. The Product tab's sources (7.104.00) are product documents too: a PDF, DOCX or PPTX upload
+  is kept under `projects/<id>/product_docs/source/` (read on the projects API's assist twin, not by the S3
+  extractor), and a link's page and typed or spoken answers have no upload of their own; every kind's text is under
+  `projects/<id>/product_docs/extracted/`, the text an erasure reads, and a source's delete removes it with every version of its
+  upload. The job row of this erasure says whether it walked the deployment's projects
   (`deployment_projects_walked`) and how it found their rows (`deployment_rows_found`: `registry`; a row written
   between 7.48.00 and 7.93.00 may say `scan`): run
   again every erasure by email without a source created before the 7.48.00 deploy finished, or whose row does not say `deployment_projects_walked: true`. Not reached:
@@ -671,7 +708,7 @@ workspace artifacts. Copies derived from a review before it was erased stay wher
 | Idempotency rows of the processor | `voc-idempotency` | Keyed by a hash of the message, they may cache the processor's response for up to an hour, then expire through the table's TTL (`expiration`); wait an hour, or delete the row by hand |
 | Whole-file CSV / JSON uploads that also hold rows that were not erased | `raw/csv_upload/…`, `raw/json_upload/…` in the raw bucket | Listed on the job as `files_needing_review` (Administration shows the keys). Remove the person's rows by hand (download, edit, delete every version with an admin role, re-upload if needed), or avoid it by giving the source a retention period or a non-`allow` policy |
 | An S3 import's original file | `raw/s3_import/…`, a workspace's `ws/<ws>/raw/s3_import/…` | No row links an item to its file: the job lists the folder as `files_needing_review` when it deleted an import's item and the folder holds a file. Find the file by its `original-key` S3 metadata, remove the person's rows by hand (every version, admin role) |
-| A project's product documents (uploads and their extracted text) | a workspace's `ws/<ws>/projects/<id>/product_docs/`; the deployment's `projects/<id>/product_docs/` | An erasure by email without a source lists the documents whose filename or text holds the address as `files_needing_review`, and those it cannot judge as `files_not_checked` (since 7.43.00 in each workspace: images, other kinds, unreadable text; since 7.48.00 in the deployment's projects too, judged by their extracted text of any kind, and a document with none not checked; since 7.97.00 in the job view and Administration's erasure panel too, 3g-ui). Look through each and delete a document that names the person from its project. A document not checked does not close the workspace's exports: its copy in an export's zip stays until the zip expires (10 days) |
+| A project's product documents (uploads and their extracted text; since 7.104.00 also a PDF, DOCX or PPTX under `source/`, and a link's or an interview's text under `extracted/`) | a workspace's `ws/<ws>/projects/<id>/product_docs/`; the deployment's `projects/<id>/product_docs/` | An erasure by email without a source lists the documents whose filename or text holds the address as `files_needing_review`, and those it cannot judge as `files_not_checked` (since 7.43.00 in each workspace: images, other kinds, unreadable text; since 7.48.00 in the deployment's projects too, judged by their extracted text of any kind, and a document with none not checked; since 7.97.00 in the job view and Administration's erasure panel too, 3g-ui). Look through each and delete a document that names the person from its project. A document not checked does not close the workspace's exports: its copy in an export's zip stays until the zip expires (10 days) |
 | A reviewer's comments, a review link's audience, a project's owner and member addresses in the deployment's own projects, for an erasure by email that finished before 7.48.00 | `voc-projects` (`DCOMMENTS#…`, `DOCSHARE#…`, a project's `META`) | Reached since 7.48.00 (a workspace's since 7.43.00): run such an erasure again (the job kept only the address's hash) |
 | Archives named before 3.06.00 for ids that were not filename-safe | `raw/<source>/…` | See the archive naming note above |
 | A form response's contact name, for an erasure by name | `metadata.submitter_name` of the `feedback_form` item in `voc-feedback` (a workspace's too) | An `author` erasure matches `author`, and a form's response carries none: its contact name is `metadata.submitter_name`. Erase the person by email (it matches `metadata.submitter_email`), or by the item's `source_id`. The form's test responses, kept apart, are matched by the contact name as well |

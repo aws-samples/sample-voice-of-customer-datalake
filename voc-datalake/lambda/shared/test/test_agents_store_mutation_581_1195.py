@@ -554,8 +554,9 @@ class TestStartRun:
         logger = MagicMock()
         with patch.object(store, 'logger', logger):
             assert store.start_run(table, {'agent_id': AGENT_ID}, _request(), now=NOW) is None
+        # (7.104.00: the codes as shared.aws.cancellation_codes reads them, a fine entry None)
         logger.info.assert_called_once_with('Agent run not started', extra={
-            'agent_id': AGENT_ID, 'reasons': ['ConditionalCheckFailed', 'None']})
+            'agent_id': AGENT_ID, 'reasons': ['ConditionalCheckFailed', None]})
         logger.exception.assert_not_called()
 
 

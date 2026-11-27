@@ -155,6 +155,15 @@ def test_the_catalogue_names_the_builtin_dimension_and_issue_sub_fields() -> Non
     assert {'repo', 'labels', 'updated_at'} <= {f['name'] for f in fields['issue_attributes']['sub_fields']}
 
 
+# The same names on 3.12 (the local floor) and 3.15 (CI and Lambda): since 3.14 every union's `__name__` is `Union`,
+# which the deployed catalogue served for the issue sub-fields' `str | None`.
+@pytest.mark.parametrize(('annotation', 'name'), [
+    (str | None, 'str | None'), (int | str | None, 'int | str | None'), (int, 'int'), (list[str], 'list'),
+], ids=['optional', 'three-way', 'plain', 'generic'])
+def test_an_issue_sub_field_type_is_named_alike_on_every_python(annotation: object, name: str) -> None:
+    assert cat._annotation_name(annotation) == name
+
+
 def test_the_doc_holds_the_generated_table() -> None:
     doc = cat.DOC_PATH.read_text(encoding='utf-8')
     assert cat.START_MARKER in doc, 'docs/data-catalogue.md lost its start marker'

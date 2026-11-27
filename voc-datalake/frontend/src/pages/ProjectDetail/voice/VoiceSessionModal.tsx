@@ -8,9 +8,13 @@
  * left running behind a closed dialog. After it, the transcript is filed as a `persona_interview` document: the dialog
  * says so, links it and offers Save to Library.
  *
+ * The Product tab's interviewer (7.104.00) runs in the same dialog: an AI interviewer instead of a synthetic persona
+ * (no citations), and at the end the person's answers are saved as one interview source of the project, which the
+ * dialog says, and `onSourceSaved` lets the tab read its sources again.
+ *
  * @module pages/ProjectDetail/voice/VoiceSessionModal
  */
-import { useId } from 'react'
+import { useEffect, useId } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
 import clsx from 'clsx'
@@ -110,22 +114,48 @@ function Meters({ state, elapsed }: Readonly<{ state: VoiceState; elapsed: numbe
   )
 }
 
+function EndFailed({ onRetryEnd }: Readonly<{ onRetryEnd: () => void }>) {
+  const { t } = useTranslation('projectDetail')
+  return (
+    <div className="flex flex-wrap items-center gap-2" role="alert">
+      <p className="text-sm text-danger">{t('voice.session.endFailed')}</p>
+      <button type="button" className="btn btn-secondary btn-sm" onClick={onRetryEnd}>
+        <RefreshCw size={14} aria-hidden />{t('loadFailed.retry', { ns: 'common' })}
+      </button>
+    </div>
+  )
+}
+
+/** What a finalized product interview says: nothing said, saved, or saved past the project's cap of sources. */
+function savedKey(status: VoiceSessionStatus): string {
+  if (status.source_doc_id === null) return 'voice.product.session.nothingSaved'
+  return status.over_source_cap ? 'voice.product.session.savedOverCap' : 'voice.product.session.saved'
+}
+
+/** A product interview's end: the answers saved as a source (or nothing to save: nobody spoke). */
+function SourceOutcome({ status, endFailed, onRetryEnd, onSourceSaved }: Readonly<{
+  status: VoiceSessionStatus | undefined; endFailed: boolean; onRetryEnd: () => void; onSourceSaved?: () => void
+}>) {
+  const { t } = useTranslation('projectDetail')
+  const finalized = status?.status === 'finalized'
+  useEffect(() => {
+    if (finalized) onSourceSaved?.()
+  }, [finalized, onSourceSaved])
+  if (endFailed) return <EndFailed onRetryEnd={onRetryEnd} />
+  if (status?.status === 'failed') return <p role="alert" className="text-sm text-danger">{t('voice.product.session.savedFailed')}</p>
+  if (!finalized) {
+    return <p role="status" className="flex items-center gap-1.5 text-sm text-muted"><Loader2 size={14} className="animate-spin motion-reduce:animate-none" aria-hidden />{t('voice.product.session.saving')}</p>
+  }
+  return <p role="status" className="text-sm text-text">{t(savedKey(status))}</p>
+}
+
 function TranscriptOutcome({ projectId, status, endFailed, onRetryEnd }: Readonly<{
   projectId: string; status: VoiceSessionStatus | undefined; endFailed: boolean; onRetryEnd: () => void
 }>) {
   const { t } = useTranslation('projectDetail')
   const documentId = status?.transcript_document_id ?? null
   const library = useSaveInterviewToLibrary(projectId, documentId)
-  if (endFailed) {
-    return (
-      <div className="flex flex-wrap items-center gap-2" role="alert">
-        <p className="text-sm text-danger">{t('voice.session.endFailed')}</p>
-        <button type="button" className="btn btn-secondary btn-sm" onClick={onRetryEnd}>
-          <RefreshCw size={14} aria-hidden />{t('loadFailed.retry', { ns: 'common' })}
-        </button>
-      </div>
-    )
-  }
+  if (endFailed) return <EndFailed onRetryEnd={onRetryEnd} />
   if (status?.status === 'failed') {
     return <p role="alert" className="text-sm text-danger">{t('voice.session.filedFailed')}</p>
   }
@@ -147,24 +177,38 @@ function TranscriptOutcome({ projectId, status, endFailed, onRetryEnd }: Readonl
   )
 }
 
-export default function VoiceSessionModal({ target, name, onClose }: Readonly<{
+/** The header's label and note, and what the other side is called in the captions. */
+function useSideCopy(target: VoiceSessionTarget, name: string) {
+  const { t } = useTranslation('projectDetail')
+  return target.subject.kind === 'product'
+    ? { title: t('voice.product.session.title'), badge: t('voice.product.session.badge'), note: t('voice.product.session.note'), speaker: t('voice.product.session.interviewer') }
+    : { title: t('voice.session.title', { name }), badge: t('voice.session.synthetic'), note: t('voice.session.syntheticNote'), speaker: name }
+}
+
+export default function VoiceSessionModal({ target, name, onClose, onSourceSaved }: Readonly<{
   target: VoiceSessionTarget
   name: string
   onClose: () => void
+  /** A product interview's answers were saved as a source (7.104.00). */
+  onSourceSaved?: () => void
 }>) {
   const { t } = useTranslation('projectDetail')
   const titleId = useId()
   const session = useVoiceSession(target)
+  const copy = useSideCopy(target, name)
   const { state } = session
   const over = state.phase === 'ended'
+  const outcome = target.subject.kind === 'product'
+    ? <SourceOutcome status={session.status} endFailed={session.endFailed} onRetryEnd={session.retryEnd} onSourceSaved={onSourceSaved} />
+    : <TranscriptOutcome projectId={target.projectId} status={session.status} endFailed={session.endFailed} onRetryEnd={session.retryEnd} />
   return (
     <ModalShell isOpen onClose={over ? onClose : session.end} ariaLabelledBy={titleId} panelClassName="max-w-2xl" dismissable={over}>
       <div className="dialog-header justify-between">
         <div className="min-w-0">
-          <h2 id={titleId} className="dialog-title">{t('voice.session.title', { name })}</h2>
+          <h2 id={titleId} className="dialog-title">{copy.title}</h2>
           <p className="mt-1 flex items-center gap-1.5 text-xs text-muted">
-            <span className="badge badge-aim"><AudioLines size={12} aria-hidden />{t('voice.session.synthetic')}</span>
-            {t('voice.session.syntheticNote')}
+            <span className="badge badge-aim"><AudioLines size={12} aria-hidden />{copy.badge}</span>
+            {copy.note}
           </p>
         </div>
         {over ? <DialogClose onClick={onClose} /> : null}
@@ -172,9 +216,9 @@ export default function VoiceSessionModal({ target, name, onClose }: Readonly<{
       <div className="dialog-body space-y-3">
         <SessionLine state={state} />
         {over ? null : <MicMeter level={session.level} />}
-        <Captions captions={state.captions} name={name} />
+        <Captions captions={state.captions} name={copy.speaker} />
         <Meters state={state} elapsed={session.elapsed} />
-        {over ? <TranscriptOutcome projectId={target.projectId} status={session.status} endFailed={session.endFailed} onRetryEnd={session.retryEnd} /> : null}
+        {over ? outcome : null}
       </div>
       <div className="dialog-footer">
         {over ? (

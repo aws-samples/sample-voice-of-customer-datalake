@@ -66,6 +66,10 @@
         "description": "PRD, PR/FAQ, personas e informes de investigación",
         "label": "Generación de documentos"
       },
+      "product_extract": {
+        "description": "Lee las fuentes de producto de un proyecto (documentos, enlaces, imágenes, respuestas) y propone su descripción del producto",
+        "label": "Extracción de la descripción del producto"
+      },
       "enrichment": {
         "description": "Sentimiento, categorías y urgencia en cada elemento ingerido",
         "label": "Enriquecimiento de comentarios"

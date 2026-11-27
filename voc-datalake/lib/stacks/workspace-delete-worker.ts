@@ -409,7 +409,7 @@ export function createWorkspaceDeleteWorker(scope: Construct, id: string,
   return new lambda.Function(worker, 'Delete', {
     functionName,
     role,
-    runtime: lambda.Runtime.PYTHON_3_14,
+    runtime: lambda.Runtime.PYTHON_3_15,
     architecture: lambda.Architecture.ARM_64,
     handler: DELETE_HANDLER,
     code: deleteCode(),

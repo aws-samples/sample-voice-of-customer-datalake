@@ -45,8 +45,8 @@ function domainEnvKeys(): string[] {
 
 /** Every route a global tool builds (every catalogue module), as `METHOD /path` with `{}` for interpolated segments. */
 function toolRoutes(): string[] {
-  const source = ['mcp_global_tools.py', 'mcp_global_tools_steps.py', 'mcp_global_tools_work.py']
-    .map((file) => readRepoFile('lambda', 'shared', file)).join('\n');
+  const source = ['mcp_global_tools.py', 'mcp_global_tools_steps.py', 'mcp_global_tools_work.py', 'mcp_global_tools_forms.py',
+    'mcp_global_tools_product.py'].map((file) => readRepoFile('lambda', 'shared', file)).join('\n');
   return [...source.matchAll(/RouteRequest\(DOMAIN_[A-Z_]+, '([A-Z]+)', f?['"]([^'"]+)['"]/g)]
     .map((m) => `${itemAt(m, 1)} ${collapsePlaceholders(itemAt(m, 2))}`);
 }

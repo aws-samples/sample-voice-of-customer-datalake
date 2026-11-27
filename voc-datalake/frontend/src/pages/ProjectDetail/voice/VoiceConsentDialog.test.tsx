@@ -20,6 +20,7 @@ vi.mock('./voiceAudio', () => ({
 }))
 
 const PATH = '/projects/proj_1/personas/p1/voice-sessions'
+const PERSONA = { kind: 'persona', personaId: 'p1' } as const
 const OFFER = {
   enabled: true, voice_id: 'tiffany', voice_gender: 'feminine', languages: { supported: ['en', 'de'], unsupported: ['ja'] },
   session_minutes: 15, minutes_left: 287.5, sessions_left_today: 4, estimated_cents_per_minute: 2,
@@ -32,7 +33,7 @@ function serve(offer: Record<string, unknown>, start: () => unknown = () => STAR
 
 function renderDialog() {
   const onStarted = vi.fn()
-  renderWithQueryClient(<VoiceConsentDialog projectId="proj_1" personaId="p1" name="Ada" onStarted={onStarted} onCancel={vi.fn()} />)
+  renderWithQueryClient(<VoiceConsentDialog projectId="proj_1" subject={PERSONA} name="Ada" onStarted={onStarted} onCancel={vi.fn()} />)
   return onStarted
 }
 
@@ -93,5 +94,46 @@ describe('VoiceConsentDialog', () => {
     serve({ ...OFFER, languages: { supported: ['de', 'fr'], unsupported: ['en'] } })
     renderDialog()
     expect(await screen.findByRole('note')).toHaveTextContent('Speak German and French')
+  })
+
+  it('words the product interviewer\'s consent and starts it on its route with the questions (7.104.00)', async () => {
+    const productPath = '/projects/proj_1/product-interview/voice-sessions'
+    routeFetchApi({ [`GET ${productPath}`]: () => OFFER, [`POST ${productPath}`]: () => STARTED })
+    const questions = [{ field: 'product_name', question: 'What is it called?' }]
+    const onStarted = vi.fn()
+    const user = userEvent.setup()
+    renderWithQueryClient(<VoiceConsentDialog projectId="proj_1" subject={{ kind: 'product', questions }} name="Parcel Pilot" onStarted={onStarted} onCancel={vi.fn()} />)
+    expect(await screen.findByRole('heading', { name: 'Talk it through' })).toBeInTheDocument()
+    // (the persona's "synthetic voice" statement is not among them)
+    expect((await screen.findByRole('list')).textContent).toMatch(/^[^]*saved as a source of this project[^]*An AI interviewer asks the questions out loud(?![^]*synthetic voice)/)
+    await user.click(screen.getByRole('checkbox'))
+    await user.click(screen.getByRole('button', { name: 'Start talking' }))
+    await vi.waitFor(() => { expect(onStarted).toHaveBeenCalledTimes(1) })
+    expect(sentFetchApiBody(productPath, 'POST')).toStrictEqual({ consent: true, language: 'en', questions })
+  })
+
+  describe('a product interview when the project holds its 20 sources (7.104.00)', () => {
+    const productPath = '/projects/proj_1/product-interview/voice-sessions'
+    const product = { kind: 'product', questions: [] } as const
+    const FULL = /already holds 20 sources, the most it can[^]*Delete a source first/
+
+    it('says so instead of the consent, and offers no start', async () => {
+      routeFetchApi({ [`GET ${productPath}`]: () => ({ ...OFFER, sources_full: true }) })
+      renderWithQueryClient(<VoiceConsentDialog projectId="proj_1" subject={product} name="Parcel Pilot" onStarted={vi.fn()} onCancel={vi.fn()} />)
+      expect(await screen.findByRole('alert')).toHaveTextContent(FULL)
+      expect(screen.getByRole('button', { name: 'Start talking' })).toBeDisabled()
+    })
+
+    it('words the start\'s refusal when the sources filled up after the offer', async () => {
+      routeFetchApi({
+        [`GET ${productPath}`]: () => OFFER,
+        [`POST ${productPath}`]: () => { throw new ApiError(400, 'full', 'too_many_sources') },
+      })
+      const user = userEvent.setup()
+      renderWithQueryClient(<VoiceConsentDialog projectId="proj_1" subject={product} name="Parcel Pilot" onStarted={vi.fn()} onCancel={vi.fn()} />)
+      await user.click(await screen.findByRole('checkbox'))
+      await user.click(screen.getByRole('button', { name: 'Start talking' }))
+      expect(await screen.findByText(FULL)).toBeInTheDocument()
+    })
   })
 })

@@ -68,7 +68,7 @@ describe('pythonLayerCode', () => {
   });
 
   it('strips the whole runtime-provided SDK closure, so no layer copy shadows the runtime\'s', () => {
-    // The Lambda Python 3.14 runtime's own site-packages (scripts/audit/layer_dists.py RUNTIME_PROVIDED).
+    // The Lambda Python 3.15 runtime's own site-packages (scripts/audit/layer_dists.py RUNTIME_PROVIDED).
     for (const entry of ['s3transfer', 'jmespath', 'dateutil', 'python_dateutil-*', 'six.py', 'six-*', 'urllib3', 'urllib3-*']) {
       expect(command).toContain(`/asset-output/python/${entry} `);
     }

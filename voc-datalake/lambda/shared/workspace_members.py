@@ -63,12 +63,12 @@ from botocore.exceptions import BotoCoreError, ClientError
 
 from shared import playbooks
 from shared.audit_rows import put_new_audit_row
+from shared.aws import CONDITION_FAILED, TRANSACTION_CONFLICT, cancellation_codes
 from shared.dynamo_paging import iter_query
 from shared.exceptions import AuthorizationError, ConflictError, NotFoundError, ValidationError
 from shared.feedback_cursor import TABLE_KEY_FIELDS, decode_key_cursor, encode_key_cursor
 from shared.logging import logger
 from shared.ops_alerts import normalize_email
-from shared.persona_save import cancellation_codes
 from shared.request_body import reject_unknown_fields
 from shared.timestamps import now_iso
 from shared.workspace import (
@@ -366,7 +366,7 @@ def _actor_still_admin(table_name: str, context: WorkspaceContext, actor: str, *
 
 def _raise_for_actor(codes: list[str | None], index: int | None, exc: ClientError) -> None:
     """403 when the acting admin's own check (at ``index``) failed: they stopped being admin meanwhile."""
-    if index is not None and codes[index:index + 1] == ['ConditionalCheckFailed']:
+    if index is not None and codes[index:index + 1] == [CONDITION_FAILED]:
         raise AuthorizationError(NO_LONGER_ADMIN) from exc
 
 
@@ -410,15 +410,15 @@ def add_member(table: Any, context: WorkspaceContext, account: Account, role: st
     except ClientError as exc:
         codes = cancellation_codes(exc)
         _raise_for_actor(codes, 3 if actor_check is not None else None, exc)
-        if codes[:1] == ['ConditionalCheckFailed']:
+        if codes[:1] == [CONDITION_FAILED]:
             raise ConflictError(ALREADY_MEMBER) from exc
-        if codes[2:3] == ['ConditionalCheckFailed']:
+        if codes[2:3] == [CONDITION_FAILED]:
             raise NotFoundError(NOT_FOUND) from exc
-        if codes[1:2] == ['ConditionalCheckFailed']:
+        if codes[1:2] == [CONDITION_FAILED]:
             # A "my workspaces" row without its MEMBER# row: an inconsistency to repair, said in the log.
             logger.warning('Workspace member add found a USER# row without its MEMBER# row', extra={'workspace_id': ws})
             raise ConflictError(ALREADY_MEMBER) from exc
-        if 'TransactionConflict' in codes:
+        if TRANSACTION_CONFLICT in codes:
             raise ConflictError(CHANGED_MEANWHILE) from exc
         raise
     if account.created:
@@ -456,12 +456,12 @@ def _run_change(table: Any, items: list[dict[str, Any]], other_admin: str | None
     except ClientError as exc:
         codes = cancellation_codes(exc)
         _raise_for_actor(codes, actor_index, exc)
-        failed = 'ConditionalCheckFailed'
+        failed = CONDITION_FAILED
         # The member's row (index 0) or the other admin's changed since they were read, or another request was
         # changing them at the same moment (TransactionConflict): the caller reads again, a 409. Any other failed
         # condition (an inverse row missing) is an inconsistency, not the caller's to retry: it propagates.
         if codes[:1] == [failed] or (other_index is not None and codes[other_index:other_index + 1] == [failed]) \
-                or 'TransactionConflict' in codes:
+                or TRANSACTION_CONFLICT in codes:
             raise ConflictError(CHANGED_MEANWHILE) from exc
         raise
 
@@ -605,7 +605,7 @@ def _remove_deleted_users_membership(table: Any, removal: UserRemoval, membershi
         _transact(table, items)
     except ClientError as exc:
         codes = cancellation_codes(exc)
-        if 'ConditionalCheckFailed' in codes or 'TransactionConflict' in codes:
+        if CONDITION_FAILED in codes or TRANSACTION_CONFLICT in codes:
             raise ConflictError(CHANGED_MEANWHILE) from exc
         raise
 

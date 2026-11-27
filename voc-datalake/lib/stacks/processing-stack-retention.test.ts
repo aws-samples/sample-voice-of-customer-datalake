@@ -204,6 +204,13 @@ describe('voc-retention worker', () => {
       .filter((resource) => resource.includes('/index/'))).toStrictEqual([]);
   });
 
+  // And (7.104.00, review round 1) a product link's address and where it ended, and a product proposal's id, fields,
+  // questions and sources, and (round 2) the product context's text fields, for the address in them
+  // (lambda/jobs/retention/project_people.py).
+  const PRODUCT_ERASURE_ATTRIBUTES = ['url', 'final_url', 'proposal_id', 'fields', 'questions', 'sources',
+    'product_name', 'one_liner', 'product_summary', 'target_users', 'problem_solved', 'key_features', 'differentiators',
+    'known_limitations', 'non_goals', 'success_metrics', 'free_form_notes'];
+
   it('queries exactly these project partitions: one workspace id\'s and the deployment\'s, its registries included', () => {
     const ws = `WS#ws_${'?'.repeat(26)}`;
     const json = JSON.stringify(template.toJSON());
@@ -220,7 +227,8 @@ describe('voc-retention worker', () => {
         'DOCSHARE_IDS', 'COMMENT_SERIES_IDS', 'LIBRARY'] },
       'ForAllValues:StringEquals': { 'dynamodb:Attributes': ['pk', 'sk', 'author', 'replies', 'status_by', 'audience',
         'created_by_name', 'revoked_by', 'revoked', 'project_id', 'owner_email', 'members', 'research_notes',
-        's3_raw_key', 'content_type', 'status', 's3_extracted_key', 'filename', 'deleted_at', 'deletion_started_at',
+        's3_raw_key', 'content_type', 'status', 's3_extracted_key', 'filename', ...PRODUCT_ERASURE_ATTRIBUTES,
+        'deleted_at', 'deletion_started_at',
         'completed_at', 'release', 'links_found', 'series_found', 'projects_found', 'input_feedback_ids', 'evidence_feedback_ids',
         'input_feature_request_ids', 'evidence_updates', 'erased_evidence', 'title', 'source', 'tags', 'created_by', 'updated_by'] },
       // A Query naming no attribute would pass ForAllValues and read whole rows: SPECIFIC_ATTRIBUTES is required.

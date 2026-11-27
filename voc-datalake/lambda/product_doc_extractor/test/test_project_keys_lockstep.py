@@ -52,6 +52,16 @@ def test_the_upload_key_parses_to_its_ids(extractor, case):
 
 
 @pytest.mark.parametrize('case', _CASES, ids=_case_id)
+def test_a_twin_read_upload_never_reaches_this_function(extractor, case):
+    """A PDF, DOCX or PPTX goes under product_docs/source/ (7.104.00, the projects API's assist twin reads it): the
+    deployment's broad `projects/` rule notifies this function of it, and neither pattern takes it; no `ws/` rule
+    names its extension at all."""
+    assert extractor.RAW_KEY_PATTERN.fullmatch(case['source_key']) is None
+    assert extractor.WORKSPACE_RAW_KEY_PATTERN.fullmatch(case['source_key']) is None
+    assert not set(_SPEC['source_extensions']) & set(extractor.UPLOAD_EXTENSIONS)
+
+
+@pytest.mark.parametrize('case', _CASES, ids=_case_id)
 def test_the_output_and_the_row_are_shareds_keys(extractor, case):
     extracted = extractor._extracted_key(case['project_id'], case['doc_id'], case['workspace'])
     assert extracted == case['extracted_key']

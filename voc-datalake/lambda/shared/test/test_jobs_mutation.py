@@ -204,7 +204,7 @@ class TestClaimWritesTheExactLeaseRequest:
             ('updated_at', ':now'), ('gsi1pk', ':running_gsi'), ('execution_lease_until', ':lease'),
             ('execution_owner', ':owner'),
         ]
-        removed = ['#error', '#result', 'completed_at']
+        removed = ['#error', '#result', 'completed_at', 'error_code']
         assert (
             'SET ' + ', '.join(f'{name} = {value}' for name, value in set_clauses)
             + ' REMOVE ' + ', '.join(removed)) == CLAIM_UPDATE_EXPRESSION
@@ -439,6 +439,15 @@ class TestUpdateJobStatusWritesTheExactRequest:
             ConditionExpression='attribute_exists(pk) AND attribute_exists(sk)',
         )
 
+    def test_a_progress_write_never_reopens_a_job_that_ended(self, table):
+        # Review Q3 (7.104.00 round 1): JobContext.update_progress (a heartbeat's) passes unless_finished.
+        update_job_status('p1', 'j1', 'running', 50, unless_finished=True, workspace=None)
+        request = table.update_item.call_args.kwargs
+        assert request['ConditionExpression'] == (
+            'attribute_exists(pk) AND attribute_exists(sk) AND NOT #status IN (:completed, :failed)')
+        assert (request['ExpressionAttributeValues'][':completed'],
+                request['ExpressionAttributeValues'][':failed']) == ('completed', 'failed')
+
     def test_current_step_is_appended(self, table):
         update_job_status('p1', 'j1', 'running', 50, 'processing', workspace=None)
 
@@ -660,7 +669,8 @@ class TestJobHandlerTerminalUserOutcomes:
 
         expected_error = f'Persona generation failed: {error.message}'
         assert result == {'success': False, 'error': expected_error}
-        mock_update.assert_called_once_with('p1', 'j1', 'failed', 0, 'error', error=expected_error, workspace=None)
+        mock_update.assert_called_once_with('p1', 'j1', 'failed', 0, 'error', error=expected_error, workspace=None,
+                                            error_code=None)
         # WARNING without a traceback — not ERROR / exception, which Logs
         # Insights error queries and the ops e2e count as faults. Returning
         # (asserted above) is what keeps Lambda's own Errors metric at 0.

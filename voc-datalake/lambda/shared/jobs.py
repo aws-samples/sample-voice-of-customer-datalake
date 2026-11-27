@@ -50,7 +50,7 @@ CLAIM_UPDATE_EXPRESSION = (
     'current_step = :starting, updated_at = :now, '
     'gsi1pk = :running_gsi, execution_lease_until = :lease, '
     'execution_owner = :owner '
-    'REMOVE #error, #result, completed_at'
+    'REMOVE #error, #result, completed_at, error_code'
 )
 CLAIM_CONDITION_EXPRESSION = (
     'attribute_exists(pk) AND attribute_exists(sk) AND '
@@ -271,6 +271,8 @@ def update_job_status(
     result: dict | None = None,
     *,
     workspace: WorkspaceScope | None,
+    error_code: str | None = None,
+    unless_finished: bool = False,
 ):
     """Update job status in DynamoDB.
 
@@ -283,6 +285,10 @@ def update_job_status(
         error: Error message if failed (optional)
         result: Result dict if completed (optional)
         workspace: The project's workspace (None: the deployment's row, as before)
+        error_code: A failed job's reason as a word, with ``error`` (7.104.00: an extract's ``timed_out``, ``refused``,
+            ``cut`` or ``unreadable``), so a client offers what fits without reading the English ``error``
+        unless_finished: Only while the job is not ``completed`` or ``failed`` (7.104.00: a progress write, which must
+            never reopen a job that ended, ``JobContext.update_progress``); refused, it is logged like a job gone
     """
     jobs_table = get_jobs_table()
     if not jobs_table:
@@ -311,6 +317,9 @@ def update_job_status(
         expr_names['#ttl'] = 'ttl'
         # Extend TTL to 7 days for failed jobs (for debugging)
         expr_values[':ttl'] = int((datetime.now(UTC) + timedelta(days=7)).timestamp())
+        if error_code:
+            update_expr += ', error_code = :error_code'
+            expr_values[':error_code'] = error_code
 
     if result:
         update_expr += ', #result = :result, completed_at = :now, #ttl = :ttl'
@@ -320,43 +329,60 @@ def update_job_status(
         # Extend TTL to 7 days for completed jobs
         expr_values[':ttl'] = int((datetime.now(UTC) + timedelta(days=7)).timestamp())
 
+    condition = 'attribute_exists(pk) AND attribute_exists(sk)'
+    if unless_finished:
+        condition += ' AND NOT #status IN (:completed, :failed)'
+        expr_values[':completed'], expr_values[':failed'] = 'completed', 'failed'
     try:
         table_view(workspace, jobs_table).update_item(
             _job_key(project_id, job_id, workspace=workspace),
             UpdateExpression=update_expr,
             ExpressionAttributeValues=expr_values,
             ExpressionAttributeNames=expr_names,
-            ConditionExpression='attribute_exists(pk) AND attribute_exists(sk)',
+            ConditionExpression=condition,
         )
     except Exception as e:
         if not is_conditional_check_failure(e):
             logger.error(f"Failed to update job status: {e}", exc_info=True)
             return
         # The row is gone: its project was deleted (the delete removes its jobs)
-        # or its TTL passed. Nothing to update, and not a fault (5.35.01 e2e: six
-        # ERROR lines for one deleted project).
+        # or its TTL passed; or, for a progress write, the job already ended.
+        # Nothing to update, and not a fault (5.35.01 e2e: six ERROR lines for
+        # one deleted project).
         logger.info(
             f"[JOB] Job {job_id} status not updated to {status}: its row no longer exists "
             f"(project {project_id} deleted, or the job expired)"
+            + (", or the job already ended" if unless_finished else "")
         )
 
 
 class JobContext:
-    """Context object passed to job handlers for progress updates (``workspace``: the job's, None the deployment)."""
+    """Context object passed to job handlers for progress updates (``workspace``: the job's, None the deployment;
+    ``lambda_context``: the invocation's, for a job that keeps its own deadline, None in a test or a direct call)."""
 
-    def __init__(self, project_id: str, job_id: str, *, workspace: WorkspaceScope | None):
+    def __init__(self, project_id: str, job_id: str, *, workspace: WorkspaceScope | None,
+                 lambda_context: Any = None):
         self.project_id = project_id
         self.job_id = job_id
         self.workspace = workspace
+        self.lambda_context = lambda_context
+
+    def remaining_ms(self) -> int | None:
+        """The invocation's remaining time in milliseconds, None without a Lambda context."""
+        remaining = getattr(self.lambda_context, 'get_remaining_time_in_millis', None)
+        value = remaining() if callable(remaining) else None
+        return int(value) if isinstance(value, int | float) and not isinstance(value, bool) else None
 
     def update_progress(self, progress: int, step: str):
-        """Update job progress.
+        """Update job progress, only while the job has not ended: a late progress write (a heartbeat thread's) never
+        reopens a job already ``completed`` or ``failed`` (``unless_finished``).
 
         Args:
             progress: Progress percentage (0-100)
             step: Current step description
         """
-        update_job_status(self.project_id, self.job_id, 'running', progress, step, workspace=self.workspace)
+        update_job_status(self.project_id, self.job_id, 'running', progress, step, workspace=self.workspace,
+                          unless_finished=True)
 
 
 def job_handler(error_message: str = 'Job execution failed'):
@@ -411,7 +437,7 @@ def job_handler(error_message: str = 'Job execution failed'):
                     return {'success': True, 'skipped': True}
 
             # Create context for progress updates
-            ctx = JobContext(project_id, job_id, workspace=workspace)
+            ctx = JobContext(project_id, job_id, workspace=workspace, lambda_context=lambda_context)
 
             # Extract config - look for common config key patterns
             config = None
@@ -478,14 +504,17 @@ def _end_job_without_result(
     fault, and retrying cannot change it. A raise would make Lambda count an
     Errors datapoint and send the event to the async-failure DLQ, whose alarm
     then pages the operator about a user's empty filter (F1, 2026-10). So: a
-    WARNING without a traceback, the reason on the job record, a normal return.
+    WARNING without a traceback, the reason on the job record, a normal return. An ApiError's ``code`` goes on the
+    record as ``error_code`` (7.104.00), the reason as a word.
     """
     status = error.status_code if isinstance(error, ApiError) else 0
+    code = error.code if isinstance(error, ApiError) else None
     logger.warning(
         f"[JOB] {func_name} ended without a result for job={job_id} "
         f"({type(error).__name__}, {status}): {error}"
     )
     error_text = _job_error_text(error_message, error)
-    update_job_status(project_id, job_id, 'failed', 0, 'error', error=error_text, workspace=workspace)
+    update_job_status(project_id, job_id, 'failed', 0, 'error', error=error_text, workspace=workspace,
+                      error_code=code)
     notify_project_job(project_id, job_id, 'failed', workspace=workspace)
-    return {'success': False, 'error': error_text}
+    return {'success': False, 'error': error_text, **({'error_code': code} if code else {})}

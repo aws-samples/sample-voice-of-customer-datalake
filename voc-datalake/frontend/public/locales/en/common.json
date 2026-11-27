@@ -153,7 +153,8 @@
     "picker": {
       "title": "Choose a workspace",
       "intro": "You are a member of more than one workspace. Choose the one to open.",
-      "lastUsed": "Last used"
+      "lastUsed": "Last used",
+      "create": "Create a workspace"
     },
     "notFound": {
       "title": "Workspace not found",
@@ -635,7 +636,7 @@
     "expiryDays_one": "{{count, number}} day",
     "expiryDays_other": "{{count, number}} days",
     "projectLabel": "Project",
-    "projectHint": "Optional: confine project tools to one project.",
+    "projectHint": "Optional: confine project tools to one project. A pinned token gets no feedback forms tools, not even for its project's validation form. Its feedback reads leave out the stored submitter email and name, form contact answers and an inbox email's sender; anything else, such as an email typed into an open answer, follows the source's PII policy.",
     "projectAll": "All my projects",
     "mintFailed": "Could not create the token. Check the fields and try again.",
     "minting": "Creating…",

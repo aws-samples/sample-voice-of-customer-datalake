@@ -16,7 +16,7 @@ import type { ProductDocStatus, ProjectDocument } from './types'
 export interface ProjectJob {
   success?: boolean
   job_id: string
-  job_type: 'research' | 'generate_personas' | 'generate_prd' | 'generate_prfaq' | 'generate_product_report' | 'build_prototype' | 'draft_prototype' | 'merge_documents' | 'import_persona'
+  job_type: 'research' | 'generate_personas' | 'generate_prd' | 'generate_prfaq' | 'generate_product_report' | 'build_prototype' | 'draft_prototype' | 'merge_documents' | 'import_persona' | 'extract_product_description'
   status: 'pending' | 'running' | 'completed' | 'failed'
   progress: number
   current_step?: string
@@ -24,8 +24,15 @@ export interface ProjectJob {
   updated_at?: string
   completed_at?: string
   error?: string
+  /**
+   * A failed job's reason as a word, when its work gave one (7.104.00: an `extract_product_description` job's),
+   * so the page can offer what fits: a retry at `xhigh` after `timed_out`.
+   */
+  error_code?: ProductExtractFailure
   result?: {
     document_id?: string
+    /** An `extract_product_description` job's proposal (GET …/product-proposals/latest reads it). */
+    proposal_id?: string
     persona_id?: string
     title?: string
     personas?: ProjectPersona[]
@@ -178,6 +185,8 @@ export type ProductLifecycleState = '' | 'idea' | 'mvp' | 'beta' | 'ga' | 'matur
 export interface ProductContext {
   product_name: string
   one_liner: string
+  /** "What the product does" (7.104.00): proposed by an extract from the sources, written only when accepted or typed. */
+  product_summary: string
   target_users: string
   problem_solved: string
   current_state: ProductLifecycleState
@@ -191,6 +200,19 @@ export interface ProductContext {
   updated_at?: string
 }
 
+/** A product-context field: every member of `ProductContext` but the server's `updated_at`. */
+export type ProductContextField = Exclude<keyof ProductContext, 'updated_at'>
+
+/** A product source's kind (`source_kind`): an uploaded file (every row from before 7.104.00), a link, or interview answers. */
+type ProductSourceKind = 'file' | 'url' | 'interview'
+
+/** How an interview source's answers were given (`interview_mode`). */
+type ProductInterviewMode = 'typed' | 'voice'
+
+/**
+ * A product source as GET /projects/{id}/product-docs lists it (and every source route answers it as `doc`).
+ * Since 7.104.00 every source carries all of its fields: those that do not apply to its kind are null.
+ */
 export interface ProductDoc {
   doc_id: string
   filename: string
@@ -200,6 +222,141 @@ export interface ProductDoc {
   error: string | null
   extracted_chars: number
   created_at: string
+  source_kind: ProductSourceKind
+  /** Its text reads like instructions to a model: it is read as data only, never refused. */
+  injection_flag: boolean
+  /** How its text was read: its own text (`text`) or by a model (`model`: a scanned PDF, an image); null until read. */
+  method: 'text' | 'model' | null
+  /** A PDF's or PPTX's pages (slides). */
+  pages: number | null
+  /** Its text was cut at the reading's cap. */
+  truncated: boolean
+  /** A link: the URL added, the URL it ended at after redirects, the page's title (for display only). */
+  url: string | null
+  final_url: string | null
+  title: string | null
+  interview_mode: ProductInterviewMode | null
+}
+
+/** POST …/product-docs/upload-url. `sha256` (hex): a PDF's, DOCX's or PPTX's digest, which their reading checks. */
+export interface ProductDocUploadBody {
+  filename: string
+  content_type: string
+  size_bytes: number
+  sha256?: string
+}
+
+/** One answer of POST …/product-docs/answers (at most 12, each answer at most 2,000 characters). */
+interface ProductInterviewAnswer {
+  field: ProductContextField
+  question: string
+  answer: string
+}
+
+/** POST …/product-docs/answers: typed answers, saved as one `interview` source; `proposal_id` names the questions' proposal. */
+export interface ProductAnswersBody {
+  proposal_id?: string
+  mode: 'typed'
+  answers: ProductInterviewAnswer[]
+}
+
+/** An extract's effort: `max`, or `xhigh` when the person retries one that timed out. */
+export type ProductExtractEffort = 'max' | 'xhigh'
+
+/** POST /projects/{id}/product-extract, which answers 202 `{job_id}` (an `extract_product_description` job). */
+export interface ProductExtractBody {
+  response_language?: string
+  effort?: ProductExtractEffort
+}
+
+/** A failed extract job's `error_code`: refused twice, past its deadline, out of room, or an answer that is not the schema. */
+type ProductExtractFailure = 'refused' | 'timed_out' | 'cut' | 'unreadable'
+
+/** One citation of a proposed value: a quote of one of the proposal's `sources` (`S1`…). */
+export interface ProductProposalCitation {
+  source_id: string
+  quote: string
+  page: number | null
+  /** The quote is in that source's text as sent (whitespace and case aside); an unverified one is marked. */
+  verified: boolean
+}
+
+/** One field of a proposal, as GET …/product-proposals/latest answers it. */
+export interface ProductFieldProposal {
+  status: 'proposed' | 'unchanged' | 'gap' | 'conflict'
+  /** '' for a gap; `current_state` one of its lifecycle values. */
+  value: string
+  citations: ProductProposalCitation[]
+  confidence: 'high' | 'medium' | 'low'
+  note: string
+  /** The field's value the proposal was made against, which an accept sends back. */
+  seen: string
+  accepted: boolean
+  /** The field's value now, and whether it differs from `seen` ("Changed since the extract"). */
+  current: string
+  changed_since: boolean
+}
+
+/** A source an extract read: its id in the proposal (`S1`…), what was sent, and whether it was deleted since. */
+export interface ProductProposalSource {
+  source_id: string
+  doc_id: string
+  name: string
+  kind: ProductSourceKind
+  chars_sent: number
+  cut: boolean
+  deleted: boolean
+}
+
+export interface ProductProposal {
+  proposal_id: string
+  status: 'open' | 'partly_applied' | 'applied' | 'dismissed' | 'superseded'
+  job_id: string
+  created_at: string
+  /** The model that answered (Sonnet 5 after a refusal) and its effort (null where the model takes none). */
+  model_id: string
+  effort: ProductExtractEffort | null
+  sources: ProductProposalSource[]
+  /** Ready sources left out by the extract's character budget. */
+  skipped_sources: { doc_id: string; name: string; kind: ProductSourceKind }[]
+  fields: Record<ProductContextField, ProductFieldProposal>
+  /** At most 8, for the gaps and low-confidence fields. */
+  questions: { field: ProductContextField; question: string }[]
+}
+
+/**
+ * Who last wrote a product-context field (`field_meta.{field}`): a person (the form), an accepted extract, or the
+ * assistant (its approval card, or an MCP client, agent or plan). An autonomous caller never replaces a person's value.
+ */
+export interface ProductFieldMeta {
+  by: 'person' | 'extract' | 'assistant'
+  sub: string
+  at: string
+  proposal_id?: string
+  source_ids?: string[]
+}
+
+/** GET /projects/{id}/product-proposals/latest: the open or latest proposal, for the SPA and MCP alike. */
+export interface ProductProposalLatest {
+  proposal: ProductProposal | null
+  context: ProductContext
+  field_meta: Partial<Record<ProductContextField, ProductFieldMeta>>
+  sources: ProductDoc[]
+}
+
+/** POST …/product-proposals/{proposal_id}/accept: each field with the value it was seen at, and an edited value. */
+export interface AcceptProductProposalBody {
+  fields: Partial<Record<ProductContextField, { seen: string; value?: string }>>
+}
+
+/**
+ * The accept's answer: what was written and what was not, because the field changed since `seen` or is a person's
+ * value an autonomous caller may not replace. When every field conflicts it is a 409 whose body carries `conflicts`.
+ */
+export interface AcceptProductProposalResult {
+  applied: ProductContextField[]
+  conflicts: { field: ProductContextField; reason: 'changed' | 'person_value' }[]
+  status: ProductProposal['status']
 }
 
 export interface Project {

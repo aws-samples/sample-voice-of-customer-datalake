@@ -120,7 +120,7 @@ export function createProjectsLambda(ctx: ApiStackContext): ProjectsLambda {
     // Built from the shared constant: the agent conductor and persona panel
     // (VocProcessingStack) invoke this function by the same deterministic name.
     functionName: ctx.uniqueName(PROJECTS_API_FUNCTION_BASE_NAME),
-    runtime: lambda.Runtime.PYTHON_3_14,
+    runtime: lambda.Runtime.PYTHON_3_15,
     architecture: lambda.Architecture.ARM_64,
     handler: 'projects_handler.lambda_handler',
     code: createApiLambdaCode('projects_handler.py'),

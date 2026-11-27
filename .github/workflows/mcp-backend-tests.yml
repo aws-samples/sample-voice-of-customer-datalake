@@ -112,7 +112,7 @@ jobs:
       #
       # Known exposure: both files bound most dependencies with `>=`, and
       # `.python-version` pins a floating
-      # patch of 3.14. So a breaking upstream release can turn this gate red
+      # patch of 3.15. So a breaking upstream release can turn this gate red
       # on a pull request that changed nothing. A red run whose failure is an
       # import error, a resolver conflict, or a message naming a third-party
       # package is a dependency-resolution problem, not an MCP regression —

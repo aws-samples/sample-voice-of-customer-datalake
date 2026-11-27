@@ -33,7 +33,7 @@ from typing import Any, Final
 
 from botocore.exceptions import ClientError
 
-from shared.aws import SECRET_STRING_MAX_BYTES
+from shared.aws import CONDITION_FAILED, SECRET_STRING_MAX_BYTES, TRANSACTION_CONFLICT, cancellation_codes
 from shared.exceptions import ConflictError, ValidationError
 from shared.timestamps import now_iso
 from shared.workspace_credentials import read_credentials
@@ -47,7 +47,7 @@ CONFIGS_KEY: Final = 'configs'
 CONFIG_CHANGED: Final = ('These settings were changed by someone else while you were editing them. '
                          'Reload to see the latest, then save again.')
 #: A cancelled transaction's reasons that mean another write got there first (a 409), not a fault.
-_LOST_RACE: Final = frozenset({'ConditionalCheckFailed', 'TransactionConflict'})
+_LOST_RACE: Final = frozenset({CONDITION_FAILED, TRANSACTION_CONFLICT})
 
 
 #: What a row records of its save, copied onto the history row of the list it holds once that list is replaced.
@@ -135,9 +135,7 @@ def _history_row(table: WorkspaceTable, plugin: str, replaced: ConfigRow, *, at:
 
 def _lost_race(error: ClientError) -> bool:
     """Whether a refused transaction lost to another write (its condition failed, or a concurrent transaction)."""
-    if error.response.get('Error', {}).get('Code') != 'TransactionCanceledException':
-        return False
-    return any(reason.get('Code') in _LOST_RACE for reason in error.response.get('CancellationReasons', []))
+    return any(code in _LOST_RACE for code in cancellation_codes(error))
 
 
 def save_configs(table: WorkspaceTable, plugin: str, configs: object, *, replaced: ConfigRow | None,

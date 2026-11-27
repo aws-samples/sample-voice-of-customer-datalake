@@ -4078,14 +4078,13 @@ class TestAWriteConflictIsRetriedRatherThanReported:
         fires, which looks identical to a system under no contention — so both
         spellings are named in the module and this says why they differ.
         """
-        from aggregator.handler import (
-            _TRANSIENT_READ_ERRORS,
-            TRANSACTION_CONFLICT_REASON,
-        )
+        from aggregator.handler import _RETRYABLE_CANCELLATION_REASONS, _TRANSIENT_READ_ERRORS
+        from shared.aws import TRANSACTION_CONFLICT
 
-        assert TRANSACTION_CONFLICT_REASON == 'TransactionConflict'
-        assert TRANSACTION_CONFLICT_REASON not in _TRANSIENT_READ_ERRORS
-        assert f'{TRANSACTION_CONFLICT_REASON}Exception' in _TRANSIENT_READ_ERRORS
+        assert TRANSACTION_CONFLICT == 'TransactionConflict'
+        assert TRANSACTION_CONFLICT in _RETRYABLE_CANCELLATION_REASONS
+        assert TRANSACTION_CONFLICT not in _TRANSIENT_READ_ERRORS
+        assert f'{TRANSACTION_CONFLICT}Exception' in _TRANSIENT_READ_ERRORS
 
 
 class TestAnUnrecognizedEventIsSkippedRatherThanFatal:

@@ -21,6 +21,7 @@ import {
 } from 'react'
 import { useTranslation } from 'react-i18next'
 import JobStatusBadge from './JobStatusBadge'
+import { isStaleJob } from './jobStaleness'
 import { formatDateTime, formatTime } from '../../utils/dateUtils'
 import { humanizeId } from '../../utils/displayLabels'
 import type { ProjectJob } from '../../api/projectTypes'
@@ -43,8 +44,6 @@ interface JobsSectionProps {
   readonly onDismiss?: (jobId: string) => void
 }
 
-const STALE_THRESHOLD_MS = 10 * 60 * 1000
-
 /** The label key per job type; a type this bundle does not know reads as research. */
 const JOB_TYPE_KEYS: Partial<Record<string, string>> = {
   research: 'jobs.types.research',
@@ -56,12 +55,7 @@ const JOB_TYPE_KEYS: Partial<Record<string, string>> = {
   draft_prototype: 'jobs.types.draftPrototype',
   import_persona: 'jobs.types.importPersona',
   merge_documents: 'jobs.types.mergeDocuments',
-}
-
-function checkIsStale(status: string, updatedAt: string | undefined, now: number): boolean {
-  if (status !== 'running' && status !== 'pending') return false
-  if ((updatedAt == null || updatedAt === '')) return false
-  return new Date(updatedAt).getTime() < now - STALE_THRESHOLD_MS
+  extract_product_description: 'jobs.types.extractProductDescription',
 }
 
 interface JobItemProps {
@@ -388,7 +382,7 @@ export default function JobsSection({
           <JobItem
             key={job.job_id}
             job={job}
-            isStale={checkIsStale(job.status, job.updated_at, now)}
+            isStale={isStaleJob(job, now)}
             onDismiss={onDismiss}
           />
         ))}

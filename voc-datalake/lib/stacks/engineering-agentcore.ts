@@ -27,12 +27,10 @@
  *   nothing else. A session has no other AWS right of its own; the run's inputs are read with the agent role's
  *   15-minute session the launcher hands its agent user (engineering-runtime.ts).
  *
- * The runtime resource is the L1 `CfnRuntime` of the pinned aws-cdk-lib (2.275.0), which has no property for the
- * resource configuration, so `ResourceConfigurations` is a property override, in CloudFormation's own name and shape
- * (`[{ MinimumMemoryInMiB }]`, us-east-2's registry schema, 2026-11-15). aws-cdk-lib 2.277.0 has it typed
- * (`resourceConfigurations`) but also knows Python 3.15, which the dependency rule (docs/dependencies.md) would move
- * every Lambda to: a separate upgrade. The standard runtimes ran on a real deployment (us-west-2, 2026-11-15); a build
- * runtime has not yet.
+ * The runtime resource is the L1 `CfnRuntime` of the pinned aws-cdk-lib (2.278.0), whose typed `resourceConfigurations`
+ * (since 2.277.0) renders CloudFormation's `ResourceConfigurations: [{ MinimumMemoryInMiB }]`, the name and shape of
+ * us-east-2's registry schema (2026-11-15) that the property override of 7.40.00-7.71.04 wrote by hand: the template
+ * is unchanged. The standard runtimes ran on a real deployment (us-west-2, 2026-11-15); a build runtime has not yet.
  */
 import * as cdk from 'aws-cdk-lib';
 import * as agentcore from 'aws-cdk-lib/aws-bedrockagentcore';
@@ -383,8 +381,8 @@ export class EngineeringAgentCore extends Construct {
       // has `metadataConfiguration`; the service sets `requireMMDSV2: true` on these runtimes itself (read back on b-:
       // docs/autonomous-engineering.md, Runtime, "MMDSv2"). Set it here once both have the property.
       platformVersion: 'V2',
+      resourceConfigurations: memory > 0 ? [{ minimumMemoryInMiB: memory }] : undefined,
     });
-    if (memory > 0) runtime.addPropertyOverride('ResourceConfigurations', [{ MinimumMemoryInMiB: memory }]);
     // The role's policy first: the service checks the image pull when the runtime is made.
     const policy = role.node.tryFindChild('DefaultPolicy');
     if (policy !== undefined) runtime.node.addDependency(policy);

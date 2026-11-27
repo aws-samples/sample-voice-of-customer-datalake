@@ -21,7 +21,9 @@ def test_an_unpadded_segment_decodes():
     assert b64url(_seg(b'ab')) == b'ab'
 
 
-@pytest.mark.parametrize('segment', ['', 'YWI=', 'a', 'a$b!'])
+# 'a$b!' and 'YW$I' decode on Python 3.15 (urlsafe_b64decode drops what is outside its alphabet and no longer needs
+# padding); '+' and '/' are base64's, not base64url's, and decoded on every version.
+@pytest.mark.parametrize('segment', ['', 'YWI=', 'a', 'a$b!', 'YW$I', 'YW+I', 'YW/I', 'YWI\n'])
 def test_a_padded_empty_or_invalid_segment_is_malformed(segment):
     with pytest.raises(InvalidToken, match='malformed segment'):
         b64url(segment)

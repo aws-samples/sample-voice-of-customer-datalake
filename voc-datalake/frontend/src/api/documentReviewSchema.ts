@@ -117,6 +117,8 @@ const personaReviewResultSchema = z.object({
     persona_id: z.string().catch(''), name: z.string().catch(''), ok: z.boolean().catch(false),
     filed: z.number().catch(0), dropped: z.number().catch(0),
   })).catch([]),
+  /** Who reviewed: the project's own personas, or (the project has none) its company's; a result before 7.104.00 is the project's. */
+  persona_source: z.enum(['project', 'company']).catch('project'),
 })
 export type PersonaReviewResult = z.infer<typeof personaReviewResultSchema>
 

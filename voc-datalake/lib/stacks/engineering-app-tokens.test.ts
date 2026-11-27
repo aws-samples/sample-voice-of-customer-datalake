@@ -54,7 +54,7 @@ describe('the token function (VocProcessingStack)', () => {
     const on = template('on');
     const properties = on.findResources('AWS::Lambda::Function')[tokensId(on)]?.Properties;
     expect(properties).toMatchObject({
-      Handler: 'engineering/connectors/app_tokens.lambda_handler', Runtime: 'python3.14', Architectures: ['arm64'],
+      Handler: 'engineering/connectors/app_tokens.lambda_handler', Runtime: 'python3.15', Architectures: ['arm64'],
       MemorySize: OPTIONAL_FUNCTION_SIZES[TOKEN_FUNCTION], Timeout: 20,
       Environment: { Variables: { ENGINEERING_PARAMETER_PREFIX: '/voc/engineering/' } },
     });

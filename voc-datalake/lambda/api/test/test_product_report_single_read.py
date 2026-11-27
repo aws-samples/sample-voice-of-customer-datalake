@@ -30,6 +30,8 @@ from unittest.mock import MagicMock, patch
 import pytest
 from product_report_fixtures import s3_serving, wire_transactions
 
+from shared.product_proposals import FIELD_ORDER
+
 DOC_BODY = 'Onboarding takes three steps and the primary colour is #0F62FE.'
 EXTRACTED_KEY = 'projects/proj-1/product_docs/extracted/notes.txt'
 
@@ -50,9 +52,8 @@ PLACEHOLDER = '(No product context provided.)'
 
 def _context(**filled) -> dict:
     """A product context with every field blank except those named."""
-    import product_context
 
-    ctx = product_context._empty_context()
+    ctx = dict.fromkeys(FIELD_ORDER, '')
     ctx.update(filled)
     return {'context': ctx}
 

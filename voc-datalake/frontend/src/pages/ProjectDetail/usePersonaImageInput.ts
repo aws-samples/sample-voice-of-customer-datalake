@@ -285,7 +285,7 @@ export function usePersonaImageInput({
    * modal wrapper as a sibling on independent state, and no state machine makes
    * them exclusive — what does is this modal's own `fixed inset-0` backdrop, which
    * covers the viewport and leaves every trigger behind it unclickable while it is
-   * open. The other paste handler on this page (ProductDocsUpload's pane) lives
+   * open. The other paste handler on this page (the Product tab's Sources card) lives
    * in another tab, behind the same backdrop. So the
    * exclusivity is a CONSEQUENCE of the overlay rather than something enforced:
    * anything that could raise a surface ABOVE this one — a toast with a paste

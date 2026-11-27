@@ -34,7 +34,7 @@ __all__ = ['ImportedRow', 'infer_form', 'row_answers']
 DATE_TARGET: Final = 'date'
 ID_TARGET: Final = 'id'
 IGNORE_TARGET: Final = 'ignore'
-HIDDEN_PREFIX: Final = 'hidden:'
+HIDDEN_TARGET_PREFIX: Final = 'hidden:'
 CHANNEL_FIELD: Final = 'channel'
 ENDING_ID: Final = fv2.V1_ENDING_ID   # (the thank-you ending a version 1 form migrates to)
 #: The id an imported row is kept under at most (``IngestMessage.csv_row_id``'s bound).
@@ -146,7 +146,7 @@ _SECOND_COLUMN: Final[Mapping[str, str]] = {'date': 'extra_date', 'id': 'extra_i
 def _non_question_target(kind: str, hidden: list[dict[str, str]], mapping: Mapping[str, str]) -> tuple[str, str | None]:
     """The target of a column that is no question, and the problem code of a second date, id or channel column (the
     first one keeps the target)."""
-    targets = {'date': DATE_TARGET, 'id': ID_TARGET, 'channel': f'{HIDDEN_PREFIX}{CHANNEL_FIELD}'}
+    targets = {'date': DATE_TARGET, 'id': ID_TARGET, 'channel': f'{HIDDEN_TARGET_PREFIX}{CHANNEL_FIELD}'}
     target = targets.get(kind)
     if target is None:
         return IGNORE_TARGET, None
@@ -278,8 +278,8 @@ def row_answers(definition: Mapping[str, Any], mapping: Mapping[str, str], row: 
                 raise _refuse(f'"{header}" is not a date: {text[:40]}', DATE_INVALID)
         elif target == ID_TARGET:
             row_id = text[:MAX_ROW_ID_CHARS]
-        elif target.startswith(HIDDEN_PREFIX):
-            hidden[target.removeprefix(HIDDEN_PREFIX)] = text
+        elif target.startswith(HIDDEN_TARGET_PREFIX):
+            hidden[target.removeprefix(HIDDEN_TARGET_PREFIX)] = text
         elif target in questions:
             answers[target] = _cell_answer(questions[target], text, primary)
     return ImportedRow(fresp.validate_imported(definition, answers, hidden), created_at, row_id, dated)
@@ -291,7 +291,7 @@ def check_mapping(definition: Mapping[str, Any], mapping: object) -> dict[str, s
     if not isinstance(mapping, Mapping) or not mapping or len(mapping) > fv2.MAX_QUESTIONS * 10:
         raise ValidationError('mapping must be an object of {header: target}', code='mapping_invalid')
     questions = {question['id'] for question in definition.get('questions') or []}
-    hidden = {f'{HIDDEN_PREFIX}{entry["id"]}' for entry in definition.get('hidden_fields') or []}
+    hidden = {f'{HIDDEN_TARGET_PREFIX}{entry["id"]}' for entry in definition.get('hidden_fields') or []}
     allowed = questions | hidden | {DATE_TARGET, ID_TARGET, IGNORE_TARGET}
     seen: set[str] = set()
     out: dict[str, str] = {}

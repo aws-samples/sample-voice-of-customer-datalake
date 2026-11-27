@@ -40,8 +40,8 @@ from shared.avatar import (
     generate_persona_avatar as _generate_persona_avatar,
 )
 from shared.avatar_failure import AvatarGenerationFailed
+from shared.aws import CONDITION_FAILED, cancellation_codes, get_s3_client
 from shared.aws import get_cognito_idp_client as _get_cognito_client
-from shared.aws import get_s3_client
 from shared.batch_get import batch_get_all
 from shared.company_personas import is_company_container
 from shared.converse import ConverseResult, answering_model, converse_chain, converse_detailed
@@ -3857,20 +3857,15 @@ def _persona_delete_transaction(
 def _only_the_counter_refused(error: Exception) -> bool:
     """True when a cancelled persona delete failed on the counter guard alone.
 
-    The persona row's own condition passed (``None``), so the persona exists and
-    only the project update refused: a drifted counter, or a project that is
-    being deleted. The floor write re-checks writability, so retrying it is safe
-    in both cases. Anything unreadable answers False and is reported as is.
+    The persona row's own entry was fine (``None`` in ``cancellation_codes``), so
+    the persona exists and only the project update refused: a drifted counter, or
+    a project that is being deleted. The floor write re-checks writability, so
+    retrying it is safe in both cases. Anything else (another error, too few
+    entries, any other code) answers False and is reported as is.
     """
-    if not isinstance(error, ClientError):
-        return False
-    if error.response.get('Error', {}).get('Code') != 'TransactionCanceledException':
-        return False
-    reasons = error.response.get('CancellationReasons')
-    if not isinstance(reasons, list) or len(reasons) <= _PERSONA_DELETE_COUNTER_INDEX:
-        return False
-    codes = [reason.get('Code') for reason in reasons]
-    return codes[0] == 'None' and codes[_PERSONA_DELETE_COUNTER_INDEX] == 'ConditionalCheckFailed'
+    codes = cancellation_codes(error)
+    return (codes[:1] == [None] and len(codes) > _PERSONA_DELETE_COUNTER_INDEX
+            and codes[_PERSONA_DELETE_COUNTER_INDEX] == CONDITION_FAILED)
 
 
 def _persona_name(project_id: str, persona_id: str) -> str | None:

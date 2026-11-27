@@ -433,7 +433,7 @@ and [Amazon Bedrock pricing](https://aws.amazon.com/bedrock/pricing/) for the mo
 
 ## Infrastructure and regions
 
-- Lambda `voc-ingestor-web_reviews` (VocIngestionStack, Python 3.14, ARM64, 900 s, 512 MB). Its schedule rule
+- Lambda `voc-ingestor-web_reviews` (VocIngestionStack, Python 3.15, ARM64, 900 s, 512 MB). Its schedule rule
   (`rate(15 minutes)`) is created **disabled**; each target's `frequency_minutes` decides whether a scheduled
   tick reads it.
 - The browser (VocIngestionStack, made only while a plugin with `infrastructure.ingestor.browser: true` is

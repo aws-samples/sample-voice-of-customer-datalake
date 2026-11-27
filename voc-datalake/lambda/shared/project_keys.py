@@ -50,7 +50,8 @@ if TYPE_CHECKING:
 __all__ = ['AGENT_RUNS_STORE', 'ASSIST_JOB_PREFIX', 'COMMENT_PARTITION_PREFIX', 'COMMENT_SERIES_PREFIX',
            'DEPLOYMENT_LINK_REGISTRY_PK', 'DEPLOYMENT_PROJECT_REGISTRY_PK', 'DEPLOYMENT_SERIES_REGISTRY_PK',
            'PRODUCT_CONTEXT_SK',
-           'PRODUCT_DOC_SK_PREFIX', 'PROJECT_GATE_STORE', 'PROJECT_JOB_WORK_STORE',
+           'PRODUCT_DOC_SK_PREFIX', 'PRODUCT_EXTRACT_SK', 'PRODUCT_PROPOSAL_SK_PREFIX',
+           'PRODUCT_SOURCES_STORE', 'PROJECT_GATE_STORE', 'PROJECT_JOB_WORK_STORE',
            'PROJECT_TYPE_PK', 'PROTOTYPE_BUILDER_STORE', 'PROTOTYPE_SK_PREFIX', 'REVIEWER_ROUTES_STORE',
            'REVIEW_REGISTRIES_MARKER_KEY', 'REVIEW_REGISTRIES_MARKER_SK', 'REVISE_FROM_COMMENTS_STORE', 'SERIES_ID_RE', 'NotPerWorkspaceError',
            'ProjectPartition', 'comment_partition_ids', 'comment_series_item', 'comments_pk',
@@ -131,12 +132,24 @@ _PROJECT_REGISTRY: Final = 'PROJECT_IDS'
 #: ``deployment_project_registry_key``): put at a project's create, never removed by its delete (which takes the
 #: tombstoned ``META`` off ``gsi1-by-type``), so an erasure by email finds a deleted project's rows too.
 DEPLOYMENT_PROJECT_REGISTRY_PK: Final = _PROJECT_REGISTRY
-#: A project's product context row and its product documents' records, in the project's partition
-#: (api/product_context.py, which names them ``CONTEXT_SK`` and ``DOC_SK_PREFIX``; the workspace export reads them).
+#: A project's product context row and its product documents' records, in the project's partition (the context read
+#: and written by shared/product_proposals.py, the records by shared/product_sources.py and api/product_context.py,
+#: which names their prefix ``DOC_SK_PREFIX``; the workspace export reads them).
 PRODUCT_CONTEXT_SK: Final = 'PRODUCT_CONTEXT'
 PRODUCT_DOC_SK_PREFIX: Final = 'PRODUCT_DOC#'
 #: A prototype document's row in its project's partition (api/projects_handler.py; the erasure's pins walk, 7.98.00).
 PROTOTYPE_SK_PREFIX: Final = 'PROTOTYPE#'
+#: A project's product proposals (7.104.00), in the project's partition: one per extract of its product sources,
+#: ``PRODUCT_PROPOSAL#{iso}#{hex}`` (its creation time, then a random suffix), so the newest sorts last.
+PRODUCT_PROPOSAL_SK_PREFIX: Final = 'PRODUCT_PROPOSAL#'
+#: A project's extract lock (7.104.00, shared/product_proposals.py): one row, held while one extract runs (its
+#: ``lock_id``), stale after 16 minutes; released by an update, never deleted (a project delete sweeps it). Neither
+#: the workspace export nor the project bundle carries it.
+PRODUCT_EXTRACT_SK: Final = 'PRODUCT_EXTRACT'
+#: A project's product sources (7.104.00: the reading of an uploaded file or a link on the projects API's assist twin,
+#: shared/product_source_worker.py, and an interview's answers saved as a source, shared/product_sources.py): their
+#: rows and objects are the deployment's, so a workspace is refused until the switch (3h) threads it.
+PRODUCT_SOURCES_STORE: Final = 'Product sources'
 #: A series id's shape (shared/document_series.py ``series_id``: ``ser_`` + 24 hex), which a reader of a project's
 #: ``COMMENT_SERIES#`` rows checks before it names a comment partition (the hard delete, the workspace export).
 SERIES_ID_RE: Final = re.compile(r'ser_[0-9a-f]{24}')

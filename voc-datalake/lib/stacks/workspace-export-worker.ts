@@ -321,7 +321,7 @@ export function createWorkspaceExportWorker(scope: Construct, id: string,
   return new lambda.Function(worker, 'Export', {
     functionName,
     role,
-    runtime: lambda.Runtime.PYTHON_3_14,
+    runtime: lambda.Runtime.PYTHON_3_15,
     architecture: lambda.Architecture.ARM_64,
     handler: EXPORT_HANDLER,
     code: exportCode(),

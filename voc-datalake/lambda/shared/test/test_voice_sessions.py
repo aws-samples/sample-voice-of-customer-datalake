@@ -21,6 +21,7 @@ from botocore.credentials import Credentials
 from moto import mock_aws
 
 from shared import voice_sessions as voice
+from shared import voice_subjects as subjects
 from shared.category_access import UNRESTRICTED
 from shared.exceptions import (
     AuthorizationError,
@@ -29,6 +30,7 @@ from shared.exceptions import (
     TooManyRequestsError,
     ValidationError,
 )
+from shared.product_fields import FIELD_LABELS
 from shared.project_access import Caller
 from shared.test.moto_tables import create_pk_sk_table
 
@@ -43,6 +45,7 @@ ADMIN = Caller(subject='sub-admin', is_admin=True)
 PACK = {'personas': [{'persona_id': 'persona_1', 'evidence': [
     {'feedback_id': 'fb1', 'text': 'Nine days for a parcel.', 'verbatim': True, 'source_platform': 'web',
      'category': 'delivery', 'sentiment_label': 'negative', 'date': '2026-11-01', 'origin': 'cited'}]}]}
+PERSONA = subjects.persona('persona_1')
 FAKE_CREDENTIALS = Credentials('test-access-key-id', 'test-secret-access-key', 'session-token-example')
 
 
@@ -67,8 +70,8 @@ def stores():
 def _mint(store: voice.Stores, caller: Caller = PERSON, body: dict | None = None, persona: str = 'persona_1',
           project: str = 'p1') -> dict[str, Any]:
     with patch.object(voice.persona_grounding, 'evidence_pack', return_value=PACK):
-        return voice.mint(store, CONFIG, project, persona, caller, body or {'consent': True}, UNRESTRICTED,
-                          workspace=None)
+        return voice.mint(store, CONFIG, project, subjects.persona(persona), caller, body or {'consent': True},
+                          UNRESTRICTED, workspace=None)
 
 
 def _item(table: Any, pk: str, sk: str) -> dict[str, Any]:
@@ -289,12 +292,11 @@ def _recorded_jobs() -> tuple[list[str], voice.StartFinalize]:
 class TestOffer:
     def test_without_voice_is_disabled(self, stores):
         store, _ = stores
-        assert voice.offer(store, None, 'p1', 'persona_1', PERSON, start_finalize=_no_job,
-                           workspace=None) == {'enabled': False}
+        assert voice.offer(store, None, 'p1', PERSONA, PERSON, start_finalize=_no_job, workspace=None) == {'enabled': False}
 
     def test_answers_the_consent_dialog_s_figures(self, stores):
         store, _ = stores
-        offer = voice.offer(store, CONFIG, 'p1', 'persona_1', PERSON, start_finalize=_no_job, workspace=None)
+        offer = voice.offer(store, CONFIG, 'p1', PERSONA, PERSON, start_finalize=_no_job, workspace=None)
         assert {k: offer[k] for k in ('enabled', 'session_minutes', 'minutes_left', 'sessions_left_today',
                                       'estimated_cents_per_minute')} == {
             'enabled': True, 'session_minutes': 15, 'minutes_left': 300.0, 'sessions_left_today': 5,
@@ -317,8 +319,7 @@ class TestCostCaps:
         with pytest.raises(ConflictError) as refused:
             _mint(store)
         assert refused.value.code == 'budget_exhausted'
-        assert voice.offer(store, CONFIG, 'p1', 'persona_1', PERSON, start_finalize=_no_job,
-                           workspace=None)['minutes_left'] == 0
+        assert voice.offer(store, CONFIG, 'p1', PERSONA, PERSON, start_finalize=_no_job, workspace=None)['minutes_left'] == 0
         assert voice.usage(store, CONFIG)['minutes_left'] == 0
 
 
@@ -337,10 +338,10 @@ class TestSessionsLeftUnsaved:
         sid = _mint(store)['session_id']
         self._relay_ended(store, sid)
         jobs, start = _recorded_jobs()
-        voice.offer(store, CONFIG, 'p1', 'persona_1', PERSON, start_finalize=start, workspace=None)
+        voice.offer(store, CONFIG, 'p1', PERSONA, PERSON, start_finalize=start, workspace=None)
         row = _item(store.projects, f'VOICE#{sid}', 'SESSION')
         assert (jobs, row['status'], row['finalize_job_id']) == ([sid], 'finalizing', 'job-left')
-        voice.offer(store, CONFIG, 'p1', 'persona_1', PERSON, start_finalize=start, workspace=None)
+        voice.offer(store, CONFIG, 'p1', PERSONA, PERSON, start_finalize=start, workspace=None)
         assert jobs == [sid]
 
     def test_only_the_caller_s_own_sessions_and_only_a_person_s_read(self, stores):
@@ -349,7 +350,7 @@ class TestSessionsLeftUnsaved:
         self._relay_ended(store, sid)
         jobs, start = _recorded_jobs()
         for caller in (OTHER, Caller(subject='sub-ada', delegated=True), Caller(subject='sub-ada', agent_id='agent-1')):
-            voice.offer(store, CONFIG, 'p1', 'persona_1', caller, start_finalize=start, workspace=None)
+            voice.offer(store, CONFIG, 'p1', PERSONA, caller, start_finalize=start, workspace=None)
         assert (jobs, _item(store.projects, f'VOICE#{sid}', 'SESSION')['status']) == ([], 'ended')
 
     def test_an_unused_url_is_ended_and_saved_and_a_failing_job_leaves_the_offer_answered(self, stores):
@@ -360,16 +361,14 @@ class TestSessionsLeftUnsaved:
         def failing(_row: Mapping[str, Any]) -> str:
             raise RuntimeError('lambda invoke refused')
 
-        assert voice.offer(store, CONFIG, 'p1', 'persona_1', PERSON, start_finalize=failing,
-                           workspace=None)['enabled'] is True
+        assert voice.offer(store, CONFIG, 'p1', PERSONA, PERSON, start_finalize=failing, workspace=None)['enabled'] is True
         row = _item(store.projects, f'VOICE#{unused}', 'SESSION')
         assert (row['status'], row['end_reason']) == ('ended', 'disconnected')
 
     def test_a_listing_that_fails_leaves_the_offer_answered(self, stores):
         store, _ = stores
         with patch.object(voice, 'query_all', side_effect=RuntimeError('throttled')):
-            assert voice.offer(store, CONFIG, 'p1', 'persona_1', PERSON, start_finalize=_no_job,
-                               workspace=None)['enabled'] is True
+            assert voice.offer(store, CONFIG, 'p1', PERSONA, PERSON, start_finalize=_no_job, workspace=None)['enabled'] is True
 
 
 class TestEndAndStatus:
@@ -389,9 +388,9 @@ class TestEndAndStatus:
             jobs.append(row['session_id'])
             return 'job-1'
 
-        ended = voice.end(store, CONFIG, 'p1', 'persona_1', sid, PERSON, start, stop=lambda _c, s: stopped.append(s))
+        ended = voice.end(store, CONFIG, 'p1', PERSONA, sid, PERSON, start, stop=lambda _c, s: stopped.append(s))
         assert (ended['status'], ended['job_id'], ended['end_reason']) == ('finalizing', 'job-1', 'ended_by_person')
-        voice.end(store, CONFIG, 'p1', 'persona_1', sid, PERSON, start, stop=lambda _c, s: stopped.append(s))
+        voice.end(store, CONFIG, 'p1', PERSONA, sid, PERSON, start, stop=lambda _c, s: stopped.append(s))
         assert (jobs, stopped) == ([sid], [sid])
         assert sid not in _item(store.aggregates, 'VOICEUSE#LIVE', 'LIVE')['live']
 
@@ -399,8 +398,8 @@ class TestEndAndStatus:
         store, _ = stores
         sid = self._live(store)
         with pytest.raises(AuthorizationError):
-            voice.end(store, CONFIG, 'p1', 'persona_1', sid, OTHER, lambda _row: 'job', stop=lambda *_: None)
-        assert voice.end(store, CONFIG, 'p1', 'persona_1', sid, ADMIN, lambda _row: 'job-2',
+            voice.end(store, CONFIG, 'p1', PERSONA, sid, OTHER, lambda _row: 'job', stop=lambda *_: None)
+        assert voice.end(store, CONFIG, 'p1', PERSONA, sid, ADMIN, lambda _row: 'job-2',
                          stop=lambda *_: None)['job_id'] == 'job-2'
 
     def test_a_session_is_found_only_under_its_own_project_and_persona(self, stores):
@@ -408,15 +407,15 @@ class TestEndAndStatus:
         sid = self._live(store)
         for project, persona in (('p2', 'persona_1'), ('p1', 'persona_2')):
             with pytest.raises(NotFoundError):
-                voice.status(store, project, persona, sid, PERSON, lambda _row: 'job')
-        assert voice.status(store, 'p1', 'persona_1', sid, PERSON, lambda _row: 'job')['status'] == 'live'
+                voice.status(store, project, subjects.persona(persona), sid, PERSON, lambda _row: 'job')
+        assert voice.status(store, 'p1', PERSONA, sid, PERSON, lambda _row: 'job')['status'] == 'live'
 
     def test_an_unused_url_ends_and_its_starter_s_read_saves_it(self, stores):
         store, clock = stores
         sid = _mint(store)['session_id']
         clock['now'] = NOW + timedelta(seconds=90)
-        assert voice.status(store, 'p1', 'persona_1', sid, OTHER, lambda _row: 'job')['status'] == 'ended'
-        status = voice.status(store, 'p1', 'persona_1', sid, PERSON, lambda _row: 'job-3')
+        assert voice.status(store, 'p1', PERSONA, sid, OTHER, lambda _row: 'job')['status'] == 'ended'
+        status = voice.status(store, 'p1', PERSONA, sid, PERSON, lambda _row: 'job-3')
         assert (status['status'], status['end_reason'], status['job_id']) == ('finalizing', 'disconnected', 'job-3')
 
     def test_an_unused_url_stays_minted_while_the_relay_would_still_take_it(self, stores):
@@ -427,9 +426,9 @@ class TestEndAndStatus:
         sid = _mint(store)['session_id']
         last = int(_item(store.projects, f'VOICE#{sid}', 'SESSION')['connect_by'])
         clock['now'] = datetime.fromtimestamp(last, tz=UTC)
-        assert voice.status(store, 'p1', 'persona_1', sid, OTHER, lambda _row: 'job')['status'] == 'minted'
+        assert voice.status(store, 'p1', PERSONA, sid, OTHER, lambda _row: 'job')['status'] == 'minted'
         clock['now'] += timedelta(seconds=1)
-        assert voice.status(store, 'p1', 'persona_1', sid, OTHER, lambda _row: 'job')['end_reason'] == 'disconnected'
+        assert voice.status(store, 'p1', PERSONA, sid, OTHER, lambda _row: 'job')['end_reason'] == 'disconnected'
 
     def test_a_failed_job_start_leaves_it_ended_to_retry(self, stores):
         store, _ = stores
@@ -438,7 +437,7 @@ class TestEndAndStatus:
             raise RuntimeError('lambda invoke refused')
 
         with pytest.raises(RuntimeError):
-            voice.end(store, CONFIG, 'p1', 'persona_1', sid, PERSON, failing, stop=lambda *_: None)
+            voice.end(store, CONFIG, 'p1', PERSONA, sid, PERSON, failing, stop=lambda *_: None)
         assert _item(store.projects, f'VOICE#{sid}', 'SESSION')['status'] == 'ended'
 
 
@@ -455,3 +454,205 @@ class TestUsage:
     def test_stop_never_raises(self):
         with patch.object(voice.boto3, 'client', side_effect=RuntimeError('no endpoint')):
             assert voice.stop_runtime_session(CONFIG, 's-1') is None
+
+
+def _mint_product(store: voice.Stores, body: dict | None = None, caller: Caller = PERSON,
+                  project: str = 'p1') -> dict[str, Any]:
+    return voice.mint(store, CONFIG, project, subjects.PRODUCT, caller, body or {'consent': True}, UNRESTRICTED, workspace=None)
+
+
+def _evidence_of(store: voice.Stores, sid: str) -> dict[str, Any]:
+    return json.loads(store.s3.get_object(Bucket='raw', Key=f'scratch/voice/{sid}/evidence.json')['Body'].read())
+
+
+def _context(store: voice.Stores, **fields: object) -> None:
+    store.projects.put_item(Item={'pk': 'PROJECT#p1', 'sk': 'PRODUCT_CONTEXT', **fields})
+
+
+class TestProductInterview:
+    """7.104.00 (shared/voice_subjects.py): the product team talks its own product through with an AI interviewer, on
+    the persona sessions' checks, counters and budget."""
+
+    def test_writes_a_product_row_and_pointer_with_no_persona(self, stores):
+        store, _ = stores
+        sid = _mint_product(store, {'consent': True, 'language': 'fr'})['session_id']
+        row = _item(store.projects, f'VOICE#{sid}', 'SESSION')
+        pointer = _item(store.projects, 'PROJECT#p1', f'VOICE#{sid}')
+        assert (row['kind'], row['language'], row['status'], 'persona_id' in row) == (
+            'product_interview', 'fr', 'minted', False)
+        assert (pointer['kind'], 'persona_id' in pointer, pointer['starter_sub']) == ('product_interview', False, 'sub-ada')
+
+    def test_the_evidence_holds_the_questions_and_what_the_form_says(self, stores):
+        store, _ = stores
+        _context(store, product_name=' Parcel Tracker ', one_liner='', key_features='x' * 600, current_state='beta')
+        sid = _mint_product(store)['session_id']
+        evidence = _evidence_of(store, sid)
+        assert (evidence['kind'], evidence['project_name'], evidence['session_id']) == ('product_interview', 'Checkout', sid)
+        assert 'persona' not in evidence
+        assert 'evidence' not in evidence
+        assert evidence['known'] == {'product_name': 'Parcel Tracker', 'current_state': 'beta', 'key_features': 'x' * 500}
+        asked = [one['field'] for one in evidence['questions']]
+        assert asked == ['one_liner', 'product_summary', 'target_users', 'problem_solved', 'differentiators',
+                         'known_limitations', 'non_goals', 'success_metrics', 'free_form_notes']
+        assert {one['question'] for one in evidence['questions']} == {''}
+        assert (evidence['session_cost_cap_microusd'], evidence['usage_key']) == (750_000, 'VOICEUSE#DEPLOYMENT#2026-11')
+
+    def test_a_list_stored_under_the_old_schema_is_known_as_its_lines(self, stores):
+        # Review F1 (7.104.00 round 1): the interviewer read the context with its own reader, which took a list-valued
+        # field for '' (asked again, and left out of what the form says). Now the one reader, context_state.
+        store, _ = stores
+        _context(store, key_features=['Search', 'Sync'])
+        evidence = _evidence_of(store, _mint_product(store)['session_id'])
+        assert evidence['known'] == {'key_features': 'Search\nSync'}
+        assert 'key_features' not in [one['field'] for one in evidence['questions']]
+
+    def test_asks_the_person_s_own_questions_as_given(self, stores):
+        store, _ = stores
+        questions = [{'field': 'target_users', 'question': ' Who buys it? '}, {'field': 'non_goals', 'question': ''}]
+        sid = _mint_product(store, {'consent': True, 'questions': questions})['session_id']
+        assert _evidence_of(store, sid)['questions'] == [
+            {'field': 'target_users', 'question': 'Who buys it?'}, {'field': 'non_goals', 'question': ''}]
+
+    def test_asks_every_field_when_none_is_empty_or_the_context_is_missing(self, stores):
+        store, _ = stores
+        first = _evidence_of(store, _mint_product(store)['session_id'])
+        assert (len(first['questions']), first['known']) == (12, {})
+        _context(store, **{field: 'set' for field, _label in FIELD_LABELS})
+        second = _evidence_of(store, _mint_product(store)['session_id'])
+        assert [one['field'] for one in second['questions']] == [field for field, _label in FIELD_LABELS]
+        assert len(second['known']) == 12
+
+    def test_asks_only_the_first_question_of_a_field_named_twice(self, stores):
+        # Review Q1 / S2 (7.104.00 round 2): a proposal stored before its extract kept one question per field may name
+        # a field twice; its questions still start the interview, the field asked once, as first asked.
+        store, _ = stores
+        questions = [{'field': 'non_goals', 'question': 'What is out of scope?'},
+                     {'field': 'target_users', 'question': 'Who buys it?'},
+                     {'field': 'non_goals', 'question': 'What will it never do?'}]
+        sid = _mint_product(store, {'consent': True, 'questions': questions})['session_id']
+        assert _evidence_of(store, sid)['questions'] == [
+            {'field': 'non_goals', 'question': 'What is out of scope?'},
+            {'field': 'target_users', 'question': 'Who buys it?'}]
+
+    @pytest.mark.parametrize('questions', [
+        'who?', [{'field': 'colour', 'question': 'Which?'}], [{'field': 'non_goals', 'question': 'x' * 201}],
+        [{'field': 'non_goals', 'question': 7}], [{'field': 'non_goals'}] * 13, ['non_goals'],
+        [{'field': ['non_goals'], 'question': 'Which?'}], [{'field': {'non_goals': 1}, 'question': 'Which?'}],
+    ], ids=['text', 'unknown-field', 'too-long', 'not-text', 'too-many', 'not-an-object', 'field-a-list',
+            'field-a-map'])
+    def test_refuses_malformed_questions_before_counting_anything(self, stores, questions):
+        store, _ = stores
+        with pytest.raises(ValidationError) as refused:
+            _mint_product(store, {'consent': True, 'questions': questions})
+        assert refused.value.code == 'invalid_questions'
+        assert store.aggregates.scan()['Items'] == []
+
+    def test_speaks_with_the_project_s_default_voice(self, stores):
+        store, _ = stores
+        started = _mint_product(store)
+        assert (started['voice_id'], started['voice_gender']) == (
+            voice.default_voice('p1'), voice.VOICES[voice.default_voice('p1')])
+        offer = voice.offer(store, CONFIG, 'p1', subjects.PRODUCT, PERSON, start_finalize=_no_job, workspace=None)
+        assert (offer['enabled'], offer['voice_id'], offer['sessions_left_today']) == (True, started['voice_id'], 4)
+
+    def test_consent_says_the_interviewer_is_an_ai(self, stores):
+        store, _ = stores
+        with pytest.raises(ValidationError) as refused:
+            _mint_product(store, {'consent': False})
+        assert (refused.value.code, 'the interviewer is an AI' in str(refused.value)) == ('consent_required', True)
+        assert store.aggregates.scan()['Items'] == []
+
+    def test_a_person_only_and_never_in_the_company_library(self, stores):
+        store, _ = stores
+        with pytest.raises(AuthorizationError) as refused:
+            _mint_product(store, caller=Caller(subject='sub-ada', delegated=True))
+        assert refused.value.code == 'person_only'
+        with pytest.raises(ValidationError):
+            _mint_product(store, project='company_personas')
+
+    def test_shares_the_persona_sessions_day_minute_and_streams(self, stores):
+        store, clock = stores
+        store.aggregates.put_item(Item={'pk': 'VOICEDAY#sub-ada#2026-11-21', 'sk': 'COUNT', 'count': 4})
+        _mint(store)
+        with pytest.raises(TooManyRequestsError) as refused:
+            _mint_product(store)
+        assert refused.value.code == 'daily_limit'
+        store.aggregates.put_item(Item={'pk': 'VOICEDAY#sub-ada#2026-11-21', 'sk': 'COUNT', 'count': 0})
+        _mint_product(store)
+        with pytest.raises(TooManyRequestsError) as rate:
+            _mint_product(store)
+        assert rate.value.code == 'rate_limited'
+        clock['now'] = NOW + timedelta(minutes=1)
+        with pytest.raises(TooManyRequestsError) as busy:
+            _mint_product(store)
+        assert busy.value.code == 'busy'
+
+    def test_a_project_with_its_20_sources_is_refused_before_counting_anything_and_its_offer_says_so(self, stores):
+        # Its transcript becomes a source: an interview the project could not save is never started.
+        store, _ = stores
+        assert voice.offer(store, CONFIG, 'p1', subjects.PRODUCT, PERSON, start_finalize=_no_job, workspace=None)['sources_full'] is False
+        for n in range(20):
+            store.projects.put_item(Item={'pk': 'PROJECT#p1', 'sk': f'PRODUCT_DOC#pd_{n:02d}', 'status': 'ready'})
+        with pytest.raises(ValidationError) as refused:
+            _mint_product(store)
+        assert (refused.value.code, 'Delete a source first' in str(refused.value)) == ('too_many_sources', True)
+        assert store.aggregates.scan()['Items'] == []
+        assert voice.offer(store, CONFIG, 'p1', subjects.PRODUCT, PERSON, start_finalize=_no_job, workspace=None)['sources_full'] is True
+
+    def test_a_persona_session_does_not_count_the_sources(self, stores):
+        store, _ = stores
+        for n in range(20):
+            store.projects.put_item(Item={'pk': 'PROJECT#p1', 'sk': f'PRODUCT_DOC#pd_{n:02d}', 'status': 'ready'})
+        assert _mint(store)['session_id']
+        assert voice.offer(store, CONFIG, 'p1', PERSONA, PERSON, start_finalize=_no_job, workspace=None)['sources_full'] is False
+
+    def test_the_month_s_budget_refuses_it_as_a_persona_s(self, stores):
+        store, _ = stores
+        store.aggregates.put_item(Item={'pk': 'VOICEUSE#DEPLOYMENT#2026-11', 'sk': 'USAGE', 'seconds': 300 * 60 - 30})
+        with pytest.raises(ConflictError) as refused:
+            _mint_product(store)
+        assert refused.value.code == 'budget_exhausted'
+
+
+class TestProductSessions:
+    def test_a_session_is_answered_only_through_its_own_subject(self, stores):
+        store, _ = stores
+        product = _mint_product(store)['session_id']
+        persona = _mint(store)['session_id']
+        with pytest.raises(NotFoundError):
+            voice.status(store, 'p1', PERSONA, product, PERSON, _no_job)
+        with pytest.raises(NotFoundError):
+            voice.status(store, 'p1', subjects.PRODUCT, persona, PERSON, _no_job)
+        view = voice.status(store, 'p1', subjects.PRODUCT, product, PERSON, _no_job)
+        assert {k: view[k] for k in ('kind', 'persona_id', 'status', 'transcript_document_id', 'source_doc_id')} == {
+            'kind': 'product_interview', 'persona_id': None, 'status': 'minted', 'transcript_document_id': None,
+            'source_doc_id': None}
+        assert voice.status(store, 'p1', PERSONA, persona, PERSON, _no_job)['kind'] == 'persona_interview'
+
+    def test_a_row_written_before_7_72_is_a_persona_s(self, stores):
+        store, _ = stores
+        sid = _mint(store)['session_id']
+        for key in (voice.session_key(sid), voice.pointer_key('p1', sid)):
+            store.projects.update_item(Key=key, UpdateExpression='REMOVE #kind', ExpressionAttributeNames={'#kind': 'kind'})
+        assert voice.status(store, 'p1', PERSONA, sid, PERSON, _no_job)['kind'] == 'persona_interview'
+        with pytest.raises(NotFoundError):
+            voice.status(store, 'p1', subjects.PRODUCT, sid, PERSON, _no_job)
+
+    def test_end_and_the_offer_save_a_product_session_like_a_persona_s(self, stores):
+        store, _ = stores
+        ended = _mint_product(store)['session_id']
+        left = _mint_product(store)['session_id']
+        rows: list[dict[str, Any]] = []
+
+        def start(row: Mapping[str, Any]) -> str:
+            rows.append(dict(row))
+            return f'job-{len(rows)}'
+
+        store.projects.update_item(Key=voice.session_key(ended), UpdateExpression='SET #s = :live',
+                                   ExpressionAttributeNames={'#s': 'status'}, ExpressionAttributeValues={':live': 'live'})
+        view = voice.end(store, CONFIG, 'p1', subjects.PRODUCT, ended, PERSON, start, stop=lambda *_: None)
+        assert (view['status'], view['kind'], view['job_id']) == ('finalizing', 'product_interview', 'job-1')
+        TestSessionsLeftUnsaved._relay_ended(store, left)
+        voice.offer(store, CONFIG, 'p1', PERSONA, PERSON, start_finalize=start, workspace=None)
+        assert [(row['session_id'], row['kind']) for row in rows] == [
+            (ended, 'product_interview'), (left, 'product_interview')]

@@ -22,6 +22,7 @@ from typing import Any, Final
 
 from botocore.exceptions import ClientError
 
+from shared.aws import cancelled_by_condition
 from shared.engagement_common import (
     conditional_write,
     new_id,
@@ -114,13 +115,6 @@ def get_people(table: Any, person_ids: Iterable[str], *,
                          'person_id', 'people')
 
 
-def _is_cancelled_by_condition(error: ClientError) -> bool:
-    if error.response.get('Error', {}).get('Code') != 'TransactionCanceledException':
-        return False
-    reasons = error.response.get('CancellationReasons') or []
-    return any(reason.get('Code') == 'ConditionalCheckFailed' for reason in reasons)
-
-
 def _index_rows(item: Mapping[str, Any], guard: Mapping[str, Any], workspace: WorkspaceScope) -> list[dict[str, str]]:
     """The workspace index's rows of a new person's partition and of its address guard (the hard delete finds them
     from it), written in the person's own transaction."""
@@ -150,7 +144,7 @@ def create_person(table: Any, *, email: str, email_lc: str, fields: Mapping[str,
                                     {'Put': {'ConditionExpression': absent, 'Item': guard}},
                                     *({'Put': {'Item': row}} for row in index_rows)])
     except ClientError as error:
-        if _is_cancelled_by_condition(error):
+        if cancelled_by_condition(error):
             raise EmailTakenError from error
         raise
     return item

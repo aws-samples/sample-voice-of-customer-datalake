@@ -209,6 +209,11 @@ function handleProjectSide(req, res, url, send, shared) {
   return false;
 }
 
+/** The library's personas, newest first (a copy): who reviews a project without personas (mock-document-review.js). */
+export function companyLibraryPersonas() {
+  return cloneJson(newestFirst(library.personas));
+}
+
 /** Handle the company persona routes; returns true when the request was taken. */
 export function handleCompanyPersonaRoutes(req, res, url, send, shared) {
   if (url.pathname === '/company-personas' || url.pathname.startsWith('/company-personas/')) {

@@ -2,8 +2,8 @@
 
 In a project, **Documents** opens each document as a page: a clean reading column with the title, an outline
 of its headings on one side, and the reviews it was written from (or, for a PR/FAQ or PRD, its comment
-threads) on the other. At the top sit its menus (Document · Edit · Format · Insert · View), the save status and
-an icon toolbar ([below](#the-toolbar)). Anyone who can edit the project edits the text in place; there is no
+threads) on the other. At the top sit its menus (Document · Edit · Format · Insert · Review · View), the save status
+and a toolbar ([below](#the-toolbar)). Anyone who can edit the project edits the text in place; there is no
 separate edit mode. A prototype keeps its own preview; a decision record opens here read-only and is edited in the
 Decisions tab. A PR/FAQ or PRD is one document across its versions: the list shows it once, it opens on its latest
 version, and the toolbar reads any earlier one ([Versions](#versions)).
@@ -73,33 +73,36 @@ shown as a source block.
 ## Comments, personas and sharing
 
 On a PR/FAQ or PRD, select text and choose **Comment** in the floating bar (or Ctrl/⌘+Alt+M) to start a thread
-anchored to that quote (the comment panel opens for it). Threads, replies, resolve, filters, **AI review** (Ask
-personas to review, in the toolbar: what the personas filed is said at the top of the comment panel, which opens
-for it) and **Share** (the review link, the toolbar's last button) work as described in
+anchored to that quote (the comment panel opens for it). Threads, replies, resolve, filters, **Persona review** (Ask
+personas to review, in the toolbar and the Review menu: what the personas filed is said at the top of the comment
+panel, which opens for it) and **Share** (the review link, the toolbar's last button) work as described in
 [document-review.md](document-review.md). While you edit, a thread whose quote you change is listed under **Not
 found in this version** at once.
 
 ## The toolbar
 
-At the end of the top bar, a row of icon buttons (a WAI-ARIA toolbar: one Tab stop, the arrow keys move between
+At the end of the top bar, a row of buttons (a WAI-ARIA toolbar: one Tab stop, the arrow keys move between
 them, Home and End go to the ends; every icon has a name and a tooltip, on hover and on keyboard focus; a switch
-says whether it is on):
+says whether it is on). The two AI flows show their name beside their icon; the others are icons:
 
 | Button | Does | Offered to |
 |---|---|---|
 | **v4 ▾** | The version picker: every version, newest first, the latest marked **Latest** ([Versions](#versions)) | everyone (not on a decision) |
 | **History** | The versions list: open, compare, restore | everyone (not on a decision) |
-| **AI review** | Ask personas to review (the comments' editors; disabled, with the reason, in a project without personas) | editors, PR/FAQ and PRD |
-| **AI rewrite** | Revise from comments ([below](#revise-from-comments); disabled, with the reason, until a thread is answered, or while accepted changes wait for their save) | editors, PR/FAQ and PRD |
+| **Persona review** | Ask personas to review: the project's, or the company's when the project has none (the tooltip says so); with neither, **Add personas**, which opens the Personas tab ([document-review.md](document-review.md#ask-personas-to-review)) | editors, PR/FAQ and PRD |
+| **Rewrite from comments** | Revise from comments ([below](#revise-from-comments); disabled, with the reason, until a thread is answered, or while accepted changes wait for their save) | editors, PR/FAQ and PRD |
 | **Comments** (with the open count) | The comment panel, on or off | PR/FAQ and PRD |
 | **Contents** | The outline, on or off | everyone |
 | **Full width** | The text's width | everyone |
 | **Full screen** | The focus view ([below](#full-screen)) | everyone |
 | **Share** | The review link ([document-review.md](document-review.md)) | editors, PR/FAQ and PRD |
 
-The toolbar and the View menu are two doors to the same switches: a change in one shows in the other. Below 768 px
-wide History, the AI flows, Contents and Full width move into a **⋯** menu (the switches as checkbox items). While an
-older version is on screen the AI flows and the Edit, Format and Insert menus step aside. The running AI flow is said
+The toolbar and the View menu are two doors to the same switches: a change in one shows in the other. The **Review**
+menu (between Insert and View, for whoever may run the AI flows) offers Persona review (or Add personas) and Rewrite
+from comments with their icons and the toolbar's state: an entry that cannot run is inert and says why under its
+name, a running one shows a spinner. Below 768 px wide History, the AI flows, Contents and Full width move into a
+**⋯** menu (the switches as checkbox items, the AI flows with their names). While an older version is on screen the
+AI flows, the Review menu and the Edit, Format and Insert menus step aside. The running AI flow is said
 to a screen reader; a failed revision's reason shows above the text.
 
 ## Versions
@@ -234,7 +237,7 @@ the ⋯), Tab out; a press outside it or a scroll closes it.
 
 ## Revise from comments
 
-On a PR/FAQ or PRD, once threads are answered or resolved, **AI rewrite** (Revise from comments) in the toolbar asks the AI
+On a PR/FAQ or PRD, once threads are answered or resolved, **Rewrite from comments** (Revise from comments) in the toolbar or the Review menu asks the AI
 to work through them, grounded in the threads and the document's evidence
 ([document-review.md](document-review.md#revise-from-comments)). What comes back depends on your way of working
 ([ways-of-working.md](ways-of-working.md#revise-from-comments)):
@@ -251,7 +254,7 @@ to work through them, grounded in the threads and the document's evidence
   **Review again** (Ask personas to review). If someone saved a version after the revision, Undo says so first and
   offers **Undo anyway** (their change is reverted too) or **Keep it**.
 
-Addressed threads carry their badge and an **Addressed** filter; after any pass **AI review**'s tooltip says it asks
+Addressed threads carry their badge and an **Addressed** filter; after any pass **Persona review**'s tooltip says it asks
 the personas to review again, so a new round of comments can start.
 
 ## The assistant's changes

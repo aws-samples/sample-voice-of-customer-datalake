@@ -20,7 +20,8 @@ import sys
 from collections.abc import Iterable
 from functools import cache
 from pathlib import Path
-from typing import Any, Final, get_args
+from types import UnionType
+from typing import Any, Final, Union, get_args, get_origin
 
 from shared.feedback_catalogue_fields import FIELDS, STEPS, CatalogueField
 from shared.feedback_category import CATEGORY_SOURCE_MANUAL, CATEGORY_SOURCE_REPROCESS
@@ -89,9 +90,15 @@ def _under_summary_only(name: str) -> str:
     return _UNDER_REDACT.get(name, 'kept')
 
 
+def _annotation_name(annotation: object) -> str:
+    """``str | None`` for a union on every Python (a union's ``__name__`` is ``Union`` since 3.14), else the name."""
+    if get_origin(annotation) in (Union, UnionType):
+        return ' | '.join('None' if arg is type(None) else _annotation_name(arg) for arg in get_args(annotation))
+    return getattr(annotation, '__name__', str(annotation))
+
+
 def _issue_sub_fields() -> list[dict[str, str]]:
-    return [{'name': name, 'type': getattr(info.annotation, '__name__', str(info.annotation))}
-            for name, info in IssueAttributes.model_fields.items()]
+    return [{'name': name, 'type': _annotation_name(info.annotation)} for name, info in IssueAttributes.model_fields.items()]
 
 
 def _field_entry(field: CatalogueField, allowed: dict[str, list[str]]) -> dict[str, Any]:

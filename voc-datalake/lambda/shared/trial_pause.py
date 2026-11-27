@@ -27,7 +27,9 @@ The pause, ``pause`` (once a trial is due), in this order:
    stops there (409 ``trial_changed``), turning nothing more off and undoing nothing the extension turned on (7.71.04:
    7.71.03 read the ``rev`` again before each turn-off, one GetItem each, and a mark committed between that read and
    the turn-off was not seen). A refused plugin's ``plugin_disabled`` row is still written, first, as for every
-   plugin change.
+   plugin change. A refusal because the workspace stopped being active meanwhile (its deletion began) is told apart
+   by one read of ``META`` (7.104.00, Q6): the pause stops there too, with nothing more to do, and answers
+   ``not_active`` with what it turned off, never ``trial_changed``.
 
 No form is put live once step 1 committed (the publish's own transaction checks ``paused_at``), so the forms read in
 step 2 are all there are. A trial an extension or a conversion is resuming (``resuming_at``, shared/trials.py) is not
@@ -58,12 +60,11 @@ from typing import Any, Final
 from botocore.exceptions import ClientError
 
 from shared import forms_v2 as fv2
-from shared.aws import is_conditional_check_failure
+from shared.aws import CONDITION_FAILED, cancellation_codes, is_conditional_check_failure
 from shared.dynamo_paging import iter_query
 from shared.exceptions import ConflictError, ValidationError
 from shared.logging import logger
 from shared.onboarding import forms_partition
-from shared.persona_save import CONDITION_FAILED, cancellation_codes
 from shared.platform_workspaces import LISTING_PK
 from shared.timestamps import now_iso, parse_iso
 from shared.trial_state import (
@@ -241,27 +242,41 @@ def _due(ws: str, meta: Mapping[str, Any], trial: object, now: datetime) -> str 
     return None
 
 
-def _turn_off(tables: PauseTables, ws: str, forms: WorkspaceTable, saved: Mapping[str, Any], at: str
-              ) -> tuple[int, int]:
+@dataclass(frozen=True)
+class _TurnedOff:
+    """What a pause's turn-offs did: how many plugins and forms changed, and whether the workspace was still active
+    (False: one turn-off found it no longer was, and the rest were not tried)."""
+
+    plugins: int
+    forms: int
+    active: bool = True
+
+
+def _turn_off(tables: PauseTables, ws: str, forms: WorkspaceTable, saved: Mapping[str, Any], at: str) -> _TurnedOff:
     """Each plugin, then each form, of the lists the pause saved on the trial (``saved``) turned off, each in one
-    transaction whose last entry checks that the trial is still at ``saved``'s ``rev`` (7.71.04); how many of each
-    changed. A turn-off that check refuses stops the pause: 409 ``trial_changed``, nothing more turned off (Q3,
-    7.71.03)."""
+    transaction whose last entry checks that the trial is still at ``saved``'s ``rev`` and the workspace still active
+    (7.71.04). A turn-off that check refuses stops the pause, nothing more turned off: 409 ``trial_changed`` (Q3,
+    7.71.03), or (7.104.00, Q6), when ``META`` then says the workspace is no longer active, what was turned off until
+    then, ``active`` False."""
     actor = {'actor': EXPIRY_ACTOR, 'actor_kind': EXPIRY_ACTOR_KIND}
     scope = workspace_scope(ws)
     lists = paused_lists(saved)
     rev = saved.get('rev')
     unchanged = (tables.workspaces, rev)
+    plugins_off = forms_off = 0
     try:
-        plugins_off = sum(set_trial_plugin(tables.workspaces, ws, plugin, False, actor, TRIAL_PAUSED_KIND, rev=rev)
-                          for plugin in lists['plugins'])
-        forms_off = sum(set_form_live(forms, scope, form_id, False, EXPIRY_ACTOR, at, unchanged=unchanged)
-                        for form_id in lists['forms'])
+        for plugin in lists['plugins']:
+            plugins_off += set_trial_plugin(tables.workspaces, ws, plugin, False, actor, TRIAL_PAUSED_KIND, rev=rev)
+        for form_id in lists['forms']:
+            forms_off += set_form_live(forms, scope, form_id, False, EXPIRY_ACTOR, at, unchanged=unchanged)
     except ClientError as exc:
-        if cancellation_codes(exc)[-1:] == [CONDITION_FAILED]:
-            raise ConflictError(TRIAL_CHANGED, code='trial_changed') from exc
-        raise
-    return plugins_off, forms_off
+        if cancellation_codes(exc)[-1:] != [CONDITION_FAILED]:
+            raise
+        if read_meta(tables.workspaces, ws).get('status') != ACTIVE:
+            logger.info('Trial pause stopped: the workspace is no longer active', extra={'workspace_id': ws})
+            return _TurnedOff(plugins_off, forms_off, active=False)
+        raise ConflictError(TRIAL_CHANGED, code='trial_changed') from exc
+    return _TurnedOff(plugins_off, forms_off)
 
 
 def pause(tables: PauseTables, ws: str, now: datetime) -> dict[str, Any]:
@@ -294,9 +309,10 @@ def pause(tables: PauseTables, ws: str, now: datetime) -> dict[str, Any]:
     at = audit_trial(tables.workspaces, ws, TRIAL_PAUSED_KIND, EXPIRY_ACTOR,
                 {'actor_kind': EXPIRY_ACTOR_KIND, 'expires_at': trial.get('expires_at'), 'plugins': plugins,
                  'forms': live})
-    plugins_off, forms_off = _turn_off(tables, ws, forms, trial, at)
-    logger.info('Trial paused', extra={'workspace_id': ws, 'plugins': plugins_off, 'forms': forms_off})
-    return {'outcome': PAUSED_NOW, 'plugins': plugins_off, 'forms': forms_off}
+    turned = _turn_off(tables, ws, forms, trial, at)
+    if turned.active:
+        logger.info('Trial paused', extra={'workspace_id': ws, 'plugins': turned.plugins, 'forms': turned.forms})
+    return {'outcome': PAUSED_NOW if turned.active else NOT_ACTIVE, 'plugins': turned.plugins, 'forms': turned.forms}
 
 
 def _publish_problem(item: Mapping[str, Any]) -> str | None:

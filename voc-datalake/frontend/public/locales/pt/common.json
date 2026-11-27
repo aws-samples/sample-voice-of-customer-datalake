@@ -156,7 +156,8 @@
     "picker": {
       "title": "Escolha um espaço de trabalho",
       "intro": "Você é membro de mais de um espaço de trabalho. Escolha o que deseja abrir.",
-      "lastUsed": "Usado por último"
+      "lastUsed": "Usado por último",
+      "create": "Criar um espaço de trabalho"
     },
     "notFound": {
       "title": "Espaço de trabalho não encontrado",
@@ -640,7 +641,7 @@
     "expiryDays_other": "{{count, number}} dias",
     "expiryDays_many": "{{count, number}} dias",
     "projectLabel": "Projeto",
-    "projectHint": "Opcional: limitar as ferramentas de projeto a um único projeto.",
+    "projectHint": "Opcional: limitar as ferramentas de projeto a um único projeto. Um token assim limitado não recebe as ferramentas de formulários de feedback, nem mesmo para o formulário de validação do seu projeto. As suas leituras de feedback omitem o email e o nome guardados de quem envia, as respostas de contato dos formulários e o remetente de um email da caixa de entrada; todo o resto, como um email escrito numa resposta aberta, segue a política de dados pessoais da fonte.",
     "projectAll": "Todos os meus projetos",
     "mintFailed": "Não foi possível criar o token. Verifique os campos e tente novamente.",
     "minting": "Criando…",

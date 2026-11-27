@@ -107,7 +107,7 @@ source dir and bundling command. Per layer, `requirements.txt` is resolved offli
 of the interpreter running the detector. In the gate that is `voc-datalake/.venv`, which CI installs from the
 same files; `--site-packages DIR` points elsewhere. From that metadata it takes:
 
-- each distribution's version and its `Requires-Dist`, with markers evaluated for the Lambda arm64 Python 3.14
+- each distribution's version and its `Requires-Dist`, with markers evaluated for the Lambda arm64 Python 3.15
   runtime and requested extras followed;
 - its import names and size, from `RECORD`.
 

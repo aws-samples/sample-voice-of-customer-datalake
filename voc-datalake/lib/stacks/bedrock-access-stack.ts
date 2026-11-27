@@ -287,7 +287,7 @@ class ModelAgreementProvider {
 
     // Lambda function to fetch offer token and create agreement
     const modelAgreementLambda = new lambda.Function(host, 'ModelAgreementLambda', {
-      runtime: lambda.Runtime.PYTHON_3_14,
+      runtime: lambda.Runtime.PYTHON_3_15,
       architecture: lambda.Architecture.ARM_64,
       handler: 'index.handler',
       timeout: cdk.Duration.minutes(2),

@@ -402,50 +402,98 @@ def test_a_comment_is_posted_on_the_issue() -> None:
     assert api.sent[-1].body == {'body': 'Bug: src/a.py:3.'}
 
 
-#: (7.71.03) The run's marker on its issue comment, and the look for it (a hundred comments a page; 7.71.04: only
-#: those updated since the earlier call's claim, ``SINCE``, GitHub's ``since`` in UTC).
+#: (7.71.03) The run's marker on its issue comment, and the look for it (a hundred comments a page; 7.104.00: newest
+#: first, from the last page back, no ``since``).
 MARKER = '<!-- voc-engineering-run:01JD3R4NZXQ7Y2W8K4M6P9T0AB -->'
-SINCE = 1_799_999_000
-COMMENTS = f'{REPO}/issues/42/comments?per_page=100&since=2027-01-15T07%3A43%3A20Z'
-#: What GitHub says of a comment the connection's App posted (``performed_via_github_app``).
-BY_APP = {'performed_via_github_app': {'id': int(APP_ID), 'slug': 'voc-agents'}}
+COMMENTS = f'{REPO}/issues/42/comments?per_page=100'
+#: What GitHub says of a comment the connection's App posted itself (``performed_via_github_app``, and its author the
+#: App's bot, 7.104.00).
+BY_APP = {'performed_via_github_app': {'id': int(APP_ID), 'slug': 'voc-agents'},
+          'user': {'login': 'voc-agents[bot]', 'type': 'Bot'}}
+
+
+def _page_link(page: int, rel: str) -> str:
+    return f'<https://api.github.com/repositories/1/issues/42/comments?per_page=100&page={page}>; rel="{rel}"'
 
 
 def _comment_pages(api: FakeGitHub, *pages: Sequence[object]) -> FakeGitHub:
-    """The issue's comments, one list per page, each but the last linking to the next."""
+    """The issue's comments, one list per page, oldest first, with GitHub's ``Link``: the first page names the next
+    and the last, every later one the one before it."""
     for page, comments in enumerate(pages, start=1):
-        link = ({'link': f'<https://api.github.com/repositories/1/issues/42/comments?page={page + 1}>; rel="next"'}
-                if page < len(pages) else {})
-        api.on('GET', f'{COMMENTS}&page={page}', answer(200, list(comments), link))
+        links = ([_page_link(page + 1, 'next'), _page_link(len(pages), 'last')] if page == 1 and len(pages) > 1
+                 else [_page_link(page - 1, 'prev'), _page_link(1, 'first')] if page > 1 else [])
+        api.on('GET', f'{COMMENTS}&page={page}',
+               answer(200, list(comments), {'link': ', '.join(links)} if links else {}))
     return api
 
 
 def test_the_runs_comment_on_its_issue_is_found_by_its_marker() -> None:
     api = _comment_pages(FakeGitHub(), [{'body': 'Me too.', 'html_url': 'https://h/i/42#c1', **BY_APP}],
                          [{'body': None}, {'body': f'Triage\n\n{MARKER}\n', 'html_url': 'https://h/i/42#c9', **BY_APP}])
-    assert client(api).issue_comment('c', 42, MARKER, SINCE) == 'https://h/i/42#c9'
+    assert client(api).issue_comment('c', 42, MARKER) == 'https://h/i/42#c9'
+    # (the first page names the last, which is read next: the newest comments first)
     assert [path for _, path in api.calls()] == [f'{COMMENTS}&page={page}' for page in (1, 2)]
+
+
+def test_the_look_reads_the_newest_comments_first_however_long_the_thread() -> None:
+    # (F4, 7.104.00) 7.71.04 read the comments updated since the earlier call's claim, oldest first; once that claim
+    # was taken again twice (a look that failed in between), ``since`` passed the run's comment and it was posted
+    # again. Now the look reads from the last page back, each page newest first, whenever the comment was posted: on
+    # a thread of 1,500 comments the run's, on the last page, is found at the second read, and two of its comments
+    # the newest one.
+    older = [{'body': 'Me too.', 'html_url': 'u'}] * 100
+    last = [{'body': f'First\n\n{MARKER}', 'html_url': 'https://h/i/42#c1401', **BY_APP},
+            {'body': f'Again\n\n{MARKER}', 'html_url': 'https://h/i/42#c1402', **BY_APP}, {'body': 'Thanks!'}]
+    api = _comment_pages(FakeGitHub(), *([older] * 14), last)
+    assert client(api).issue_comment('c', 42, MARKER) == 'https://h/i/42#c1402'
+    assert [path for _, path in api.calls()] == [f'{COMMENTS}&page=1', f'{COMMENTS}&page=15']
 
 
 @pytest.mark.parametrize('comment', [
     {'body': f'Triage\n\n{MARKER}'},   # (a person's: no App)
-    {'body': f'Triage\n\n{MARKER}', 'performed_via_github_app': {'id': int(APP_ID) + 1}},   # (another App's)
-    {'body': f'Triage\n\n{MARKER}', 'performed_via_github_app': {'id': APP_ID}},   # (an id that is no number)
+    {'body': f'Triage\n\n{MARKER}', **BY_APP, 'performed_via_github_app': {'id': int(APP_ID) + 1, 'slug': 'other'},
+     'user': {'login': 'other[bot]', 'type': 'Bot'}},   # (another App's)
+    {'body': f'Triage\n\n{MARKER}', **BY_APP, 'performed_via_github_app': {'id': APP_ID, 'slug': 'voc-agents'}},
     {'body': f'Quoting {MARKER} here.', **BY_APP},   # (the marker inside, not at the end)
-], ids=['person', 'another-app', 'text-id', 'inside'])
-def test_a_comment_with_the_marker_is_the_runs_only_when_the_apps_own_and_ending_with_it(
+    # (S1, 7.104.00) A person commenting through the App with a user token: the App is named, the author is theirs.
+    {'body': f'Triage\n\n{MARKER}', **BY_APP, 'user': {'login': 'octocat', 'type': 'User'}},
+    {'body': f'Triage\n\n{MARKER}', **BY_APP, 'user': {'login': 'voc-agents[bot]', 'type': 'User'}},
+    {'body': f'Triage\n\n{MARKER}', **BY_APP, 'user': {'login': 'other[bot]', 'type': 'Bot'}},
+    {'body': f'Triage\n\n{MARKER}', **BY_APP, 'performed_via_github_app': {'id': int(APP_ID)}},   # (no slug)
+], ids=['person', 'another-app', 'text-id', 'inside', 'person-through-the-app', 'not-a-bot', 'another-bot',
+        'no-slug'])
+def test_a_comment_with_the_marker_is_the_runs_only_when_the_apps_bots_own_and_ending_with_it(
         comment: dict[str, object]) -> None:
-    # (7.71.04) Anyone who reads the issue may copy the marker into a comment: only the connection's App's own
-    # comment that ends with it is the run's.
+    # (7.71.04) Anyone who reads the issue may copy the marker into a comment: only a comment the connection's App
+    # posted itself, as its own bot (7.104.00), that ends with it is the run's.
     api = _comment_pages(FakeGitHub(), [{**comment, 'html_url': 'https://h/i/42#c3'}])
-    assert client(api).issue_comment('c', 42, MARKER, SINCE) is None
+    assert client(api).issue_comment('c', 42, MARKER) is None
 
 
 def test_a_look_for_the_runs_comment_reads_ten_pages_at_most_and_answers_none() -> None:
     api = _comment_pages(FakeGitHub(), *([{'body': 'Me too.', 'html_url': 'u'}] for _ in range(11)))
-    assert client(api).issue_comment('c', 42, MARKER, SINCE) is None
-    assert len(api.calls()) == FIND_PAGES
-    assert client(_comment_pages(FakeGitHub(), [])).issue_comment('c', 42, MARKER, SINCE) is None
+    assert client(api).issue_comment('c', 42, MARKER) is None
+    # (the first page, then the ten newest, from the last back)
+    assert [path for _, path in api.calls()] == [f'{COMMENTS}&page={page}' for page in (1, *range(11, 1, -1))]
+    assert len(api.calls()) == FIND_PAGES + 1
+    assert client(_comment_pages(FakeGitHub(), [])).issue_comment('c', 42, MARKER) is None
+
+
+def test_a_link_that_names_no_last_page_is_read_on_from_the_first() -> None:
+    api = FakeGitHub()
+    api.on('GET', f'{COMMENTS}&page=1', answer(200, [{'body': 'a'}], {'link': _page_link(2, 'next')}))
+    api.on('GET', f'{COMMENTS}&page=2', answer(200, [{'body': f'Triage\n\n{MARKER}', 'html_url': 'https://h/i/42#c2',
+                                                      **BY_APP}]))
+    assert client(api).issue_comment('c', 42, MARKER) == 'https://h/i/42#c2'
+    assert [path for _, path in api.calls()] == [f'{COMMENTS}&page={page}' for page in (1, 2)]
+
+
+def test_a_thread_of_a_few_pages_is_read_from_its_last_page_back_to_its_first_once() -> None:
+    pages = [[{'body': f'Triage\n\n{MARKER}', 'html_url': 'https://h/i/42#c1', **BY_APP}], [{'body': 'a'}],
+             [{'body': 'b'}]]
+    api = _comment_pages(FakeGitHub(), *pages)
+    assert client(api).issue_comment('c', 42, MARKER) == 'https://h/i/42#c1'
+    assert [path for _, path in api.calls()] == [f'{COMMENTS}&page={page}' for page in (1, 3, 2)]
 
 
 PR_HEAD = '9' * 40

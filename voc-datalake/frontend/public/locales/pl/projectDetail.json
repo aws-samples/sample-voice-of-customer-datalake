@@ -330,7 +330,8 @@
       "importPersona": "Import persony",
       "mergeDocuments": "Scalanie dokumentów",
       "research": "Badania",
-      "draftPrototype": "Wersja robocza prototypu"
+      "draftPrototype": "Wersja robocza prototypu",
+      "extractProductDescription": "Wyodrębnianie opisu produktu"
     },
     "backgroundJobs": "Zadania w tle",
     "backgroundJobsDesc": "Długotrwałe zadania dla tego projektu",
@@ -580,6 +581,7 @@
       "oneLiner": "Opis w jednym zdaniu",
       "problemSolved": "Rozwiązywany problem",
       "productName": "Nazwa produktu",
+      "productSummary": "Co robi produkt",
       "successMetrics": "Metryki sukcesu",
       "targetUsers": "Grupa docelowa"
     },
@@ -601,29 +603,6 @@
       "startedMessage": "Śledź postęp w Zadaniach w tle.",
       "startedTitle": "Raport uruchomiony",
       "title": "Generuj raport"
-    },
-    "upload": {
-      "errors": {
-        "tooLarge": "Za duży (>10 MB): {{name}}",
-        "unsupportedType": "Nieobsługiwany typ: {{name}} ({{type}}). Dozwolone: {{accepted}}",
-        "uploadFailed": "{{name}}: {{message}}"
-      },
-      "accepted": "PNG, JPEG, GIF, WebP do 3,5 MB · MD, TXT do 10 MB",
-      "delete": "Usuń dokument",
-      "dropZone": "Upuść pliki tutaj, wklej zrzut ekranu lub kliknij, aby przesłać",
-      "empty": "Brak dokumentów.",
-      "extractedChars_one": "Wyodrębniono {{count, number}} znak",
-      "extractedChars_other": "Wyodrębniono {{count, number}} znaków",
-      "heading": "Dokumenty wewnętrzne",
-      "hint": "Obrazy i tekst — maks. 20",
-      "loading": "Ładowanie…",
-      "notYet": "PDF i Word (.docx) nie są tu jeszcze odczytywane: dodaj je do Biblioteki i wspomnij o nich w asystencie za pomocą #.",
-      "statusExtracting": "Wyodrębnianie…",
-      "statusFailed": "Błąd",
-      "statusReady": "Gotowe",
-      "statusUploading": "Przesyłanie…",
-      "extractedChars_few": "{{count, number}} znaki wyodrębnione",
-      "extractedChars_many": "{{count, number}} znaków wyodrębnionych"
     },
     "loading": "Ładowanie kontekstu produktu…",
     "subtitle": "Informacje podane tutaj są automatycznie wykorzystywane podczas generowania PRD i PR/FAQ jako bieżący kontekst produktu.",
@@ -657,6 +636,192 @@
         "title": "Notatki",
         "description": "Wszystko inne, co powinni wiedzieć autorzy PRD i PR/FAQ."
       }
+    },
+    "sources": {
+      "title": "Źródła",
+      "description": "Pliki, linki i odpowiedzi, które wyodrębnianie czyta, aby opisać produkt.",
+      "hint": "Najwyżej 20",
+      "empty": "Dodaj dokumenty, obrazy lub linki albo odpowiedz na kilka pytań.",
+      "emptyViewer": "Brak źródeł.",
+      "answerQuestions": "Odpowiedz na pytania",
+      "dropZone": "Upuść pliki tutaj, wklej zrzut ekranu lub kliknij, aby przesłać",
+      "accepted": "PDF, Word (.docx), PowerPoint (.pptx) do 25 MB · MD, TXT do 10 MB · PNG, JPEG, GIF, WebP do 3,5 MB",
+      "loading": "Ładowanie…",
+      "loadFailed": "Nie udało się załadować źródeł. Sprawdź połączenie i spróbuj ponownie.",
+      "typedAnswers": "Wpisane odpowiedzi",
+      "voiceInterview": "Wywiad głosowy",
+      "status": {
+        "uploading": "Przesyłanie…",
+        "pending": "Czeka na odczyt",
+        "extracting": "Odczytywanie…",
+        "fetching": "Pobieranie…",
+        "ready": "Gotowe",
+        "failed": "Niepowodzenie"
+      },
+      "chars_one": "Odczytano {{count, number}} znak",
+      "chars_few": "Odczytano {{count, number}} znaki",
+      "chars_many": "Odczytano {{count, number}} znaków",
+      "chars_other": "Odczytano {{count, number}} znaku",
+      "pages_one": "{{count, number}} strona",
+      "pages_few": "{{count, number}} strony",
+      "pages_many": "{{count, number}} stron",
+      "pages_other": "{{count, number}} strony",
+      "cut": "obcięte na limicie odczytu",
+      "readByModel": "odczytane przez AI",
+      "injection": "Fragmenty tego tekstu wyglądają jak polecenia dla modelu AI. Jest czytany tylko jako dane, nigdy wykonywany.",
+      "retry": "Ponów",
+      "refetch": "Pobierz ponownie",
+      "delete": "Usuń źródło",
+      "link": {
+        "label": "Dodaj link",
+        "placeholder": "https://example.com/produkt",
+        "add": "Dodaj link",
+        "adding": "Dodawanie…",
+        "invalid": "Wpisz adres publicznej strony zaczynający się od https://.",
+        "tooLong": "Link jest dłuższy niż 2048 znaków."
+      },
+      "errors": {
+        "unsupportedType": "Nieobsługiwany typ: {{name}} ({{type}}). Akceptowane: {{accepted}}",
+        "tooLarge": "Za duży (ponad {{mb}} MB): {{name}}",
+        "uploadFailed": "{{name}}: {{message}}",
+        "linkFailed": "Nie dodano linku: {{message}}",
+        "refreshFailed": "Źródło nie zostało odczytane ponownie: {{message}}",
+        "deleteFailed": "Źródło nie zostało usunięte: {{message}}",
+        "tryAgain": "Spróbuj ponownie."
+      }
+    },
+    "extract": {
+      "button": "Wyodrębnij opis produktu",
+      "running": "Wyodrębnianie…",
+      "hint": "Czyta każde gotowe źródło i proponuje wartość każdego pola wraz z jej źródłami. Nic się nie zmienia, dopóki tego nie zaakceptujesz.",
+      "noReady": "Dodaj źródło i poczekaj, aż będzie gotowe.",
+      "confirmTitle": "Wyodrębnić teraz?",
+      "confirmLeftOut_one": "{{count, number}} źródło jest jeszcze odczytywane i zostanie pominięte. Wyodrębnić teraz?",
+      "confirmLeftOut_few": "{{count, number}} źródła są jeszcze odczytywane i zostaną pominięte. Wyodrębnić teraz?",
+      "confirmLeftOut_many": "{{count, number}} źródeł jest jeszcze odczytywanych i zostanie pominiętych. Wyodrębnić teraz?",
+      "confirmLeftOut_other": "{{count, number}} źródła jest jeszcze odczytywane i zostanie pominięte. Wyodrębnić teraz?",
+      "confirm": "Wyodrębnij teraz",
+      "steps": {
+        "queued": "Czeka na start…",
+        "starting": "Uruchamianie…",
+        "readingSources": "Czytanie źródeł…",
+        "thinking": "Myślenie ({{elapsed}})…",
+        "checkingCitations": "Sprawdzanie cytatów…",
+        "saved": "Propozycja zapisana, kończenie…"
+      },
+      "failed": {
+        "refused": "Model odmówił odczytania tych źródeł. Usuń źródło, które mogło to spowodować, i spróbuj ponownie.",
+        "timedOut": "Wyodrębnianie trwało ponad 12 minut i zostało przerwane. Spróbuj z mniejszą liczbą lub krótszymi źródłami albo ponów z xhigh.",
+        "cut": "W odpowiedzi zabrakło miejsca. Spróbuj z mniejszą liczbą lub krótszymi źródłami.",
+        "unreadable": "Nie udało się odczytać odpowiedzi. Spróbuj ponownie.",
+        "stale": "Ta ekstrakcja przestała zgłaszać postęp. Spróbuj ponownie.",
+        "generic": "Wyodrębnianie się nie powiodło. Spróbuj ponownie."
+      },
+      "tryAgain": "Spróbuj ponownie",
+      "retryXhigh": "Ponów z xhigh",
+      "retryXhighHint": "Mniejszy wysiłek rozumowania: model myśli krócej, więc kończy szybciej.",
+      "errors": {
+        "noReadySources": "Żadne źródło nie jest jeszcze gotowe: dodaj je lub poczekaj na odczyt.",
+        "busy": "W tym projekcie trwa już wyodrębnianie. Śledź je w Zadaniach w tle.",
+        "busyStale": "Zatrzymana ekstrakcja blokuje ten projekt do około 16 minut od jej rozpoczęcia. Spróbuj ponownie po tym czasie.",
+        "rateLimited": "Za dużo wyodrębnień: najwyżej 1 na minutę i 10 dziennie na projekt oraz 20 dziennie na osobę. Spróbuj później.",
+        "generic": "Nie udało się rozpocząć wyodrębniania. Spróbuj ponownie."
+      }
+    },
+    "review": {
+      "title": "Proponowany opis produktu",
+      "loadFailed": "Nie udało się załadować propozycji z ekstrakcji. Sprawdź połączenie i spróbuj ponownie.",
+      "subtitle_one": "Z {{count, number}} źródła, {{at}}. Nic nie zostanie zapisane, dopóki tego nie zaakceptujesz.",
+      "subtitle_few": "Z {{count, number}} źródeł, {{at}}. Nic nie zostanie zapisane, dopóki tego nie zaakceptujesz.",
+      "subtitle_many": "Z {{count, number}} źródeł, {{at}}. Nic nie zostanie zapisane, dopóki tego nie zaakceptujesz.",
+      "subtitle_other": "Z {{count, number}} źródła, {{at}}. Nic nie zostanie zapisane, dopóki tego nie zaakceptujesz.",
+      "skipped_one": "Pominięto {{count, number}} źródło ponad limit odczytu wyodrębniania: {{names}}",
+      "skipped_few": "Pominięto {{count, number}} źródła ponad limit odczytu wyodrębniania: {{names}}",
+      "skipped_many": "Pominięto {{count, number}} źródeł ponad limit odczytu wyodrębniania: {{names}}",
+      "skipped_other": "Pominięto {{count, number}} źródła ponad limit odczytu wyodrębniania: {{names}}",
+      "partlyApplied": "Zastosowano częściowo",
+      "groups": {
+        "proposed": "Proponowane",
+        "conflict": "Konflikty",
+        "gap": "Luki",
+        "unchanged": "Bez zmian"
+      },
+      "current": "Obecnie",
+      "proposed": "Propozycja",
+      "empty": "(puste)",
+      "by": {
+        "you": "wpisane przez Ciebie",
+        "teammate": "wpisane przez osobę z zespołu",
+        "extract": "z wyodrębniania",
+        "assistant": "od asystenta AI"
+      },
+      "confidence": {
+        "high": "Wysoka pewność",
+        "medium": "Średnia pewność",
+        "low": "Niska pewność"
+      },
+      "noVerified": "Brak potwierdzonego źródła",
+      "accepted": "Zaakceptowano",
+      "changed": "Zmienione od wyodrębniania: „Zaakceptuj wszystkie propozycje” je pomija, a jego akceptacja zastępuje nową wartość.",
+      "citations": "Cytaty",
+      "page": "s. {{page}}",
+      "sourceDeleted": "źródło usunięte",
+      "unverified": "Tego cytatu nie znaleziono w źródle.",
+      "editLabel": "Proponowana wartość pola {{field}}",
+      "select": "Zaakceptuj {{field}}",
+      "gapNote": "Żadne źródło nie odpowiedziało na te pola: zobacz pytania obok formularza.",
+      "acceptSelected": "Zaakceptuj zaznaczone",
+      "acceptAll": "Zaakceptuj wszystkie propozycje",
+      "dismiss": "Odrzuć",
+      "readOnly": "Tylko osoba, która może edytować ten projekt, może zaakceptować lub odrzucić propozycję.",
+      "result": {
+        "applied_one": "Zastosowano {{count, number}} pole.",
+        "applied_few": "Zastosowano {{count, number}} pola.",
+        "applied_many": "Zastosowano {{count, number}} pól.",
+        "applied_other": "Zastosowano {{count, number}} pola.",
+        "changed": "Pole {{field}} zmieniło się od wyodrębniania i nie zostało zastosowane.",
+        "personValue": "Pole {{field}} zawiera wartość wpisaną przez osobę i nie zostało zastąpione.",
+        "allChanged": "Każde zaznaczone pole zmieniło się od wyodrębniania, więc nic nie zastosowano. Wiersze pokazują nowe wartości.",
+        "closed": "Ta propozycja została zastąpiona nowszą ekstrakcją lub odrzucona. Wyodrębnij ponownie, aby uzyskać nową.",
+        "failed": "Nie udało się zaakceptować propozycji. Spróbuj ponownie.",
+        "dismissFailed": "Nie udało się odrzucić propozycji. Spróbuj ponownie."
+      },
+      "proposedBadge": "Propozycja",
+      "proposedBadgeLabel": "Propozycja: sprawdź proponowaną wartość pola {{field}}",
+      "newSources_one": "To wyodrębnianie nie przeczytało {{count, number}} gotowego źródła: wyodrębnij ponownie, aby go użyć.",
+      "newSources_few": "To wyodrębnianie nie przeczytało {{count, number}} gotowych źródeł: wyodrębnij ponownie, aby ich użyć.",
+      "newSources_many": "To wyodrębnianie nie przeczytało {{count, number}} gotowych źródeł: wyodrębnij ponownie, aby ich użyć.",
+      "newSources_other": "To wyodrębnianie nie przeczytało {{count, number}} gotowego źródła: wyodrębnij ponownie, aby ich użyć."
+    },
+    "gaps": {
+      "title": "Pytania",
+      "description": "Źródła na nie nie odpowiedziały. Twoje odpowiedzi staną się kolejnym źródłem; potem wyodrębnij ponownie.",
+      "defaultDescription": "Odpowiedz na kilka pytań o produkt. Twoje odpowiedzi staną się źródłem, które czyta wyodrębnianie.",
+      "type": "Wpisz odpowiedzi",
+      "talk": "Omów to na głos",
+      "chat": "Odpowiedz na czacie AI",
+      "save": "Zapisz odpowiedzi",
+      "saving": "Zapisywanie…",
+      "cancel": "Anuluj",
+      "saved": "Twoje odpowiedzi zapisano jako źródło.",
+      "extractAgain": "Wyodrębnij ponownie",
+      "errors": {
+        "save": "Nie zapisano odpowiedzi: {{message}}"
+      }
+    },
+    "questions": {
+      "productName": "Jak nazywa się produkt lub usługa?",
+      "oneLiner": "Jednym zdaniem: co robi i dla kogo?",
+      "productSummary": "W krótkim akapicie: co robi produkt i jak ludzie z niego korzystają?",
+      "targetUsers": "Kim są jego docelowi klienci lub użytkownicy?",
+      "problemSolved": "Jaki problem dla nich rozwiązuje?",
+      "currentState": "Na jakim etapie cyklu życia jest: pomysł, MVP, beta, ogólnie dostępny czy dojrzały?",
+      "keyFeatures": "Jakie są jego kluczowe funkcje?",
+      "differentiators": "Z jakimi konkurentami lub alternatywami porównują go klienci i czym się wyróżnia?",
+      "successMetrics": "Jakie są jego cele i które wskaźniki pokazują sukces?",
+      "knownLimitations": "Jakie ma ograniczenia lub znane słabe strony?",
+      "nonGoals": "Co celowo jest poza zakresem (nie-cele)?",
+      "freeFormNotes": "Czy autorzy PRD i PR/FAQ powinni wiedzieć coś jeszcze?"
     }
   },
   "tabs": {
@@ -1094,6 +1259,27 @@
       "savingToLibrary": "Zapisywanie w Bibliotece…",
       "savedToLibrary": "Zapisano w Bibliotece.",
       "libraryFailed": "Nie udało się zapisać w Bibliotece."
+    },
+    "product": {
+      "consent": {
+        "title": "Omów to na głos",
+        "transcript": "Transkrypcja rozmowy zostanie zapisana jako źródło tego projektu, a dane osobowe w Twoich odpowiedziach zostaną zamaskowane. Nagranie dźwięku nigdy nie jest zapisywane.",
+        "interviewer": "Pytania na głos zadaje rozmówca AI, a Ty odpowiadasz w imieniu swojego produktu. To AI, nie człowiek.",
+        "language": "Funkcja głosowa nie mówi jeszcze w języku Twojego interfejsu. Mów po {{supported}}, a rozmówca dostosuje się do Ciebie.",
+        "headphones": "Używaj słuchawek, aby rozmówca nie słyszał samego siebie.",
+        "sourcesFull": "Ten projekt ma już 20 źródeł, najwięcej, ile może, więc wywiadu nie dałoby się zapisać jako źródła. Najpierw usuń jedno źródło, a potem porozmawiaj."
+      },
+      "session": {
+        "title": "Wywiad o produkcie",
+        "badge": "Rozmówca AI",
+        "note": "Pytania zadaje AI. Twoje odpowiedzi staną się źródłem tego projektu; nagranie dźwięku nigdy nie jest zapisywane.",
+        "interviewer": "Rozmówca",
+        "saving": "Zapisywanie Twoich odpowiedzi jako źródła…",
+        "saved": "Twoje odpowiedzi zapisano jako źródło tego projektu. Wyodrębnij ponownie, aby ich użyć.",
+        "savedOverCap": "Twoje odpowiedzi zapisano jako źródło tego projektu. Podczas wywiadu dodano źródła, więc projekt ma teraz ich więcej niż 20: usuń jedno, zanim dodasz kolejne.",
+        "nothingSaved": "Nic nie zostało powiedziane, więc nic nie zapisano.",
+        "savedFailed": "Nie udało się zapisać Twoich odpowiedzi."
+      }
     }
   }
 }

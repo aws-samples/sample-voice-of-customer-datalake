@@ -154,27 +154,15 @@ def test_without_the_start_function_the_stop_is_unavailable(lambda_context: Any,
     assert (view['stop_available'], view['signals_available']) == (False, False)
 
 
-def test_a_read_of_a_run_that_ended_done_ends_its_agents_run_at_once(lambda_context: Any, run: tuple[Any, Any]) -> None:
-    # (7.71.04) On b- the Bug fixer's agent run still read running once its run had ended done: the runtime's role
-    # writes nothing of voc-agents' runs, so its end waited for the heartbeat's next heal (every 15 minutes). The run
-    # workspace's read of the ended run ends it now, completed, its lock released; a second read writes nothing more.
+def test_a_read_of_a_run_that_ended_done_writes_nothing_of_its_agents_run(lambda_context: Any,
+                                                                          run: tuple[Any, Any]) -> None:
+    # (F2, 7.104.00) 7.71.04 ended the agent's run on the run monitor's read of an ended run, a write on a read path for
+    # an end the heartbeat's heal records (done -> completed, every 15 minutes: agents/heartbeat/engineering.py). A
+    # read writes nothing again; only a Stop ends the agent's run at once.
     env, engineering = run
     agent_id, agent_run_id = _agent_run(env, engineering, lambda_context)
     set_status(engineering.client, 'done')
-    for _ in range(2):
-        assert _call(lambda_context, 'GET', f'/agents/engineering/{RUN}')[0] == 200
-    ended = store.get_run(env.agents, agent_id, agent_run_id)
-    assert ended is not None
-    assert (ended['status'], stored_agent(env.agents, agent_id).get('active_run_id')) == ('completed', None)
-    events = store.list_events(env.agents, agent_run_id, after=0, limit=50)
-    assert [event.get('summary') for event in events].count('Engineering run done') == 1
-
-
-def test_a_read_of_a_run_still_waiting_for_a_person_ends_no_agent_run(lambda_context: Any,
-                                                                      run: tuple[Any, Any]) -> None:
-    env, engineering = run
-    agent_id, agent_run_id = _agent_run(env, engineering, lambda_context)
     assert _call(lambda_context, 'GET', f'/agents/engineering/{RUN}')[0] == 200
     still = store.get_run(env.agents, agent_id, agent_run_id)
     assert still is not None
-    assert still['status'] == 'running'
+    assert (still['status'], stored_agent(env.agents, agent_id).get('active_run_id')) == ('running', agent_run_id)

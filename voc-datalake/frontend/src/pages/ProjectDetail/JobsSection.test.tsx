@@ -42,6 +42,11 @@ describe('JobsSection', () => {
     expect(screen.getByText('PRD Generation')).toBeInTheDocument()
   })
 
+  it('labels the Product tab\'s extract (7.104.00), never as research', () => {
+    render(<JobsSection jobs={[createJob({ job_type: 'extract_product_description' })]} onDismiss={vi.fn()} />)
+    expect(screen.getByText('Product Description Extract')).toBeInTheDocument()
+  })
+
   it('renders job status badge', async () => {
     const user = userEvent.setup()
     render(<JobsSection jobs={[createJob({ status: 'completed' })]} onDismiss={vi.fn()} />)

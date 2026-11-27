@@ -6,7 +6,7 @@ verified email. A text and an HTML body: every user-written value is HTML-escape
 there is one button (the link), and the footer says why the person gets it and links
 the unsubscribe page. RFC 8058 one-click unsubscribe headers point at the API
 (``List-Unsubscribe`` / ``List-Unsubscribe-Post``). Simple content carries custom
-``Headers`` since botocore 1.35; the Lambda Python 3.14 runtime's boto3 has them
+``Headers`` since botocore 1.35; the Lambda Python 3.15 runtime's boto3 has them
 (a test pins the installed service model).
 
 Bounces and complaints: SES's account-level suppression list stops later sends to an

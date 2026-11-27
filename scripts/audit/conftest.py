@@ -24,7 +24,7 @@ def make_tree(tmp_path: Path) -> TreeMaker:
 def lambda_function(fid: str, handler: str, copy: str, *, env: dict[str, object] | None = None,
                     role: str | None = None) -> Function:
     """A Python Lambda bundled from ``lambda/`` by ``copy`` (the bundling command's cp steps)."""
-    fn = Function(fid, 'python3.14', handler, dict(env or {}), role, asset_source='lambda',
+    fn = Function(fid, 'python3.15', handler, dict(env or {}), role, asset_source='lambda',
                   asset_command=['bash', '-c', copy])
     fn.default_env = set(fn.env)
     return fn

@@ -260,6 +260,13 @@ export function startProjectAssistJob(projectId, jobType, answer, config = {}) {
   return [202, { success: true, job_id: started.job_id, status: 'pending' }];
 }
 
+/**
+ * A listed project job another mock module drives (7.104.00: the Product tab's extract, mock-product-sources.js):
+ * running on its first read, then completed with `complete(detail)`'s result, or failed when it throws.
+ */
+export const startMockProjectJob = (projectId, jobType, { runningStep, errorMessage, complete }) =>
+  startJob(projectId, { jobType, status: 'pending', message: 'Started', runningStep, errorMessage, complete });
+
 /** A route handler whose synchronous answer now arrives through an assist job. */
 const assisted = (jobType, run) => (ctx, ...groups) => startProjectAssistJob(ctx.projectId, jobType, run(ctx, ...groups));
 

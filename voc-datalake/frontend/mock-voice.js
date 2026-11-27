@@ -8,6 +8,9 @@
 //   POST /projects/{id}/personas/{pid}/voice-sessions/{sid}/end -> 202; files a persona_interview document at once
 //   GET  /projects/voice/usage                               -> this month's voice minutes
 //
+// The Product tab's interviewer (7.104.00) has the same four routes under /projects/{id}/product-interview/: its end
+// saves the answers as one interview source of the project (`source_doc_id`, mock-product-sources.js), no document.
+//
 // The fake session (handleVoiceUpgrade, the mock server's `upgrade` event): a minimal WebSocket (RFC 6455, no
 // dependency: the mock runs only in development, and the frontend has no `ws` package; the relay itself serves /ws
 // with `ws`, lambda/stream/src/voice/server.ts) that plays a scripted conversation: ready, the persona's greeting as
@@ -15,10 +18,16 @@
 // persona's answer, usage every 5 seconds; `{type: 'end'}` (or the browser closing) ends it with `ended`. Microphone
 // frames are read and dropped.
 import { hash } from 'node:crypto';
+import { addInterviewSource } from './mock-product-sources.js';
 
 const OFFER_ROUTE = /^\/projects\/([^/]+)\/personas\/([^/]+)\/voice-sessions$/;
 const SESSION_ROUTE = /^\/projects\/([^/]+)\/personas\/([^/]+)\/voice-sessions\/([^/]+)$/;
 const END_ROUTE = /^\/projects\/([^/]+)\/personas\/([^/]+)\/voice-sessions\/([^/]+)\/end$/;
+const PRODUCT_OFFER_ROUTE = /^\/projects\/([^/]+)\/product-interview\/voice-sessions$/;
+const PRODUCT_SESSION_ROUTE = /^\/projects\/([^/]+)\/product-interview\/voice-sessions\/([^/]+)$/;
+const PRODUCT_END_ROUTE = /^\/projects\/([^/]+)\/product-interview\/voice-sessions\/([^/]+)\/end$/;
+/** The product interviewer as the session's "persona": no id, its own name in the captions. */
+const INTERVIEWER = { persona_id: null, name: 'Interviewer', voice_id: 'tiffany' };
 const UPGRADE_ROUTE = /^\/mock-voice\/([\w-]+)$/;
 const WS_GUID = '258EAFA5-E914-47DA-95CA-C5AB0DC85B11';
 const MONTHLY_MINUTES = 300;
@@ -38,6 +47,7 @@ const languages = { supported: ['en', 'de', 'es', 'fr', 'pt'], unsupported: ['ja
 
 function personaOf(shared, projectId, personaId) {
   const detail = shared.mockProjectDetails[decodeURIComponent(projectId)];
+  if (personaId === null) return { detail, persona: INTERVIEWER };
   const persona = detail?.personas.find((p) => p.persona_id === decodeURIComponent(personaId));
   return { detail, persona };
 }
@@ -50,7 +60,7 @@ function offer(persona) {
   return {
     enabled: true, voice_id: voice, voice_gender: genderOf(voice), languages, session_minutes: SESSION_MINUTES,
     minutes_left: minutesLeft(), sessions_left_today: Math.max(0, DAILY_SESSIONS - usage.today),
-    estimated_cents_per_minute: CENTS_PER_MINUTE,
+    estimated_cents_per_minute: CENTS_PER_MINUTE, sources_full: false,
   };
 }
 
@@ -61,6 +71,7 @@ function start(req, shared, detail, persona, body) {
   const project = detail.project.project_id;
   sessions.set(sessionId, {
     session_id: sessionId, project_id: project, persona_id: persona.persona_id, persona_name: persona.name, status: 'minted',
+    kind: persona.persona_id === null ? 'product_interview' : 'persona_interview', source_doc_id: null,
     seconds: 0, cost_cents: 0, end_reason: null, transcript_document_id: null, job_id: null, cited: [], started_at: nowIso(),
   });
   usage.sessions += 1;
@@ -73,9 +84,10 @@ function start(req, shared, detail, persona, body) {
 
 function statusOf(session) {
   return {
-    session_id: session.session_id, persona_id: session.persona_id, status: session.status, seconds: session.seconds,
+    session_id: session.session_id, kind: session.kind, persona_id: session.persona_id, status: session.status, seconds: session.seconds,
     cost_cents: session.cost_cents, end_reason: session.end_reason, started_at: session.started_at,
-    ended_at: session.ended_at ?? null, transcript_document_id: session.transcript_document_id, job_id: session.job_id,
+    ended_at: session.ended_at ?? null, transcript_document_id: session.transcript_document_id,
+    source_doc_id: session.source_doc_id, job_id: session.job_id,
   };
 }
 
@@ -91,10 +103,21 @@ function transcriptMarkdown(session) {
   ].join('\n');
 }
 
+/** A product interview's answers as one interview source (no summary, no document). */
+function saveProductSource(shared, session) {
+  if (session.status !== 'finalized') {
+    const text = '**AI interviewer:** What is the product called? (mock)\n\n**Team member:** It is called Parcel Pilot. (mock)';
+    const doc = addInterviewSource(shared, session.project_id, { mode: 'voice', sessionId: session.session_id, text });
+    Object.assign(session, { status: 'finalized', source_doc_id: doc?.doc_id ?? null, job_id: shared.nextMockId('job') });
+  }
+  return [202, { success: true, status: 'finalizing', job_id: session.job_id }];
+}
+
 function end(shared, detail, session) {
   if (session.status === 'minted' || session.status === 'live') {
     Object.assign(session, { status: 'ended', end_reason: session.end_reason ?? 'ended_by_person', ended_at: nowIso() });
   }
+  if (session.kind === 'product_interview') return saveProductSource(shared, session);
   if (session.transcript_document_id === null) {
     const at = nowIso();
     const document = {
@@ -120,10 +143,23 @@ function usageAnswer() {
   };
 }
 
-/** `[kind, project id, persona id, session id?]` for a request this module owns, or null. */
+/** A product-interview route as `[kind, project id, null, session id?]`, or null. */
+function productRoute(req, path) {
+  const ended = req.method === 'POST' ? path.match(PRODUCT_END_ROUTE) : null;
+  if (ended) return ['end', ended[1], null, ended[2]];
+  const session = req.method === 'GET' ? path.match(PRODUCT_SESSION_ROUTE) : null;
+  if (session) return ['status', session[1], null, session[2]];
+  const offered = path.match(PRODUCT_OFFER_ROUTE);
+  if (!offered) return null;
+  return [req.method === 'GET' ? 'offer' : 'start', offered[1], null];
+}
+
+/** `[kind, project id, persona id (null: the product interviewer), session id?]` for a request this module owns, or null. */
 function ownRoute(req, url) {
   const path = url.pathname;
   if (req.method === 'GET' && path === '/projects/voice/usage') return ['usage'];
+  const product = productRoute(req, path);
+  if (product) return product;
   const ended = req.method === 'POST' ? path.match(END_ROUTE) : null;
   if (ended) return ['end', ended[1], ended[2], ended[3]];
   const session = req.method === 'GET' ? path.match(SESSION_ROUTE) : null;
@@ -204,22 +240,41 @@ function readFrames(buffer) {
   return { frames, rest: buffer.subarray(offset) };
 }
 
+/** The lines the fake session speaks: a persona's greeting and answer, or the interviewer's question and thanks. */
+function lines(session) {
+  if (session.kind === 'product_interview') {
+    return {
+      greeting: "Hi, I'm an AI interviewer. What is the product called? (mock)",
+      question: 'It is called Parcel Pilot. (mock)',
+      answer: 'Thanks. In one sentence, what does it do and for whom? (mock)',
+    };
+  }
+  return {
+    greeting: `Hi, I'm ${session.persona_name}. Thanks for talking with me.`,
+    question: 'How do you feel about our delivery times? (mock)',
+    answer: 'I mostly want to know when a parcel will arrive.',
+  };
+}
+
 function script(session, socket, timers) {
-  const name = session.persona_name;
+  const said = lines(session);
   const feedbackId = 'fb_mock_1';
   const at = (ms, run) => timers.push(setTimeout(run, ms));
   at(300, () => sendJson(socket, { type: 'ready', voice_id: 'tiffany', session_seconds: SESSION_MINUTES * 60, minutes_left: minutesLeft() }));
-  at(900, () => sendJson(socket, { type: 'caption', role: 'assistant', stage: 'speculative', text: `Hi, I'm ${name}. Thanks for talking with me.`, turn: 1 }));
+  at(900, () => sendJson(socket, { type: 'caption', role: 'assistant', stage: 'speculative', text: said.greeting, turn: 1 }));
   for (let index = 0; index < 12; index += 1) at(1000 + index * 80, () => socket.write(frame(0x2, toneChunk(index))));
-  at(2000, () => sendJson(socket, { type: 'caption', role: 'assistant', stage: 'final', text: `Hi, I'm ${name}. Thanks for talking with me.`, turn: 1 }));
+  at(2000, () => sendJson(socket, { type: 'caption', role: 'assistant', stage: 'final', text: said.greeting, turn: 1 }));
   at(2100, () => sendJson(socket, { type: 'turn_end', role: 'assistant', turn: 1 }));
-  at(4000, () => sendJson(socket, { type: 'caption', role: 'user', stage: 'final', text: 'How do you feel about our delivery times? (mock)', turn: 2 }));
-  at(4800, () => sendJson(socket, { type: 'caption', role: 'assistant', stage: 'speculative', text: 'I mostly want to know when a parcel will arrive.', turn: 3 }));
-  at(5000, () => {
-    session.cited = [feedbackId];
-    sendJson(socket, { type: 'citation', turn: 3, feedback_ids: [feedbackId] });
-  });
-  at(6000, () => sendJson(socket, { type: 'caption', role: 'assistant', stage: 'final', text: 'I mostly want to know when a parcel will arrive.', turn: 3 }));
+  at(4000, () => sendJson(socket, { type: 'caption', role: 'user', stage: 'final', text: said.question, turn: 2 }));
+  at(4800, () => sendJson(socket, { type: 'caption', role: 'assistant', stage: 'speculative', text: said.answer, turn: 3 }));
+  // (the interviewer has no tools: no citation)
+  if (session.kind !== 'product_interview') {
+    at(5000, () => {
+      session.cited = [feedbackId];
+      sendJson(socket, { type: 'citation', turn: 3, feedback_ids: [feedbackId] });
+    });
+  }
+  at(6000, () => sendJson(socket, { type: 'caption', role: 'assistant', stage: 'final', text: said.answer, turn: 3 }));
   const tick = setInterval(() => {
     session.seconds += USAGE_TICK_MS / 1000;
     usage.seconds += USAGE_TICK_MS / 1000;

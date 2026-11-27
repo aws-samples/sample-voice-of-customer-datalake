@@ -57,6 +57,8 @@ from shared import agent_run_decisions, workflow_schema
 from shared.agent_ids import AGENT_ID_RE, RUN_ID_RE, WORKFLOW_ID_RE
 from shared.agent_run_decisions import RUN_NEEDS_HUMAN
 from shared.aws import (
+    CONDITION_FAILED,
+    cancellation_codes,
     consistent_item,
     get_dynamodb_resource,
     is_conditional_check_failure,
@@ -337,11 +339,6 @@ def require_agents_table() -> Any:
 def _service_error(what: str, exc: Exception) -> ServiceError:
     logger.exception(f'Agents store: {what} failed', extra={'error_type': type(exc).__name__})  # noqa: LOG004 — only called from an except handler, which supplies the traceback
     return ServiceError(f'Could not {what}. Please retry.')
-
-
-def _cancellation_codes(error: ClientError) -> list[str]:
-    reasons = error.response.get('CancellationReasons') or []
-    return [str((reason or {}).get('Code') or 'None') for reason in reasons]
 
 
 def _is_cancelled_transaction(error: Exception) -> bool:
@@ -1316,9 +1313,9 @@ def start_run(table: Any, agent: Mapping[str, Any], request: RunStart, *, now: d
         _transact(table, items, None)   # (the deployment's runtime only: no run starts in a workspace yet)
     except ClientError as exc:
         if _is_cancelled_transaction(exc):
-            codes = _cancellation_codes(exc)
+            codes = cancellation_codes(exc)
             logger.info('Agent run not started', extra={'agent_id': agent_id, 'reasons': codes})
-            if request.issue_claim is not None and codes[2:3] == ['ConditionalCheckFailed']:
+            if request.issue_claim is not None and codes[2:3] == [CONDITION_FAILED]:
                 raise IssueClaimed('this issue has started a run already') from exc
             return None
         raise _service_error('start the agent run', exc) from exc

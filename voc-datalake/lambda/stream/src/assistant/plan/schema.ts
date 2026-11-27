@@ -164,6 +164,7 @@ export const FREE_TEXT_FIELDS: Readonly<Record<string, readonly string[]>> = {
   ],
   update_product_context: [
     'updates.one_liner',
+    'updates.product_summary',
     'updates.target_users',
     'updates.problem_solved',
     'updates.key_features',

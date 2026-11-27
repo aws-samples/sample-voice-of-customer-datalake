@@ -140,6 +140,10 @@
     {
       "key": "frontend:widgetAssetPlugin.ts#*",
       "reason": "Build-only (7.55.01): vite.config.ts, which the detector's entries do not include, loads this Vite plugin; it writes lambda/api/static/feedback-widget.js into frontend/dist/widget/ for the app's CloudFront and serves it at /widget/feedback-widget.js on the dev server (src/build/widgetAssetPlugin.test.ts)."
+    },
+    {
+      "key": "frontend:src/api/projectTypes.ts#ProductProposalLatest.context",
+      "reason": "GET …/product-proposals/latest's answer (7.104.00), shared with the MCP tool product_get, which reads it: the SPA's form reads the context through its own GET …/product-context (productContextQuery) and the review each field's `current`, so the normaliser writes this member and no SPA code reads it."
     }
   ]
 }

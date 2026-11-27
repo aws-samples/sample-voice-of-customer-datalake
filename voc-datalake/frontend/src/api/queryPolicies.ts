@@ -151,6 +151,7 @@ export const ROOT_FAMILIES: Readonly<Record<string, CacheFamily>> = {
   'processing-logs': 'live',
   'product-context': 'standard',
   'product-docs': 'standard',
+  'product-proposal': 'standard', // (7.104.00) a project's latest product proposal; read again after an accept, a dismiss or a finished extract
   'project': 'standard',
   'project-jobs': 'live',
   'projects': 'standard',

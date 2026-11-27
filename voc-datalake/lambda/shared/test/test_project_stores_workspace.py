@@ -32,7 +32,7 @@ from shared import (
     project_gate,
     project_writes,
 )
-from shared.exceptions import NotFoundError
+from shared.exceptions import NotFoundError, ValidationError
 from shared.project_access import Caller
 from shared.project_keys import NotPerWorkspaceError, document_keys, personas_index_pk, project_pk, project_type_pk
 from shared.project_tables import iter_project_rows
@@ -288,6 +288,41 @@ def test_document_readers_find_their_scopes_rows_only(table):
             f'persona_{name}']
         existing = persona_overlap.read_existing_personas(table, PROJECT, workspace=scope)
         assert existing.names == (f'persona_{name}',)
+
+
+def _library_persona(table, scope, persona_id):
+    table.put_item(Item={'pk': project_pk(company_personas.COMPANY_PERSONAS_CONTAINER, workspace=scope),
+                         'sk': f'PERSONA#{persona_id}', 'persona_id': persona_id, 'name': persona_id,
+                         'created_at': STAMP})
+
+
+@pytest.mark.parametrize('scope', SCOPES, ids=_scope_name)
+def test_a_persona_review_falls_back_to_its_own_scopes_company_library_only(table, scope):
+    for each in SCOPES:
+        _library_persona(table, each, f'company_{_scope_name(each)}')
+    chosen = document_review.reviewers(table, PROJECT, None, workspace=scope)
+    assert (chosen.source, [p['persona_id'] for p in chosen.personas]) == (
+        document_review.SOURCE_COMPANY, [f'company_{_scope_name(scope)}'])
+
+
+@pytest.mark.parametrize('scope', SCOPES, ids=_scope_name)
+def test_a_persona_review_asks_its_scopes_project_personas_before_any_library(table, scope):
+    for each in SCOPES:
+        _library_persona(table, each, f'company_{_scope_name(each)}')
+    _persona(table, scope, 'persona_own')
+    chosen = document_review.reviewers(table, PROJECT, None, workspace=scope)
+    assert (chosen.source, [p['persona_id'] for p in chosen.personas]) == (
+        document_review.SOURCE_PROJECT, ['persona_own'])
+
+
+def test_a_persona_review_in_a_scope_without_personas_has_nobody_though_another_scope_has(table):
+    _persona(table, B, 'persona_b')
+    _library_persona(table, B, 'company_b')
+    chosen = document_review.reviewers(table, PROJECT, None, workspace=A)
+    assert (chosen.personas, chosen.available) == ([], 0)
+    with pytest.raises(ValidationError) as refused:
+        document_review.require_reviewers(chosen)
+    assert refused.value.code == document_review.NO_PERSONAS
 
 
 @pytest.mark.parametrize('scope', SCOPES, ids=_scope_name)

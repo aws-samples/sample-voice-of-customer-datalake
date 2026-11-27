@@ -108,7 +108,7 @@ export function createDesignCapture(stack: cdk.Stack, props: DesignCaptureProps)
   const { aggregatesTable, rawDataBucket, layer, allPluginIds, functionName, logGroupName } = props;
   return new lambda.Function(stack, 'DesignCapture', {
     functionName,
-    runtime: lambda.Runtime.PYTHON_3_14,
+    runtime: lambda.Runtime.PYTHON_3_15,
     architecture: lambda.Architecture.ARM_64,
     handler: 'capture_handler.lambda_handler',
     code: designCaptureCode(allPluginIds),

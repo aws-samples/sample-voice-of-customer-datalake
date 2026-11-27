@@ -151,7 +151,7 @@ export function createEngagementLambdas(ctx: ApiStackContext, inputs: Engagement
 
   const logsLambda = new lambda.Function(stack, 'LogsApi', {
     functionName: ctx.uniqueName('voc-logs-api'),
-    runtime: lambda.Runtime.PYTHON_3_14,
+    runtime: lambda.Runtime.PYTHON_3_15,
     architecture: lambda.Architecture.ARM_64,
     handler: 'logs_handler.lambda_handler',
     code: createApiLambdaCode('logs_handler.py'),
@@ -188,7 +188,7 @@ export function createEngagementLambdas(ctx: ApiStackContext, inputs: Engagement
 
   const usersLambda = new lambda.Function(stack, 'UsersApi', {
     functionName: ctx.uniqueName(USERS_API_FUNCTION_BASE_NAME),
-    runtime: lambda.Runtime.PYTHON_3_14,
+    runtime: lambda.Runtime.PYTHON_3_15,
     architecture: lambda.Architecture.ARM_64,
     handler: 'users_handler.lambda_handler',
     code: createApiLambdaCode('users_handler.py'),
@@ -242,7 +242,7 @@ export function createEngagementLambdas(ctx: ApiStackContext, inputs: Engagement
   const feedbackFormLambda = new lambda.Function(stack, 'FeedbackFormApi', {
     ...snapStartFunctionProps(stack), // GET /feedback-forms cold start (lib/utils/snapstart.ts)
     functionName: ctx.uniqueName(FEEDBACK_FORM_API_FUNCTION_BASE_NAME),
-    runtime: lambda.Runtime.PYTHON_3_14,
+    runtime: lambda.Runtime.PYTHON_3_15,
     architecture: lambda.Architecture.ARM_64,
     handler: 'feedback_form_handler.lambda_handler',
     code: createApiLambdaCode('feedback_form_handler.py'),
@@ -354,7 +354,7 @@ export function createEngagementLambdas(ctx: ApiStackContext, inputs: Engagement
 
   const ballotsLambda = new lambda.Function(stack, 'BallotsApi', {
     functionName: ctx.uniqueName('voc-ballots-api'),
-    runtime: lambda.Runtime.PYTHON_3_14,
+    runtime: lambda.Runtime.PYTHON_3_15,
     architecture: lambda.Architecture.ARM_64,
     handler: 'ballots_handler.lambda_handler',
     code: createApiLambdaCode('ballots_handler.py'),
@@ -392,7 +392,7 @@ export function createEngagementLambdas(ctx: ApiStackContext, inputs: Engagement
 
   const chatLambda = new lambda.Function(stack, 'ChatApi', {
     functionName: ctx.uniqueName('voc-chat-api'),
-    runtime: lambda.Runtime.PYTHON_3_14,
+    runtime: lambda.Runtime.PYTHON_3_15,
     architecture: lambda.Architecture.ARM_64,
     handler: 'chat_handler.lambda_handler',
     code: createApiLambdaCode('chat_handler.py'),

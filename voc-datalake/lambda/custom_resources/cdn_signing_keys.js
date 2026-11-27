@@ -108,10 +108,10 @@ function defaultSecretsClient() {
 /**
  * The actual logic, with its collaborators injected so tests need no AWS SDK.
  *
- * Kept SEPARATE from `exports.handler` because of a sharp edge in the Node 24
- * Lambda runtime: it infers the handler style from the function's ARITY, so a
+ * Kept SEPARATE from `exports.handler` because of a sharp edge in the Node 24+
+ * Lambda runtimes (it runs nodejs26.x): they infer the handler style from the function's ARITY, so a
  * three-parameter handler is taken for the legacy `(event, context, callback)`
- * signature — support for which Node 24 removed. An exported handler that took
+ * signature — support for which the Node 24 runtime removed. An exported handler that took
  * `deps` as a third parameter therefore failed at runtime init with
  * "AWS Lambda has removed support for callback-based function handlers",
  * before any of this code ran.
@@ -157,7 +157,7 @@ async function onEvent(event, deps) {
 
 /**
  * CloudFormation entry point. ONE parameter on purpose — see onEvent above for
- * why arity matters on the Node 24 runtime.
+ * why arity matters on the Node 24+ runtimes.
  */
 exports.handler = async (event) => onEvent(event);
 

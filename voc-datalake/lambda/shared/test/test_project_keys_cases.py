@@ -16,14 +16,15 @@ from urllib.parse import unquote_plus
 import pytest
 
 from api import product_context
-from api.product_context import (
-    ALLOWED_CONTENT_TYPES,
-    DOC_SK_PREFIX,
-    product_doc_extracted_key,
-    product_doc_raw_key,
-)
+from api.product_context import ALLOWED_CONTENT_TYPES, DOC_SK_PREFIX
 from api.projects import product_docs_project_prefix
 from shared.model_config import MODEL_DEFAULT_KEY, MODEL_SETTINGS_PK
+from shared.product_sources import (
+    SOURCE_CONTENT_TYPES,
+    product_doc_extracted_key,
+    product_doc_raw_key,
+    product_doc_source_key,
+)
 from shared.project_keys import project_pk
 from shared.row_ids import LONG_OPAQUE_ID_RE
 from shared.test.repo_paths import repo_root
@@ -106,6 +107,21 @@ def test_the_upload_and_its_text_are_under_the_projects_document_prefix(case):
     extracted = product_doc_extracted_key(case['project_id'], case['doc_id'], workspace=scope)
     assert extracted == case['extracted_key']
     assert extracted.startswith(prefix)
+
+
+@pytest.mark.parametrize('case', _CASES)
+def test_a_twin_read_upload_is_under_the_projects_document_prefix_beside_raw(case):
+    """A PDF, DOCX or PPTX (7.104.00) goes under product_docs/source/: a project's delete sweeps it with the prefix,
+    and the extractor's tests hold that neither of its patterns takes it."""
+    scope = _scope(case)
+    source = product_doc_source_key(case['project_id'], case['doc_id'], 'pdf', workspace=scope)
+    assert source == case['source_key']
+    assert source.startswith(product_docs_project_prefix(case['project_id'], workspace=scope))
+
+
+def test_the_source_extensions_are_the_twins_and_no_upload_extension():
+    assert _SPEC['source_extensions'] == sorted(SOURCE_CONTENT_TYPES.values())
+    assert not set(_SPEC['source_extensions']) & set(_SPEC['upload_extensions'])
 
 
 def test_the_model_rows_are_the_model_settings():

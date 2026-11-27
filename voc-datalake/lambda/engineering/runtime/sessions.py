@@ -40,7 +40,13 @@ from engineering.spend import (
     ledger_updates,
     token_deltas,
 )
-from shared.aws import consistent_item, is_conditional_check_failure
+from shared.aws import (
+    CONDITION_FAILED,
+    cancellation_codes,
+    cancelled_by_condition,
+    consistent_item,
+    is_conditional_check_failure,
+)
 from shared.dynamo_paging import iter_query
 from shared.dynamo_values import plain
 from shared.ids import is_key_collision
@@ -263,12 +269,6 @@ def _from_item(item: dict[str, Any]) -> AgentSession:
 #: pausing 20-40, 40-80 and 60-120 ms (jittered) between tries.
 CONFLICT_TRIES: Final = 4
 CONFLICT_PAUSE_SECONDS: Final = 0.02
-
-
-def _condition_failed(error: ClientError) -> bool:
-    """A cancelled transaction one of whose items' conditions failed (the session moved meanwhile)."""
-    reasons = error.response.get('CancellationReasons') or []
-    return any(reason.get('Code') == 'ConditionalCheckFailed' for reason in reasons)
 
 
 def _in_progress(error: ClientError) -> bool:
@@ -495,7 +495,8 @@ class SessionStore:
             except ClientError as error:
                 # (a conflict only: a cancellation that also names a failed condition can never land; or the same
                 # token's earlier try still under way, which the next try answers as it ended)
-                conflict = transaction_conflict(error) and not _condition_failed(error)
+                # (no item's condition failed: the session did not move meanwhile)
+                conflict = transaction_conflict(error) and not cancelled_by_condition(error)
                 if not (conflict or _in_progress(error)) or tries == CONFLICT_TRIES:
                     raise
                 if conflict:
@@ -599,9 +600,9 @@ class SessionStore:
         try:
             self._transact([own, *([agent] if priced else []), *ledger])
         except ClientError as error:
-            reasons = error.response.get('CancellationReasons') or []
-            agent_missing = priced and len(reasons) > 1 and reasons[1].get('Code') == 'ConditionalCheckFailed' and (
-                reasons[0].get('Code') in (None, 'None'))
+            # (its own row's entry fine, None, and the agent's condition failed)
+            codes = cancellation_codes(error)
+            agent_missing = priced and codes[:2] == [None, CONDITION_FAILED]
             if not agent_missing:
                 raise
             # No row of its agent (a launch whose hold is gone): the cost stays on its own row and the ledger.

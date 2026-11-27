@@ -36,8 +36,8 @@ export const PYTHON_BUNDLE_PRUNE =
   `find /asset-output -type f \\( ${findNames(PRUNED_FILES)} \\) -delete`;
 
 /**
- * The step after the prune: compile every shipped `.py` to bytecode, in the bundling image (the same Python 3.14 the
- * runtime runs, so the `cpython-314` tag and magic number match).
+ * The step after the prune: compile every shipped `.py` to bytecode, in the bundling image (the same Python 3.15 the
+ * runtime runs, so the `cpython-315` tag and magic number match).
  *
  * WHY: `/var/task` is read-only, so a bundle without `__pycache__` makes Python compile every module it imports on
  * every cold start and throw the result away. That was 35,180 lines (122 modules) for the Projects API alone, about
@@ -68,7 +68,7 @@ export interface PythonLambdaAssetOptions {
 }
 
 /**
- * A Python 3.14 / arm64 code asset staged from `root` (`'lambda'`, or `'.'` for
+ * A Python 3.15 / arm64 code asset staged from `root` (`'lambda'`, or `'.'` for
  * bundles that span `plugins/` and `lambda/shared`), always in
  * `IgnoreMode.GIT`, always ending with {@link PYTHON_BUNDLE_PRUNE} and then {@link PYTHON_BUNDLE_COMPILE}.
  */
@@ -77,7 +77,7 @@ export function pythonLambdaAsset(root: 'lambda' | '.', options: PythonLambdaAss
     exclude: options.exclude,
     ignoreMode: cdk.IgnoreMode.GIT,
     bundling: {
-      image: lambda.Runtime.PYTHON_3_14.bundlingImage,
+      image: lambda.Runtime.PYTHON_3_15.bundlingImage,
       command: ['bash', '-c', pythonBundleScript(options.copy)],
       platform: 'linux/arm64',
     },

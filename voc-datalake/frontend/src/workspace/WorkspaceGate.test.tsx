@@ -248,18 +248,28 @@ describe('WorkspaceGate with a slug', () => {
     expect(workspaceHeader('/api/feedback')).toStrictEqual({})
   })
 
-  it('offers the start page and sign-out to a caller with no workspace at all', async () => {
+  /** The not-found page of a caller with no workspace at all, opened at a workspace's address. */
+  async function renderWithNoWorkspace(): Promise<void> {
     page.workspace = { kind: 'slug', slug: 'acme' }
     serve([])
     renderGate()
-    // The page names who can add them, once: a workspace's admins or a platform admin.
     expect(await screen.findByText('You are not a member of any workspace yet.')).toBeInTheDocument()
+  }
+
+  it('offers the start page and sign-out to a caller with no workspace at all', async () => {
+    // The page names who can add them, once: a workspace's admins or a platform admin.
+    await renderWithNoWorkspace()
     expect(screen.getByText(
       'This workspace does not exist, or you are not a member of it. Open one of yours, or ask one of its admins or a platform admin to add you.',
     )).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Go to the start page' })).toHaveAttribute('href', '/')
     await userEvent.click(screen.getByRole('button', { name: 'Sign out' }))
     expect(signOut).toHaveBeenCalledExactlyOnceWith()
+  })
+
+  it('does not offer Create a workspace (7.104.00) there to a caller who is not a platform admin', async () => {
+    await renderWithNoWorkspace()
+    expect(screen.queryByRole('button', { name: 'Create a workspace' })).not.toBeInTheDocument()
   })
 })
 
@@ -358,6 +368,15 @@ describe('WorkspaceGate for a platform admin opening a workspace by a direct lin
     platform.admin = true
     page.workspace = { kind: 'slug', slug: 'nowhere' }
     await expectNotFoundUnasked(consolePages)
+  })
+
+  it('offers Create a workspace (7.104.00) to a platform admin who has no workspace yet, on that not-found page', async () => {
+    platform.admin = true
+    page.workspace = { kind: 'slug', slug: 'nowhere' }
+    serve([], consolePages)
+    renderGate('/')
+    expect(await screen.findByText('You are not a member of any workspace yet.')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Create a workspace' })).toBeInTheDocument()
   })
 
   it('is the plain not-found when the console list refuses the caller (403: no longer a platform admin)', async () => {

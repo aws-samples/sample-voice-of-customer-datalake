@@ -1,40 +1,31 @@
 /**
  * @fileoverview **Talk** on a project persona (7.69.00, docs/voice-personas.md): with `features.voice` (the
  * deployment's `-c voicePersonas=true`) and edit access only, never on a company persona. It opens the consent dialog,
- * then, once the microphone and the session are both there, the live session.
+ * then, once the microphone and the session are both there, the live session (VoiceSessionFlow.tsx).
  *
  * @module pages/ProjectDetail/voice/VoiceTalkButton
  */
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Mic } from 'lucide-react'
 import { Tooltip } from '../../../components/Tooltip/Tooltip'
-import VoiceConsentDialog from './VoiceConsentDialog'
-import type { StartedVoice } from './VoiceConsentDialog'
-import VoiceSessionModal from './VoiceSessionModal'
-
-type Step = { readonly kind: 'idle' } | { readonly kind: 'consent' } | { readonly kind: 'session'; readonly voice: StartedVoice }
+import VoiceSessionFlow from './VoiceSessionFlow'
+import type { VoiceSubject } from '../../../api/voiceSessionsApi'
 
 export default function VoiceTalkButton({ projectId, personaId, name }: Readonly<{
   projectId: string; personaId: string; name: string
 }>) {
   const { t } = useTranslation('projectDetail')
-  const [step, setStep] = useState<Step>({ kind: 'idle' })
-  const idle = () => setStep({ kind: 'idle' })
+  const [open, setOpen] = useState(false)
+  const subject = useMemo<VoiceSubject>(() => ({ kind: 'persona', personaId }), [personaId])
   return (
     <>
       <Tooltip kind="label" content={t('voice.talkTo', { name })}>
-        <button type="button" className="btn btn-secondary btn-sm" onClick={() => setStep({ kind: 'consent' })} aria-label={t('voice.talkTo', { name })}>
+        <button type="button" className="btn btn-secondary btn-sm" onClick={() => setOpen(true)} aria-label={t('voice.talkTo', { name })}>
           <Mic size={14} aria-hidden />{t('voice.talk')}
         </button>
       </Tooltip>
-      {step.kind === 'consent' ? (
-        <VoiceConsentDialog projectId={projectId} personaId={personaId} name={name} onCancel={idle}
-          onStarted={(voice) => setStep({ kind: 'session', voice })} />
-      ) : null}
-      {step.kind === 'session' ? (
-        <VoiceSessionModal target={{ projectId, personaId, ...step.voice }} name={name} onClose={idle} />
-      ) : null}
+      {open ? <VoiceSessionFlow projectId={projectId} subject={subject} name={name} onClose={() => setOpen(false)} /> : null}
     </>
   )
 }

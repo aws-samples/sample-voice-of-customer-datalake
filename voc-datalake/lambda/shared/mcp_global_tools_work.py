@@ -166,23 +166,22 @@ def _adoption(args: Mapping[str, Any], _project: str | None) -> RouteRequest:
 WORK_TOOLS: Final[tuple[GlobalTool, ...]] = (
     GlobalTool(
         'feedback_get_catalogue', 'Get the feedback data catalogue',
-        'Describe every stored field of a feedback item (data dictionary, schema): its type, meaning, the '
-        'processing step that sets it, its personal-data (PII) class, what a redact / summary_only source policy '
-        'does to it, and its allowed values. Read it before filtering on or quoting an unfamiliar field. '
-        '`sources: true` answers the data sources\' status instead: each source\'s schedule (enabled or not) and '
-        'circuit breaker.',
+        "A feedback item's data dictionary: each stored field's type, meaning, the step that sets it, PII class, "
+        'what a redact / summary_only source policy does to it, allowed values. Read it before filtering on or '
+        "quoting an unfamiliar field. `sources: true`: each data source's schedule (enabled or not) and circuit "
+        'breaker.',
         schema({'sources': BOOL_SCHEMA}), _catalogue, stripped),
     GlobalTool(
         'prioritization_get', 'Get prioritization',
-        'Read the Prioritization board (roadmap ranking): its rows (a project and its documents), your own '
-        'scores, the team\'s aggregate scores and the scoring `axes` (their ids are the keys of '
-        'prioritization_score). A `project_id` (or a project-pinned token) keeps only that project\'s rows.',
+        'Read the Prioritization board (roadmap ranking): rows (a project and its documents), your own scores, the '
+        "team's aggregate, the scoring `axes` (the keys of prioritization_score). A `project_id` (or a pinned "
+        "token) keeps only that project's rows.",
         schema({'project_id': PROJECT_ID_SCHEMA}), _prioritization, _project_rows, project_scoped=True),
     GlobalTool(
         'prioritization_score', 'Score a prioritization row',
-        'Vote: set your own scores on one Prioritization row (write token; not for a project-pinned token): '
-        '`row_id` and `scores` = {axis id: 1-5} from prioritization_get. Replaces only the axes given, on your '
-        'own ballot (never a second vote). Confirm with the user first.',
+        'Vote: set your own scores on one Prioritization row: `row_id`, `scores` = {axis id: 1-5} from '
+        'prioritization_get. Replaces only the axes given, on your one ballot (never a second vote). Confirm with '
+        'the user first.',
         schema({'row_id': ID_SCHEMA,
                 'scores': {'type': 'object',
                            'additionalProperties': {'type': 'integer', 'minimum': MIN_SCORE, 'maximum': MAX_SCORE}}},
@@ -190,10 +189,10 @@ WORK_TOOLS: Final[tuple[GlobalTool, ...]] = (
         _score, stripped, write=True, workspace_wide=True),
     GlobalTool(
         'feature_requests_write', 'Post or support a feature request',
-        'Post a new feature request (idea) on a feedback board you can see, or +1 (upvote, support) an existing '
-        'one by `request_id` (write token). A new one takes `title`, `description`, `board` (id or slug; omitted '
-        '= the default board) and `fields` (the board\'s own fields); a +1 takes only `fields`. Recorded as you; '
-        'a paused or archived board refuses it. Confirm with the user first.',
+        'Post a feature request (idea) on a feedback board you can see, or +1 (upvote, support) one by '
+        '`request_id`. New: `title`, `description`, `board` (id or slug; default board if omitted), `fields` (the '
+        "board's own); a +1: only `fields`. Recorded as you; a paused or archived board refuses it. Confirm with "
+        'the user first.',
         schema({'board': {'type': 'string', 'maxLength': MAX_BOARD_REF_CHARS},
                 'title': {'type': 'string', 'maxLength': MAX_REQUEST_TITLE_CHARS},
                 'description': {'type': 'string', 'maxLength': MAX_REQUEST_DESCRIPTION_CHARS},
@@ -202,8 +201,7 @@ WORK_TOOLS: Final[tuple[GlobalTool, ...]] = (
         _feature_request, stripped, write=True, board_route=True),
     GlobalTool(
         'insights_get_adoption', 'Get the leadership view',
-        'Method use by month, counts only (admin token); time saved is an ESTIMATE: quote its assumptions. '
-        '`from`/`to` YYYY-MM.',
+        'Method use by month, counts only; time saved is an ESTIMATE: quote its assumptions. `from`/`to` YYYY-MM.',
         schema({'from': {'type': 'string'}, 'to': {'type': 'string'}}),
         _adoption, stripped, admin_only=True),
 )

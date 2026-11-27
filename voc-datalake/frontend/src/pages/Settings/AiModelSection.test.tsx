@@ -169,6 +169,22 @@ describe('AiModelSection', () => {
     expect(new Set(SURFACE_LABELS.map(automaticOptionOf))).toStrictEqual(new Set(['Automatic — Claude Sonnet 4.6']))
   })
 
+  it('keeps the product extract on its own default under a pin (7.104.00)', async () => {
+    // shared/model_config.py: neither the global pick nor the deployment's default replaces the product extract's
+    // default, and the API says so (`own_default`); the other surfaces still run the pin.
+    mockGetModelSettings.mockResolvedValue({
+      ...modelSettingsFixture,
+      model_id: SONNET46,
+      deployment_default: HAIKU45,
+      surfaces: [...modelSettingsFixture.surfaces, { key: 'product_extract', default_id: SONNET55, selected: null, own_default: true }],
+    })
+    renderAdminSection()
+
+    await screen.findByLabelText('Product description extract')
+    expect(automaticOptionOf('Product description extract')).toBe('Automatic — Claude Sonnet 5.5')
+    expect(automaticOptionOf('Document Generation')).toBe('Automatic — Claude Sonnet 4.6')
+  })
+
   it('puts the global pick above the deployment default', async () => {
     mockGetModelSettings.mockResolvedValue({ ...modelSettingsFixture, model_id: OPUS5, deployment_default: SONNET46 })
     renderAdminSection()

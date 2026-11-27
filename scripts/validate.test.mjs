@@ -224,7 +224,8 @@ describe('validate.sh pool (VOC_VALIDATE_JOBS: every step its own job)', () => {
   });
 
   it('keeps the lanes\' orders: the vite build, the synth, the detector tests; the CDK suite after the build', () => {
-    const { status, lines, events } = poolRun([], { jobs: '64', record: true });
+    // Its own log root, as the other pool tests: the order would otherwise follow this machine's real runs' timings.
+    const { status, lines, events } = poolRun([], { jobs: '64', record: true, env: { VALIDATE_LOG_ROOT: join(logRoot, 'orders') } });
     assert.equal(status, 0, lines.join('\n'));
     assert.ok(at(events, 'e', 'vite build: frontend') < at(events, 's', SYNTH));
     assert.ok(at(events, 'e', SYNTH) < at(events, 's', 'audit: detector tests'));

@@ -126,7 +126,7 @@ class TestSurfaceDefaults:
 
     def test_picker_lists_the_surfaces_in_order_the_web_search_one_last(self):
         assert PICKER_SURFACES == (
-            'chat', 'documents', 'prototype', 'enrichment', 'utility',
+            'chat', 'documents', 'product_extract', 'prototype', 'enrichment', 'utility',
             'memory', 'agent_orchestrator', 'agent_worker', 'agent_reviewer', 'agent_persona',
             'web_reviews_search',
         )

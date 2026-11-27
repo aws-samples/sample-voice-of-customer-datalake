@@ -46,6 +46,8 @@
     "personaReviewHint": "Bis zu 6 Personas dieses Projekts lesen diese Version und hinterlassen Kommentare mit Zitaten aus dem Text. Sie ändern das Dokument nie. Kostet einen Modellaufruf pro Persona.",
     "personaReviewDone_one": "{{count, number}} Kommentar abgelegt ({{personas, number}} Personas gefragt)",
     "personaReviewDone_other": "{{count, number}} Kommentare abgelegt ({{personas, number}} Personas gefragt)",
+    "personaReviewDoneCompany_one": "{{count, number}} Kommentar von Unternehmens-Personas abgelegt ({{personas, number}} gefragt: dieses Projekt hat keine eigenen)",
+    "personaReviewDoneCompany_other": "{{count, number}} Kommentare von Unternehmens-Personas abgelegt ({{personas, number}} gefragt: dieses Projekt hat keine eigenen)",
     "personaReviewFailed": "Die Prüfung durch die Personas ist fehlgeschlagen. Bitte versuchen Sie es erneut."
   },
   "reviewShare": {

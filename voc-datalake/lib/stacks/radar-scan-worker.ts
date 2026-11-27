@@ -127,7 +127,7 @@ export function createRadarScanWorker(scope: Construct, id: string, props: Radar
 
   const fn = new lambda.Function(worker, 'RadarScan', {
     functionName,
-    runtime: lambda.Runtime.PYTHON_3_14,
+    runtime: lambda.Runtime.PYTHON_3_15,
     architecture: lambda.Architecture.ARM_64,
     handler: 'jobs/radar_scan/handler.lambda_handler',
     code: radarScanCode(),

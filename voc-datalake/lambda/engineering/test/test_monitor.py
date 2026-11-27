@@ -254,16 +254,35 @@ def test_a_signal_for_an_attempt_that_moved_on_is_refused_before_anything_is_don
     assert (signaller.calls, publisher.sent) == ([], [])
 
 
-@pytest.mark.parametrize('body', [{'signal': 'restart', 'from': 'fresh'}, {'signal': 'resume'}])
-def test_a_task_that_ended_at_a_person_says_to_resume_the_run(run, body: dict[str, Any]) -> None:
-    # (7.71.04) The live Bug fixer run's restart (fresh) and resume of its committer's task, at a person, answered
-    # "moved on": they say what to do instead, the run's own Resume, which tries the step again.
+def _ended_at_a_person(run: tuple[Any, RunMonitor, Signaller, Publisher, str]) -> tuple[RunMonitor, Signaller, str]:
+    """The fixture's task, taken by fixer-1 and ended needing a person: its monitor, signaller and task id."""
     client, monitor, signaller, _, task_id = run
     tasks = board(client)
     tasks.move('default', RUN, task_id, agent='fixer-1', epoch=1, to_state='in_progress', result_keys=[])
     tasks.move('default', RUN, task_id, agent='fixer-1', epoch=1, to_state='needs_human', result_keys=[])
+    return monitor, signaller, task_id
+
+
+@pytest.mark.parametrize('body', [{'signal': 'restart', 'from': 'fresh'}, {'signal': 'resume'}])
+def test_a_task_that_ended_at_a_person_says_to_resume_the_run(run, body: dict[str, Any]) -> None:
+    # (7.71.04) The live Bug fixer run's restart (fresh) and resume of its committer's task, at a person, answered
+    # "moved on": they say what to do instead, the run's own Resume, which tries the step again.
+    monitor, signaller, task_id = _ended_at_a_person(run)
     with pytest.raises(MonitorError, match=r'ended needing a person.*Resume the run instead') as refused:
         monitor.signal(RUN, parse_signal({**body, 'task_id': task_id, 'attempt': 1, 'confirm': True}), ADMIN)
+    assert (refused.value.kind, signaller.calls) == ('conflict', [])
+    # (Q5, 7.104.00) Worded as what a Resume does where it does it: at the task's step, not wherever the run waits.
+    assert 'While the run waits at this task\'s step, its Resume posts the task again' in str(refused.value)
+
+
+@pytest.mark.parametrize('body', [{'signal': 'save'}, {'signal': 'pause'}, {'signal': 'shutdown'},
+                                  {'signal': 'stop_now', 'confirm': True}])
+def test_a_task_that_ended_at_a_person_tells_any_other_signal_it_moved_on(run, body: dict[str, Any]) -> None:
+    # (Q5, 7.104.00) Only a Restart or a Resume is told to Resume the run (what the run's Resume stands in for); a
+    # Save, a Pause or a stop of an agent whose task ended at a person has moved on, as for any ended task.
+    monitor, signaller, task_id = _ended_at_a_person(run)
+    with pytest.raises(MonitorError, match='This task has moved on since you looked') as refused:
+        monitor.signal(RUN, parse_signal({**body, 'task_id': task_id, 'attempt': 1}), ADMIN)
     assert (refused.value.kind, signaller.calls) == ('conflict', [])
 
 

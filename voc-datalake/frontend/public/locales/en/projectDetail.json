@@ -308,7 +308,8 @@
       "importPersona": "Persona Import",
       "mergeDocuments": "Document Merge",
       "research": "Research",
-      "draftPrototype": "Prototype Draft"
+      "draftPrototype": "Prototype Draft",
+      "extractProductDescription": "Product Description Extract"
     }
   },
   "notFound": {
@@ -532,6 +533,7 @@
       "oneLiner": "One-liner",
       "problemSolved": "Problem solved",
       "productName": "Product name",
+      "productSummary": "What the product does",
       "successMetrics": "Success metrics",
       "targetUsers": "Target users"
     },
@@ -557,27 +559,6 @@
     },
     "subtitle": "The information here is automatically injected into PRD & PR/FAQ generation as the current product context.",
     "title": "Product / Service Description",
-    "upload": {
-      "accepted": "PNG, JPEG, GIF, WebP up to 3.5 MB · MD, TXT up to 10 MB",
-      "delete": "Delete document",
-      "dropZone": "Drop files here, paste a screenshot, or click to upload",
-      "empty": "No documents yet.",
-      "errors": {
-        "tooLarge": "Too large (>10 MB): {{name}}",
-        "unsupportedType": "Unsupported type: {{name}} ({{type}}). Accepted: {{accepted}}",
-        "uploadFailed": "{{name}}: {{message}}"
-      },
-      "extractedChars_one": "{{count, number}} char extracted",
-      "extractedChars_other": "{{count, number}} chars extracted",
-      "heading": "Internal documents",
-      "hint": "Images and text — 20 max",
-      "loading": "Loading…",
-      "notYet": "PDF and Word (.docx) are not read here yet: add them to the Library and mention them in the assistant with #.",
-      "statusExtracting": "Extracting…",
-      "statusFailed": "Failed",
-      "statusReady": "Ready",
-      "statusUploading": "Uploading…"
-    },
     "assistant": {
       "button": "Fill with AI assistant",
       "hint": "The assistant asks about each empty field, one question at a time, then shows all your answers on one card for you to approve.",
@@ -607,6 +588,178 @@
         "title": "Notes",
         "description": "Anything else the PRD and PR/FAQ writers should know."
       }
+    },
+    "sources": {
+      "title": "Sources",
+      "description": "Files, links and answers the extract reads to describe the product.",
+      "hint": "20 at most",
+      "empty": "Add documents, images or links, or answer a few questions.",
+      "emptyViewer": "No sources yet.",
+      "answerQuestions": "Answer questions",
+      "dropZone": "Drop files here, paste a screenshot, or click to upload",
+      "accepted": "PDF, Word (.docx), PowerPoint (.pptx) up to 25 MB · MD, TXT up to 10 MB · PNG, JPEG, GIF, WebP up to 3.5 MB",
+      "loading": "Loading…",
+      "loadFailed": "The sources could not be loaded. Check your connection and try again.",
+      "typedAnswers": "Typed answers",
+      "voiceInterview": "Voice interview",
+      "status": {
+        "uploading": "Uploading…",
+        "pending": "Waiting to be read",
+        "extracting": "Reading…",
+        "fetching": "Fetching…",
+        "ready": "Ready",
+        "failed": "Failed"
+      },
+      "chars_one": "{{count, number}} character read",
+      "chars_other": "{{count, number}} characters read",
+      "pages_one": "{{count, number}} page",
+      "pages_other": "{{count, number}} pages",
+      "cut": "cut at the reading limit",
+      "readByModel": "read by AI",
+      "injection": "Parts of this text read like instructions to an AI model. It is read as data only, never followed.",
+      "retry": "Retry",
+      "refetch": "Fetch again",
+      "delete": "Delete source",
+      "link": {
+        "label": "Add a link",
+        "placeholder": "https://example.com/product",
+        "add": "Add link",
+        "adding": "Adding…",
+        "invalid": "Enter a public page's address that starts with https://.",
+        "tooLong": "The link is longer than 2,048 characters."
+      },
+      "errors": {
+        "unsupportedType": "Unsupported type: {{name}} ({{type}}). Accepted: {{accepted}}",
+        "tooLarge": "Too large (over {{mb}} MB): {{name}}",
+        "uploadFailed": "{{name}}: {{message}}",
+        "linkFailed": "The link was not added: {{message}}",
+        "refreshFailed": "The source was not read again: {{message}}",
+        "deleteFailed": "The source was not deleted: {{message}}",
+        "tryAgain": "Try again."
+      }
+    },
+    "extract": {
+      "button": "Extract product description",
+      "running": "Extracting…",
+      "hint": "Reads every ready source and proposes a value for each field, with its sources. Nothing changes until you accept it.",
+      "noReady": "Add a source and wait until it is ready.",
+      "confirmTitle": "Extract now?",
+      "confirmLeftOut_one": "{{count, number}} source is still being read and will be left out. Extract now?",
+      "confirmLeftOut_other": "{{count, number}} sources are still being read and will be left out. Extract now?",
+      "confirm": "Extract now",
+      "steps": {
+        "queued": "Waiting to start…",
+        "starting": "Starting…",
+        "readingSources": "Reading the sources…",
+        "thinking": "Thinking ({{elapsed}})…",
+        "checkingCitations": "Checking the citations…",
+        "saved": "Proposal saved, finishing…"
+      },
+      "failed": {
+        "refused": "The model declined to read these sources. Remove the source that may have caused it and try again.",
+        "timedOut": "The extract took more than 12 minutes and was stopped. Try again with fewer or shorter sources, or retry at xhigh.",
+        "cut": "The answer ran out of room. Try again with fewer or shorter sources.",
+        "unreadable": "The answer could not be read. Try again.",
+        "stale": "This extract stopped reporting progress. Try again.",
+        "generic": "The extract failed. Try again."
+      },
+      "tryAgain": "Try again",
+      "retryXhigh": "Retry at xhigh",
+      "retryXhighHint": "A lower reasoning effort: the model thinks for less long, so it finishes sooner.",
+      "errors": {
+        "noReadySources": "No source is ready yet: add one, or wait until it is read.",
+        "busy": "An extract is already running for this project. Follow it in Background Jobs.",
+        "busyStale": "The stopped extract still holds this project until about 16 minutes after it started. Try again then.",
+        "rateLimited": "Too many extracts: at most 1 a minute and 10 a day per project, and 20 a day per person. Try again later.",
+        "generic": "The extract could not start. Try again."
+      }
+    },
+    "review": {
+      "title": "Proposed product description",
+      "loadFailed": "The extract's proposal could not be loaded. Check your connection and try again.",
+      "subtitle_one": "From {{count, number}} source, {{at}}. Nothing is written until you accept it.",
+      "subtitle_other": "From {{count, number}} sources, {{at}}. Nothing is written until you accept it.",
+      "skipped_one": "{{count, number}} source was left out, over the extract's reading limit: {{names}}",
+      "skipped_other": "{{count, number}} sources were left out, over the extract's reading limit: {{names}}",
+      "partlyApplied": "Partly applied",
+      "groups": {
+        "proposed": "Proposed",
+        "conflict": "Conflicts",
+        "gap": "Gaps",
+        "unchanged": "Unchanged"
+      },
+      "current": "Current",
+      "proposed": "Proposed",
+      "empty": "(empty)",
+      "by": {
+        "you": "typed by you",
+        "teammate": "typed by a teammate",
+        "extract": "from an extract",
+        "assistant": "from the AI assistant"
+      },
+      "confidence": {
+        "high": "High confidence",
+        "medium": "Medium confidence",
+        "low": "Low confidence"
+      },
+      "noVerified": "No verified source",
+      "accepted": "Accepted",
+      "changed": "Changed since the extract: Accept all proposed leaves it out, and accepting it on its own replaces the new value.",
+      "citations": "Citations",
+      "page": "p. {{page}}",
+      "sourceDeleted": "source deleted",
+      "unverified": "This quote was not found in the source.",
+      "editLabel": "Proposed value for {{field}}",
+      "select": "Accept {{field}}",
+      "gapNote": "No source answered these fields: see the questions beside the form.",
+      "acceptSelected": "Accept selected",
+      "acceptAll": "Accept all proposed",
+      "dismiss": "Dismiss",
+      "readOnly": "Only an editor of this project can accept or dismiss the proposal.",
+      "result": {
+        "applied_one": "{{count, number}} field applied.",
+        "applied_other": "{{count, number}} fields applied.",
+        "changed": "{{field}} changed since the extract and was not applied.",
+        "personValue": "{{field}} holds a value a person typed and was not replaced.",
+        "allChanged": "Every selected field changed since the extract, so nothing was applied. The rows show the new values.",
+        "closed": "This proposal was replaced by a newer extract or dismissed. Extract again for a new one.",
+        "failed": "The proposal could not be accepted. Try again.",
+        "dismissFailed": "The proposal could not be dismissed. Try again."
+      },
+      "proposedBadge": "Proposed",
+      "proposedBadgeLabel": "Proposed: review the proposed value of {{field}}",
+      "newSources_one": "{{count, number}} ready source was not read by this extract: extract again to use it.",
+      "newSources_other": "{{count, number}} ready sources were not read by this extract: extract again to use them."
+    },
+    "gaps": {
+      "title": "Questions",
+      "description": "The sources did not answer these. Your answers become one more source; then extract again.",
+      "defaultDescription": "Answer a few questions about the product. Your answers become a source the extract reads.",
+      "type": "Type answers",
+      "talk": "Talk it through",
+      "chat": "Answer in the AI chat",
+      "save": "Save answers",
+      "saving": "Saving…",
+      "cancel": "Cancel",
+      "saved": "Your answers are saved as a source.",
+      "extractAgain": "Extract again",
+      "errors": {
+        "save": "The answers were not saved: {{message}}"
+      }
+    },
+    "questions": {
+      "productName": "What is the product or service called?",
+      "oneLiner": "In one sentence, what does it do and for whom?",
+      "productSummary": "In a short paragraph, what does the product do, and how do people use it?",
+      "targetUsers": "Who are its target customers or users?",
+      "problemSolved": "What problem does it solve for them?",
+      "currentState": "Where is it in its lifecycle: an idea, an MVP, in beta, generally available or mature?",
+      "keyFeatures": "What are its key features?",
+      "differentiators": "Which competitors or alternatives do customers compare it with, and how is it different?",
+      "successMetrics": "What are its goals, and which metrics show success?",
+      "knownLimitations": "Which constraints or known limitations does it have?",
+      "nonGoals": "What is deliberately out of scope (non-goals)?",
+      "freeFormNotes": "Anything else the PRD and PR/FAQ writers should know?"
     }
   },
   "tabs": {
@@ -1010,6 +1163,27 @@
       "savingToLibrary": "Saving to the Library…",
       "savedToLibrary": "Saved to the Library.",
       "libraryFailed": "It could not be saved to the Library."
+    },
+    "product": {
+      "consent": {
+        "title": "Talk it through",
+        "transcript": "The conversation's transcript is saved as a source of this project, with personal data in your answers redacted. The audio is never stored.",
+        "interviewer": "An AI interviewer asks the questions out loud, and you answer for your product. It is an AI, not a person.",
+        "language": "Voice does not speak your interface language yet. Speak {{supported}} and the interviewer follows you.",
+        "headphones": "Use headphones so the interviewer does not hear itself.",
+        "sourcesFull": "This project already holds 20 sources, the most it can, so the interview could not be saved as one. Delete a source first, then talk it through."
+      },
+      "session": {
+        "title": "Product interview",
+        "badge": "AI interviewer",
+        "note": "An AI asks the questions. Your answers become a source of this project; the audio is never stored.",
+        "interviewer": "Interviewer",
+        "saving": "Saving your answers as a source…",
+        "saved": "Your answers are saved as a source of this project. Extract again to use them.",
+        "savedOverCap": "Your answers are saved as a source of this project. Sources were added during the interview, so the project now holds more than 20: delete one before you add another.",
+        "nothingSaved": "Nothing was said, so nothing was saved.",
+        "savedFailed": "Your answers could not be saved."
+      }
     }
   }
 }

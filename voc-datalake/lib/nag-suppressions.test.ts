@@ -49,7 +49,7 @@ const recorder = vi.hoisted(() => ({ findings: new Array<Finding>(), roots: new 
 
 vi.mock('cdk-nag', async (importOriginal) => {
   const original = await importOriginal<typeof import('cdk-nag')>();
-  /** The ids cdk-nag 3.0.2 derives from a rule result (`NagPack.applyRule`). */
+  /** The ids cdk-nag 3.1.0 derives from a rule result (`NagPack.applyRule`), acknowledged or not. */
   const idsOf = (ruleId: string, params: IApplyRule): string[] => {
     try {
       const result = params.rule(params.node);
@@ -196,8 +196,25 @@ describe('cdk-nag acknowledgements', () => {
     expect(judged().unacknowledged).toStrictEqual(['Fx/Queue/Resource AwsSolutions-SQS3']);
   });
 
+  it('refuses a bare rule id as the acknowledgement of the findings cdk-nag 3.1.0 lets it cover', async () => {
+    const { app, stack } = await queueFixture();
+    const iam = await import('aws-cdk-lib/aws-iam');
+    const { acknowledgeNag } = await import('./utils/nag-ack');
+    const role = new iam.Role(stack, 'Role', { assumedBy: new iam.ServicePrincipal('lambda.amazonaws.com') });
+    role.addToPolicy(new iam.PolicyStatement({ actions: ['s3:GetObject'], resources: ['*'] }));
+    acknowledgeNag(stack, [
+      { id: 'AwsSolutions-SQS3', reason: 'A planted queue with no DLQ, on purpose' },
+      { id: 'AwsSolutions-IAM5', reason: 'A planted blanket acknowledgement of every IAM5 finding' },
+    ]);
+    // cdk-nag 3.1.0 takes the bare id for every IAM5 finding, so the synth passes; the gate's judging does not.
+    expect(() => app.synth()).not.toThrow();
+    const result = judged();
+    expect(result.unacknowledged).toStrictEqual(['Fx/Role/DefaultPolicy/Resource AwsSolutions-IAM5[Resource::*]']);
+    expect(unusedOf(result)).toStrictEqual(['AwsSolutions-IAM5 :: A planted blanket acknowledgement of every IAM5 finding']);
+  });
+
   it('records exactly the ids cdk-nag itself reports (bare rule and per-finding ids)', async () => {
-    // The recorder derives ids the way cdk-nag 3.0.2's applyRule does. If a release derives them differently,
+    // The recorder derives ids the way cdk-nag 3.1.0's applyRule does. If a release derives them differently,
     // a stale acknowledgement could look used; this pins the recorder to cdk-nag's own violation report.
     const { stack } = await queueFixture();
     const iam = await import('aws-cdk-lib/aws-iam');
@@ -329,7 +346,13 @@ describe('cdk-nag acknowledgements', () => {
       // upload aborts under the S3 import bucket's `ws/{one id}/*` (the `importObjects` grant), acknowledged on its role.
       // 7.93.00 (3g-d2) adds none: the review registries marker seed's log group is named `/aws/lambda/<function>`,
       // inside the logs API's existing pattern, so no new log-group wildcard is granted.
-      expect({ declared: declared.size, used: used.size }).toStrictEqual({ declared: 151, used: 151 });
+      // 151 -> 150 (7.104.00): the document generator reads its project's whole `projects/*/product_docs/*` (the
+      // product extract sends an uploaded image itself), a finding of the raw prefixes' existing acknowledgement; its
+      // own `…/product_docs/extracted/*` one, which nothing else in VocApiStack used, is gone.
+      // 150 -> 152 (7.104.00, review round 1, S6): the generator's read narrowed to `…/product_docs/extracted/*` and
+      // `…/product_docs/raw/*` (one statement, GetObject only, never `source/`), each a finding of the raw prefixes'
+      // acknowledgement.
+      expect({ declared: declared.size, used: used.size }).toStrictEqual({ declared: 152, used: 152 });
       expect(unusedOf({ declared, used })).toStrictEqual([]);
     });
   });
