@@ -11,6 +11,7 @@
 //   GET  /platform/workspaces                    → {workspaces: [{id, name, slug, status, created_at, trial}], next_cursor}
 //   POST /platform/workspaces                    {name, slug, trial?} → 201 {workspace: {id, name, slug, role: 'admin', trial}}
 //   POST /platform/workspaces/{ws}/trial/extend|convert   (mock-trials.js)
+//   GET  /platform/costs                         (mock-costs.js, 7.83.00)
 //   (the server's answers also carry `secret_status`, always 'ready' since decision 19, which the app does not read)
 // The workspace routes answer 400 without X-Workspace-Id and one 404 for any workspace the caller cannot enter
 // (never "exists"); the writes refuse as workspace_members.py does (403 for a non-admin, 409 for the last admin, a
@@ -32,6 +33,7 @@
 // (e2e/tests/cross-workspace.spec.ts).
 // Wired into mock-server.js by handleDomainModules; the dev-only /__mock/workspaces route is not an app route.
 
+import { handleCostRoutes } from './mock-costs.js';
 import { handleTrialRoutes, newTrial, switchTrial, trialSummary, trialView } from './mock-trials.js';
 
 const CONTROL_ROUTE = '/__mock/workspaces';
@@ -337,6 +339,9 @@ export function handleWorkspaceRoutes(req, res, url, send, shared) {
   if (handleMembers(req, res, url, send, shared) || handlePlatform(req, res, url, send, shared)) return true;
   if (handleTrialRoutes(req, res, url, send, shared, {
     workspaces: () => state.workspaces, isPlatformAdmin: () => isPlatformAdmin(shared), sub: shared.mockCaller.sub,
+  })) return true;
+  if (handleCostRoutes(req, res, url, send, shared, {
+    workspaces: () => [...state.workspaces].sort(byName), isPlatformAdmin: () => isPlatformAdmin(shared),
   })) return true;
   if (url.pathname === '/me/workspaces/current' && req.method === 'PUT') {
     renameWorkspace(req, res, send, shared);

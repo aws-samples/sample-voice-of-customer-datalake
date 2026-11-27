@@ -96,6 +96,7 @@ describe("7.54.00's addresses (bookmarks, in-app and backend links) lead to thei
   it.each([
     ['/admin/platform', '/admin/workspaces/all'],
     ['/admin/platform/deployment-brand', '/admin/workspaces/deployment-brand'],
+    ['/admin/platform/costs', '/admin/workspaces/costs'],
     ['/admin/access/workspaces', '/admin/workspaces/all'],
     ['/admin/data-sources/github_issues', '/admin/sources/plugins/github_issues'],
   ])('%s → %s for a platform admin', (entry, expected) => {

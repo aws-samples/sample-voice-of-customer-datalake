@@ -127,6 +127,22 @@ describe('mock workspaces', () => {
       assert.deepEqual(await call('POST', '/platform/workspaces', { name: 'Again', slug: 'acme-field' }), [409, { success: false, error: 'That slug is taken: choose another' }])
     })
 
+    it("answers the cost page (mock-costs.js): each workspace by name, the deployment's rows on the first page only, the range checked", async () => {
+      const range = 'from=2026-10-01&to=2026-10-31'
+      const [status, body] = await call('GET', `/platform/costs?${range}`)
+      assert.equal(status, 200)
+      assert.deepEqual([body.estimate, body.label, body.from, body.to, body.next_cursor],
+        [true, 'Estimate from list prices, not a bill', '2026-10-01', '2026-10-31', null])
+      assert.deepEqual(body.workspaces.map(({ slug, total }) => [slug, total.complete]), [['acme', true], ['juniper', false]])
+      assert.deepEqual(body.workspaces[1].total.unpriced_models, ['model-beta'])
+      assert.ok(body.workspaces.every(({ days }) => days.every(({ date }) => date >= '2026-10-01' && date <= '2026-10-31')))
+      assert.ok('deleted_workspaces' in body.deployment && 'total' in body.unattributed)
+      const [, later] = await call('GET', `/platform/costs?${range}&limit=1&cursor=1`)
+      assert.deepEqual([later.workspaces.map(({ slug }) => slug), 'deployment' in later], [['juniper'], false])
+      assert.equal((await call('GET', '/platform/costs?from=2026-01-01&to=2026-10-31'))[0], 400)
+      assert.equal((await call('GET', '/platform/costs?from=2026-10-01&to=2099-01-01'))[0], 400)
+    })
+
     it('lists every plugin the deployment offers as not enabled, to any member; 400 without the header', async () => {
       const { juniper } = await mine()
       const [status, body] = await inWorkspace(juniper.id, 'GET', PLUGINS)

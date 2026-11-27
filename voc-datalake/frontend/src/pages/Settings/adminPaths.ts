@@ -110,7 +110,7 @@ const LEGACY: Readonly<Record<string, (second: string | undefined, hash: string 
     : requested('access', 'boards', second ?? null)),
   brand: (second, hash) => requested('general', null, null, second === 'theme' ? 'theme' : hash),
   privacy: (second, hash) => requested('access', 'policies', null, second === 'erasure' ? 'erasure' : hash),
-  platform: (second) => requested('workspaces', second === 'deployment-brand' ? 'deployment-brand' : 'all'),
+  platform: (second) => requested('workspaces', second === 'deployment-brand' || second === 'costs' ? second : 'all'),
   version: () => requested('system', 'version'),
   // (7.50.00's deployment Data sources tab, for platform admins)
   'data-sources': (second) => requested('sources', 'plugins', second ?? null),

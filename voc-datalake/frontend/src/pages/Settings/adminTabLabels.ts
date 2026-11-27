@@ -5,7 +5,7 @@
  * @module pages/Settings/adminTabLabels
  */
 import {
-  Bot, Building2, Cpu, FileWarning, FolderCog, Info, KeyRound, Layers, Lightbulb, Mail, Palette, Plug, Radar, Server,
+  Bot, Building2, CircleDollarSign, Cpu, FileWarning, FolderCog, Info, KeyRound, Layers, Lightbulb, Mail, Palette, Plug, Radar, Server,
   ShieldCheck, Tags, Users, UsersRound,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
@@ -20,7 +20,7 @@ export const SECTION_ICONS: Readonly<Record<AdminSectionId, LucideIcon>> = {
   plugins: Plug, integrations: KeyRound, inbox: Mail, radar: Radar,
   categories: Tags, dimensions: Layers,
   policies: ShieldCheck, users: Users, boards: Lightbulb,
-  settings: FolderCog, members: UsersRound, all: Building2, 'deployment-brand': Palette,
+  settings: FolderCog, members: UsersRound, all: Building2, costs: CircleDollarSign, 'deployment-brand': Palette,
   logs: FileWarning, version: Info,
 }
 
@@ -39,7 +39,7 @@ const SECTION_LABEL_KEYS: Readonly<Record<AdminSectionId, string>> = {
   categories: 'sections.categories', dimensions: 'sections.dimensions',
   policies: 'sections.policies', users: 'sections.users', boards: 'sections.boards',
   settings: 'sections.workspace', members: 'sections.members', all: 'sections.allWorkspaces',
-  'deployment-brand': 'sections.deploymentBrand',
+  costs: 'sections.costs', 'deployment-brand': 'sections.deploymentBrand',
   logs: 'sections.logs', version: 'sections.version',
 }
 

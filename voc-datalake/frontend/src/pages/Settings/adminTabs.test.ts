@@ -43,7 +43,7 @@ describe('the sections', () => {
   it("gives Workspaces this workspace's settings and members inside one, every workspace to a platform admin", () => {
     expect([visibleSections('workspaces', EVERYONE), visibleSections('workspaces', viewer({ inWorkspace: true })),
       visibleSections('workspaces', viewer({ isPlatformAdmin: true }))]).toStrictEqual([
-      ['settings', 'members', 'all', 'deployment-brand'], ['settings', 'members'], ['all', 'deployment-brand'],
+      ['settings', 'members', 'all', 'costs', 'deployment-brand'], ['settings', 'members'], ['all', 'costs', 'deployment-brand'],
     ])
   })
 

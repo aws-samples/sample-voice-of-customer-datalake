@@ -18,6 +18,7 @@ import VoiceUsageCard from './VoiceUsageCard'
 import VersionSection from './VersionSection'
 import BoardsSection from './boards/BoardsSection'
 import PlatformWorkspacesSection from './PlatformWorkspacesSection'
+import PlatformCostsSection from './PlatformCostsSection'
 import DeploymentBrandCard from './DeploymentBrandCard'
 import DataSourcesPage from './DataSourcesPage'
 import EmailInboxCard from './EmailInboxCard'
@@ -81,6 +82,7 @@ const SECTIONS: Readonly<Record<AdminSectionId, (props: SectionProps) => ReactNo
   members: () => <CurrentWorkspaceSection section="members" />,
   // The platform console: platform admins only, like its sections (adminTabs.ts).
   all: ({ apiEndpoint, viewer }) => (viewer.isPlatformAdmin && apiEndpoint ? <PlatformWorkspacesSection /> : null),
+  costs: ({ apiEndpoint, viewer }) => (viewer.isPlatformAdmin && apiEndpoint ? <PlatformCostsSection /> : null),
   'deployment-brand': ({ apiEndpoint, viewer }) => (viewer.isPlatformAdmin && apiEndpoint ? <DeploymentBrandCard /> : null),
   logs: ({ apiEndpoint }) => <LogsSection apiEndpoint={apiEndpoint} />,
   version: () => <VersionSection />,
