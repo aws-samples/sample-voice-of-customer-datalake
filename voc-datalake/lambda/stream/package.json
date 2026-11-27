@@ -12,13 +12,13 @@
     "test:coverage": "vitest --run --coverage"
   },
   "dependencies": {
-    "@ag-ui/core": "1.0.3",
-    "@aws-sdk/client-bedrock-runtime": "^3.1162.0",
-    "@aws-sdk/client-dynamodb": "^3.1162.0",
-    "@aws-sdk/client-lambda": "3.1162.0",
-    "@aws-sdk/client-secrets-manager": "^3.1162.0",
+    "@ag-ui/core": "1.0.5",
+    "@aws-sdk/client-bedrock-runtime": "^3.1173.0",
+    "@aws-sdk/client-dynamodb": "^3.1173.0",
+    "@aws-sdk/client-lambda": "3.1173.0",
+    "@aws-sdk/client-secrets-manager": "^3.1173.0",
     "@aws-sdk/credential-provider-node": "^3.972.93",
-    "@aws-sdk/lib-dynamodb": "^3.1162.0",
+    "@aws-sdk/lib-dynamodb": "^3.1173.0",
     "@smithy/protocol-http": "^5.6.2",
     "@smithy/signature-v4": "^5.7.5",
     "zod": "4.6.7"
@@ -29,9 +29,9 @@
     "@stryker-mutator/core": "10.1.1",
     "@stryker-mutator/vitest-runner": "10.1.1",
     "@types/node": "^24.19.2",
-    "@vitest/coverage-v8": "5.1.0",
+    "@vitest/coverage-v8": "5.1.1",
     "@vitest/eslint-plugin": "1.6.28",
-    "eslint": "^10.14.0",
+    "eslint": "^10.15.0",
     "eslint-plugin-import-x": "^4.18.1",
     "eslint-plugin-promise": "^7.3.0",
     "eslint-plugin-security": "^4.2.1",
@@ -39,10 +39,10 @@
     "eslint-plugin-unicorn": "^79.0.0",
     "eslint-plugin-unused-imports": "^4.4.1",
     "globals": "^17.14.0",
-    "knip": "6.44.1",
+    "knip": "6.46.1",
     "typescript": "6.0.3",
-    "typescript-eslint": "8.72.1",
-    "vitest": "5.1.0"
+    "typescript-eslint": "8.73.0",
+    "vitest": "5.1.1"
   },
   "overrides": {
     "typed-rest-client": {
