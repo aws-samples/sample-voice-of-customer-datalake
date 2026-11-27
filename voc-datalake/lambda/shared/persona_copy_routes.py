@@ -77,7 +77,7 @@ def _signed(personas: list[dict]) -> list[dict]:
     return company_personas_routes.ops().sign_avatars(personas)
 
 
-def _live_meta(project_id: str, *, workspace: WorkspaceScope | None = None) -> dict:
+def _live_meta(project_id: str, *, workspace: WorkspaceScope | None) -> dict:
     """The project's META (the workspace's project when given), or a 404 when it is missing or being deleted."""
     item = get_scoped_item(_table(), project_meta_key(project_id, workspace=workspace), workspace, ConsistentRead=True)
     if not item or is_project_tombstone(item):
@@ -91,7 +91,7 @@ def _is_owner_or_member(meta: dict, caller: Caller) -> bool:
 
 
 def _copy(*, source: str, scope: persona_copy.SourceScope, name: str, ids: list[str], target: str,
-          workspace: WorkspaceScope | None = None) -> list[dict]:
+          workspace: WorkspaceScope | None) -> list[dict]:
     """The copy within one scope: the source and the target both in ``workspace`` (the deployment's when None)."""
     return persona_copy.copy_personas(
         _table(), get_s3_client(), os.environ.get('RAW_DATA_BUCKET', ''),
@@ -101,7 +101,7 @@ def _copy(*, source: str, scope: persona_copy.SourceScope, name: str, ids: list[
     )
 
 
-def promote(project_id: str, persona_id: str, *, workspace: WorkspaceScope | None = None) -> list[dict]:
+def promote(project_id: str, persona_id: str, *, workspace: WorkspaceScope | None) -> list[dict]:
     """An admin's copy of one project persona into its own scope's company library (the workspace's when given: its
     rows and its avatar under ``ws/{ws}/``, docs/multi-workspace.md, the project plan, 3d); the new rows. 403 before
     anything is read unless the caller is an admin acting for themselves.
@@ -122,7 +122,7 @@ def promote(project_id: str, persona_id: str, *, workspace: WorkspaceScope | Non
 def promote_persona(project_id: str, persona_id: str):
     """An admin copies one project persona into the company library (notes stay behind; ``promote`` checks the
     admin)."""
-    copies = promote(project_id, persona_id)
+    copies = promote(project_id, persona_id, workspace=None)
     return _created_response({'success': True, 'persona': _signed(copies)[0]})
 
 
@@ -145,7 +145,7 @@ def _persona_count(item: dict) -> int:
     stored = item.get('persona_count')
     if isinstance(stored, (int, Decimal)) and not isinstance(stored, bool):
         return int(stored)
-    return count_personas(_table(), str(item['project_id']))
+    return count_personas(_table(), str(item['project_id']), workspace=None)
 
 
 def _source_projects(caller: Caller, exclude: str) -> list[dict]:
@@ -163,7 +163,7 @@ def _source_projects(caller: Caller, exclude: str) -> list[dict]:
 @app.get("/projects/<project_id>/personas/copy-sources")
 @tracer.capture_method
 def persona_copy_sources(project_id: str):
-    company = [persona_summary(p) for p in _signed(company_persona_items(_table()))]
+    company = [persona_summary(p) for p in _signed(company_persona_items(_table(), workspace=None))]
     return {'company': company, 'projects': _source_projects(_caller(), project_id)}
 
 
@@ -195,7 +195,7 @@ def _source_project_name(source_id: str) -> str:
     """The source project's name; 404 unless the caller owns it or is a member (no existence leak)."""
     if is_company_container(source_id):
         raise NotFoundError(PROJECT_NOT_FOUND)
-    meta = _live_meta(source_id)
+    meta = _live_meta(source_id, workspace=None)
     if not _is_owner_or_member(meta, _caller()):
         raise NotFoundError(PROJECT_NOT_FOUND)
     return str(meta.get('name') or '')
@@ -206,11 +206,12 @@ def _source_project_name(source_id: str) -> str:
 def copy_personas_in(project_id: str):
     """Copy personas into this project from the library or another project of the caller's."""
     body = json_object_body(app)
-    scope, source_id = _source_of(body.get('source'), project_id)
+    source_kind, source_id = _source_of(body.get('source'), project_id)
     ids = _persona_ids(body.get('persona_ids'))
-    if scope == 'company':
-        copies = _copy(source=COMPANY_PERSONAS_CONTAINER, scope='company', name='', ids=ids, target=project_id)
+    if source_kind == 'company':
+        copies = _copy(source=COMPANY_PERSONAS_CONTAINER, scope='company', name='', ids=ids, target=project_id,
+                       workspace=None)
     else:
         name = _source_project_name(source_id)
-        copies = _copy(source=source_id, scope='project', name=name, ids=ids, target=project_id)
+        copies = _copy(source=source_id, scope='project', name=name, ids=ids, target=project_id, workspace=None)
     return _created_response({'success': True, 'personas': _signed(copies)})

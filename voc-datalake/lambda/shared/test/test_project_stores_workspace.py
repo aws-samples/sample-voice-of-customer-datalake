@@ -217,7 +217,7 @@ def test_the_company_library_is_each_scopes_own(table):
     table.put_item(Item={'pk': project_pk(library, workspace=None), 'sk': 'PERSONA#persona_d',
                          'persona_id': 'persona_d'})
     assert [row['persona_id'] for row in company_personas.company_persona_items(table, workspace=A)] == ['persona_a']
-    assert [row['persona_id'] for row in company_personas.company_persona_items(table)] == ['persona_d']
+    assert [row['persona_id'] for row in company_personas.company_persona_items(table, workspace=None)] == ['persona_d']
     assert company_personas.company_persona_items(table, workspace=B) == []
     assert table.get_item(Key={'pk': project_pk(library, workspace=None), 'sk': 'META'}).get('Item') is None
 
@@ -319,5 +319,5 @@ def test_a_persona_save_into_a_deleted_workspace_project_is_refused(table):
     _meta(table, A, status='deleting')
     with pytest.raises(persona_save.ProjectNotWritableError, match='deleted'):
         persona_save.require_writable_project(table, PROJECT, workspace=A)
-    persona_save.require_writable_project(table, PROJECT)
+    persona_save.require_writable_project(table, PROJECT, workspace=None)
 

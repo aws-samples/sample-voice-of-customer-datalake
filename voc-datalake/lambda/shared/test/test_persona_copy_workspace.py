@@ -108,7 +108,7 @@ def test_the_promote_refuses_anyone_but_an_admin_acting_for_themselves_before_an
     with patch.object(persona_copy_routes, '_caller', return_value=caller), \
             patch.object(company_personas_routes, 'get_projects_table') as projects, \
             pytest.raises(AuthorizationError, match='Admin access required'):
-        persona_copy_routes.promote('p1', 'persona_src')
+        persona_copy_routes.promote('p1', 'persona_src', workspace=None)
     assert (projects.mock_calls, _snapshot(table, s3)) == ([], before)
 
 
@@ -131,7 +131,7 @@ def test_the_promote_copies_into_the_deployments_library(world):
             patch.object(persona_copy_routes, 'get_s3_client', return_value=s3), \
             patch.object(persona_copy_routes, '_caller', return_value=caller), \
             patch.dict(os.environ, {'RAW_DATA_BUCKET': BUCKET}):
-        [copy] = persona_copy_routes.promote('p1', 'persona_src')
+        [copy] = persona_copy_routes.promote('p1', 'persona_src', workspace=None)
     _assert_in_its_library(table, copy, None)
 
 

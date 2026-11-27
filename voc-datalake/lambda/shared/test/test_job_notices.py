@@ -55,19 +55,19 @@ class TestNotify:
 class TestNotifyProjectJob:
     def test_tells_the_rows_initiated_by(self, table, published):
         _job(table)
-        assert job_notices.notify_project_job('p1', 'job_1', 'completed') is True
+        assert job_notices.notify_project_job('p1', 'job_1', 'completed', workspace=None) is True
         published.assert_called_once_with('jobs', 'starter-sub', {
             'type': 'job', 'job_id': 'job_1', 'status': 'completed', 'job_type': 'generate_personas',
             'project_id': 'p1'})
 
     def test_no_starter_no_notice(self, table, published):
         _job(table, initiated_by=None)
-        assert job_notices.notify_project_job('p1', 'job_1', 'completed') is False
+        assert job_notices.notify_project_job('p1', 'job_1', 'completed', workspace=None) is False
         published.assert_not_called()
 
     @pytest.mark.usefixtures('table')
     def test_a_missing_row_sends_nothing(self, published):
-        assert job_notices.notify_project_job('p1', 'gone', 'failed') is False
+        assert job_notices.notify_project_job('p1', 'gone', 'failed', workspace=None) is False
         published.assert_not_called()
 
     def test_an_unreadable_row_never_raises(self, published):
@@ -75,13 +75,13 @@ class TestNotifyProjectJob:
             def get_item(self, **_kwargs):
                 raise ClientError({'Error': {'Code': 'AccessDenied', 'Message': 'no'}}, 'GetItem')
         with patch.object(job_notices, 'get_jobs_table', return_value=Broken()):
-            assert job_notices.notify_project_job('p1', 'job_1', 'failed') is False
+            assert job_notices.notify_project_job('p1', 'job_1', 'failed', workspace=None) is False
         published.assert_not_called()
 
     def test_unconfigured_reads_nothing(self):
         with patch.object(job_notices, 'get_jobs_table') as get_table, \
                 patch.object(job_notices.realtime, 'publish') as publish:
-            assert job_notices.notify_project_job('p1', 'job_1', 'completed') is False
+            assert job_notices.notify_project_job('p1', 'job_1', 'completed', workspace=None) is False
         get_table.assert_not_called()
         publish.assert_not_called()
 

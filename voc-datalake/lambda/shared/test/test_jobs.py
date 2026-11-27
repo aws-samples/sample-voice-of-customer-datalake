@@ -24,7 +24,7 @@ class TestCreateJob:
         mock_table = MagicMock()
         mock_get_jobs_table.return_value = mock_table
 
-        create_job('proj_123', 'research', 'research_config', {}, initiated_by='caller-sub')
+        create_job('proj_123', 'research', 'research_config', {}, initiated_by='caller-sub', workspace=None)
 
         assert mock_table.put_item.call_args[1]['Item']['initiated_by'] == 'caller-sub'
 
@@ -41,7 +41,7 @@ class TestCreateJob:
             job_type='research',
             config_key='research_config',
             config={'question': 'test'},
-            status='pending'
+            status='pending', workspace=None
         )
 
         item = mock_table.put_item.call_args[1]['Item']
@@ -59,7 +59,7 @@ class TestJobContext:
         """Should call update_job_status with correct parameters."""
         from shared.jobs import JobContext
 
-        ctx = JobContext('proj_123', 'job_abc')
+        ctx = JobContext('proj_123', 'job_abc', workspace=None)
         ctx.update_progress(50, 'processing')
 
         mock_update.assert_called_once_with('proj_123', 'job_abc', 'running', 50, 'processing', workspace=None)
@@ -153,7 +153,7 @@ class TestJobExecutionClaim:
         )
         mock_get_jobs_table.return_value = table
 
-        assert claim_job_execution('p1', 'j1', self._context()) is False
+        assert claim_job_execution('p1', 'j1', self._context(), workspace=None) is False
 
     @patch('shared.jobs.get_jobs_table')
     def test_nonconditional_claim_error_propagates(self, mock_get_jobs_table):
@@ -167,7 +167,7 @@ class TestJobExecutionClaim:
         mock_get_jobs_table.return_value = table
 
         with pytest.raises(ClientError):
-            claim_job_execution('p1', 'j1', self._context())
+            claim_job_execution('p1', 'j1', self._context(), workspace=None)
 
     @patch('shared.jobs.recover_job_execution_claim', return_value=False)
     @patch('shared.jobs.claim_job_execution', return_value=False)

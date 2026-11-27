@@ -177,7 +177,7 @@ class TestRemainingSecondsRoundsUpWholeSeconds:
 @pytest.mark.usefixtures('frozen_now')
 class TestClaimWritesTheExactLeaseRequest:
     def test_update_item_request_is_pinned(self, table):
-        assert claim_job_execution('p1', 'j1', _context(12_345)) is True
+        assert claim_job_execution('p1', 'j1', _context(12_345), workspace=None) is True
 
         table.update_item.assert_called_once_with(
             Key=KEY,
@@ -223,7 +223,7 @@ class TestClaimWritesTheExactLeaseRequest:
         assert ' '.join(tokens) == CLAIM_CONDITION_EXPRESSION
 
     def test_lease_is_remaining_seconds_plus_five(self, table):
-        claim_job_execution('p1', 'j1', _context(0))
+        claim_job_execution('p1', 'j1', _context(0), workspace=None)
 
         values = table.update_item.call_args.kwargs['ExpressionAttributeValues']
         assert values[':lease'] == NOW_EPOCH + 5
@@ -233,7 +233,7 @@ class TestClaimWritesTheExactLeaseRequest:
         SimpleNamespace(get_remaining_time_in_millis=lambda: 1000),
     ], ids=['empty-request-id', 'no-request-id-attribute'])
     def test_owner_without_request_id_is_unknown(self, table, context):
-        claim_job_execution('p1', 'j1', context)
+        claim_job_execution('p1', 'j1', context, workspace=None)
 
         values = table.update_item.call_args.kwargs['ExpressionAttributeValues']
         assert values[':owner'] == 'unknown'
@@ -241,7 +241,7 @@ class TestClaimWritesTheExactLeaseRequest:
     @pytest.mark.usefixtures('no_table')
     def test_missing_table_is_refused_by_name(self):
         with pytest.raises(ValueError, match=TABLE_MISSING) as exc:
-            claim_job_execution('p1', 'j1', _context(1000))
+            claim_job_execution('p1', 'j1', _context(1000), workspace=None)
         assert str(exc.value) == TABLE_MISSING
 
 
@@ -249,13 +249,13 @@ class TestRecoveryReadsAndRefusals:
     def test_reads_the_job_with_a_consistent_read(self, table):
         table.get_item.return_value = COMPLETED
 
-        assert recover_job_execution_claim(EVENT, _context(100_000)) is False
+        assert recover_job_execution_claim(EVENT, _context(100_000), workspace=None) is False
         table.get_item.assert_called_once_with(Key=KEY, ConsistentRead=True)
 
     @pytest.mark.usefixtures('no_table')
     def test_missing_table_is_refused_by_name(self):
         with pytest.raises(ValueError, match=TABLE_MISSING) as exc:
-            recover_job_execution_claim(EVENT, _context(100_000))
+            recover_job_execution_claim(EVENT, _context(100_000), workspace=None)
         assert str(exc.value) == TABLE_MISSING
 
     @pytest.mark.parametrize('response', [{}, {'Item': 'not-a-dict'}, None])
@@ -263,7 +263,7 @@ class TestRecoveryReadsAndRefusals:
         table.get_item.return_value = response
 
         with pytest.raises(ServiceError) as exc:
-            recover_job_execution_claim(EVENT, _context(100_000))
+            recover_job_execution_claim(EVENT, _context(100_000), workspace=None)
         assert str(exc.value) == 'Job no longer exists'
 
 
@@ -273,7 +273,7 @@ class TestRequeueBudget:
         table.get_item.return_value = RUNNING_FAR_FUTURE
         event = {'project_id': 'p1', 'job_id': 'j1', 'config': {'x': 1}}
 
-        assert recover_job_execution_claim(event, _context(100_000, 90_000)) is False
+        assert recover_job_execution_claim(event, _context(100_000, 90_000), workspace=None) is False
 
         mock_invoke.assert_called_once_with('arn:aws:lambda:us-east-1:1:function:job', event)
         mock_logger.info.assert_called_once_with(
@@ -289,7 +289,7 @@ class TestRequeueBudget:
         # 20 s initial budget keeps ceil(20 * 0.9) = 18 below the 30 s floor.
         table.get_item.side_effect = [RUNNING_FAR_FUTURE, COMPLETED]
 
-        assert recover_job_execution_claim(EVENT, _context(20_000, remaining_ms)) is False
+        assert recover_job_execution_claim(EVENT, _context(20_000, remaining_ms), workspace=None) is False
 
         assert mock_invoke.call_count == (1 if requeued else 0)
         assert mock_time.sleep.call_args_list == ([] if requeued else [call(1)])
@@ -305,7 +305,7 @@ class TestRequeueBudget:
         table.get_item.return_value = RUNNING_FAR_FUTURE
         context = _context(100_000, 90_000, invoked_function_arn=arn, function_name=name)
 
-        assert recover_job_execution_claim(EVENT, context) is False
+        assert recover_job_execution_claim(EVENT, context, workspace=None) is False
         mock_invoke.assert_called_once_with(target, EVENT)
 
     def test_function_name_fallback_reads_that_attribute(self, table, mock_invoke):
@@ -315,7 +315,7 @@ class TestRequeueBudget:
             function_name='job',
         )
 
-        assert recover_job_execution_claim(EVENT, context) is False
+        assert recover_job_execution_claim(EVENT, context, workspace=None) is False
         mock_invoke.assert_called_once_with('job', EVENT)
 
     @pytest.mark.parametrize(('arn', 'name'), [('', ''), (None, None), (None, 7)])
@@ -324,7 +324,7 @@ class TestRequeueBudget:
         context = _context(100_000, 90_000, invoked_function_arn=arn, function_name=name)
 
         with pytest.raises(TypeError) as exc:
-            recover_job_execution_claim(EVENT, context)
+            recover_job_execution_claim(EVENT, context, workspace=None)
         assert str(exc.value) == 'Lambda context must identify its function'
         mock_invoke.assert_not_called()
 
@@ -337,7 +337,7 @@ class TestLeaseReclaimDecision:
         table.get_item.return_value = {'Item': {'status': status, 'execution_lease_until': NOW_EPOCH + 1}}
         context = _context(100_000, 100_000)
 
-        assert recover_job_execution_claim(EVENT, context) is True
+        assert recover_job_execution_claim(EVENT, context, workspace=None) is True
         mock_claim.assert_called_once_with('p1', 'j1', context, workspace=None)
         mock_time.sleep.assert_not_called()
 
@@ -346,7 +346,7 @@ class TestLeaseReclaimDecision:
     def test_running_owner_is_reclaimed_once_the_lease_second_has_passed(self, table, mock_claim, lease):
         table.get_item.return_value = {'Item': {'status': 'running', 'execution_lease_until': lease}}
 
-        assert recover_job_execution_claim(EVENT, _context(100_000, 100_000)) is True
+        assert recover_job_execution_claim(EVENT, _context(100_000, 100_000), workspace=None) is True
         mock_claim.assert_called_once()
 
     @pytest.mark.parametrize('lease', [None, 'not-a-number', True])
@@ -357,14 +357,14 @@ class TestLeaseReclaimDecision:
             item['execution_lease_until'] = lease
         table.get_item.return_value = {'Item': item}
 
-        assert recover_job_execution_claim(EVENT, _context(100_000, 100_000)) is True
+        assert recover_job_execution_claim(EVENT, _context(100_000, 100_000), workspace=None) is True
         mock_claim.assert_called_once()
 
     def test_running_owner_with_a_live_lease_is_polled_every_second(self, table, mock_time, mock_claim):
         live = {'Item': {'status': 'running', 'execution_lease_until': NOW_EPOCH + 1}}
         table.get_item.side_effect = [live, live, COMPLETED]
 
-        assert recover_job_execution_claim(EVENT, _context(100_000, 100_000, 100_000)) is False
+        assert recover_job_execution_claim(EVENT, _context(100_000, 100_000, 100_000), workspace=None) is False
 
         mock_claim.assert_not_called()
         assert mock_time.sleep.call_args_list == [call(1), call(1)]
@@ -373,7 +373,7 @@ class TestLeaseReclaimDecision:
         mock_claim.return_value = False
         table.get_item.side_effect = [{'Item': {'status': 'pending'}}, COMPLETED]
 
-        assert recover_job_execution_claim(EVENT, _context(100_000, 100_000)) is False
+        assert recover_job_execution_claim(EVENT, _context(100_000, 100_000), workspace=None) is False
         mock_claim.assert_called_once()
         mock_time.sleep.assert_called_once_with(1)
 
@@ -387,7 +387,7 @@ class TestCreateJobWritesTheExactItem:
             yield
 
     def test_running_job_item(self, table):
-        assert create_job('p1', 'research', 'research_config', {'q': 1}) == (
+        assert create_job('p1', 'research', 'research_config', {'q': 1}, workspace=None) == (
             'job_0123456789abcdef', NOW_ISO,
         )
 
@@ -410,14 +410,14 @@ class TestCreateJobWritesTheExactItem:
 
     @pytest.mark.parametrize(('ttl_minutes', 'offset'), [(1, 60), (120, 7200)])
     def test_ttl_is_minutes_after_now(self, table, ttl_minutes, offset):
-        create_job('p1', 't', 'config', {}, ttl_minutes=ttl_minutes)
+        create_job('p1', 't', 'config', {}, ttl_minutes=ttl_minutes, workspace=None)
 
         assert table.put_item.call_args.kwargs['Item']['ttl'] == NOW_EPOCH + offset
 
     @pytest.mark.usefixtures('no_table')
     def test_missing_table_is_refused_by_name(self):
         with pytest.raises(ValueError, match=TABLE_MISSING) as exc:
-            create_job('p1', 't', 'config', {})
+            create_job('p1', 't', 'config', {}, workspace=None)
         assert str(exc.value) == TABLE_MISSING
 
 
@@ -427,7 +427,7 @@ class TestUpdateJobStatusWritesTheExactRequest:
     SEVEN_DAYS = NOW_EPOCH + 7 * 24 * 3600
 
     def test_status_and_progress_only(self, table):
-        update_job_status('p1', 'j1', 'running', 50)
+        update_job_status('p1', 'j1', 'running', 50, workspace=None)
 
         table.update_item.assert_called_once_with(
             Key=KEY,
@@ -440,7 +440,7 @@ class TestUpdateJobStatusWritesTheExactRequest:
         )
 
     def test_current_step_is_appended(self, table):
-        update_job_status('p1', 'j1', 'running', 50, 'processing')
+        update_job_status('p1', 'j1', 'running', 50, 'processing', workspace=None)
 
         request = table.update_item.call_args.kwargs
         assert request['UpdateExpression'] == self.BASE_EXPR + ', current_step = :step'
@@ -451,7 +451,7 @@ class TestUpdateJobStatusWritesTheExactRequest:
         assert request['ExpressionAttributeNames'] == {'#status': 'status'}
 
     def test_error_completes_the_job_and_keeps_it_seven_days(self, table):
-        update_job_status('p1', 'j1', 'failed', 0, 'error', error='boom')
+        update_job_status('p1', 'j1', 'failed', 0, 'error', error='boom', workspace=None)
 
         request = table.update_item.call_args.kwargs
         assert request['UpdateExpression'] == (
@@ -466,7 +466,7 @@ class TestUpdateJobStatusWritesTheExactRequest:
         }
 
     def test_result_completes_the_job_and_keeps_it_seven_days(self, table):
-        update_job_status('p1', 'j1', 'completed', 100, result={'count': 2})
+        update_job_status('p1', 'j1', 'completed', 100, result={'count': 2}, workspace=None)
 
         request = table.update_item.call_args.kwargs
         assert request['UpdateExpression'] == (
@@ -482,7 +482,7 @@ class TestUpdateJobStatusWritesTheExactRequest:
 
     @pytest.mark.usefixtures('no_table')
     def test_missing_table_logs_the_skip_and_writes_nothing(self, mock_logger):
-        assert update_job_status('p1', 'j1', 'running', 1) is None
+        assert update_job_status('p1', 'j1', 'running', 1, workspace=None) is None
 
         mock_logger.warning.assert_called_once_with(
             'JOBS_TABLE not configured, skipping job status update',
@@ -493,7 +493,7 @@ class TestUpdateJobStatusWritesTheExactRequest:
             {'Error': {'Code': 'ProvisionedThroughputExceededException', 'Message': 'slow'}}, 'UpdateItem',
         )
 
-        assert update_job_status('p1', 'j1', 'running', 1) is None
+        assert update_job_status('p1', 'j1', 'running', 1, workspace=None) is None
 
         mock_logger.error.assert_called_once()
         message, kwargs = mock_logger.error.call_args.args[0], mock_logger.error.call_args.kwargs
@@ -505,7 +505,7 @@ class TestUpdateJobStatusWritesTheExactRequest:
             {'Error': {'Code': 'ConditionalCheckFailedException', 'Message': 'gone'}}, 'UpdateItem',
         )
 
-        assert update_job_status('p1', 'j1', 'running', 1) is None
+        assert update_job_status('p1', 'j1', 'running', 1, workspace=None) is None
 
         mock_logger.error.assert_not_called()
         mock_logger.info.assert_called_once_with(

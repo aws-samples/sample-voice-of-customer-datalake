@@ -393,7 +393,7 @@ def visible_ids(reader: Reader, feedback_ids: Sequence[str]) -> list[str]:
 
 
 def evidence_pack(reader: Reader, project_id: str, persona_ids: Sequence[str], question: str, limit: int, *,
-                  workspace: WorkspaceScope | None = None) -> dict[str, Any]:
+                  workspace: WorkspaceScope | None) -> dict[str, Any]:
     """``{personas: [...], missing_persona_ids}``: each persona's cited and fresh evidence, as the person may see it.
 
     The personas come back in request order; an id the project does not have is in ``missing_persona_ids``. One walk
@@ -431,7 +431,7 @@ def _new_matches(reader: Reader, project_id: str, persona_id: str,
 
 
 def evidence_freshness(reader: Reader, project_id: str, persona_id: str, *,
-                       workspace: WorkspaceScope | None = None) -> dict[str, Any]:
+                       workspace: WorkspaceScope | None) -> dict[str, Any]:
     """``GET …/personas/{pid}/evidence-freshness``: how many matching reviews arrived since the persona was generated
     that it does not hold yet, of those the person may see (``count_is_lower_bound`` when the read was cut)."""
     persona, match, fresh = _new_matches(reader, project_id, persona_id, workspace)
@@ -450,7 +450,7 @@ def _appended(entries: Iterable[dict[str, Any]], entry: dict[str, Any]) -> list[
 
 
 def refresh_evidence(reader: Reader, project_id: str, persona_id: str, actor: Mapping[str, str], *,
-                     workspace: WorkspaceScope | None = None) -> dict[str, Any]:
+                     workspace: WorkspaceScope | None) -> dict[str, Any]:
     """``POST …/personas/{pid}/evidence/refresh``: append the newest matching reviews to the persona's evidence.
 
     The ``MAX_FRESH`` newest matching reviews since the generation that the persona does not hold yet and the person

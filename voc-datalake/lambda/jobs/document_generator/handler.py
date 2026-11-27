@@ -846,7 +846,7 @@ def _complete_with_existing(project_id: str, job_id: str, existing: dict) -> dic
         'title': existing['title'],
     }
     update_job_status(
-        project_id, job_id, 'completed', 100, 'complete', result=result,
+        project_id, job_id, 'completed', 100, 'complete', result=result, workspace=None,
     )
     return result
 
@@ -2037,7 +2037,7 @@ def _build_steps(project_id: str, job_id: str, doc_config: dict) -> dict:
     projects_table = dynamodb.Table(PROJECTS_TABLE)
     feedback_table = dynamodb.Table(FEEDBACK_TABLE)
 
-    ctx = JobContext(project_id, job_id)
+    ctx = JobContext(project_id, job_id, workspace=None)
     ctx.update_progress(10, 'gathering_context')
 
     doc_type = doc_config.get('doc_type', 'prd')
@@ -2126,7 +2126,7 @@ def _run_one_step(project_id: str, job_id: str, index: int) -> None:
 
     # Map step progress into the 15-85% band so the UI shows steady movement.
     progress = 15 + int((index / total) * 70)
-    JobContext(project_id, job_id).update_progress(progress, step_name)
+    JobContext(project_id, job_id, workspace=None).update_progress(progress, step_name)
 
     previous = _get_text(_scratch_key(job_id, f'result_{index - 1}')) if index > 0 else ''
     user = step.get('user', '').replace('{previous}', previous)
@@ -2156,7 +2156,7 @@ def _assemble_and_save(project_id: str, job_id: str, doc_type: str, title: str,
     if existing is not None:
         return _complete_with_existing(project_id, job_id, existing)
 
-    JobContext(project_id, job_id).update_progress(90, 'saving_document')
+    JobContext(project_id, job_id, workspace=None).update_progress(90, 'saving_document')
 
     results = [_get_text(_scratch_key(job_id, f'result_{i}')) for i in range(num_steps)]
 
@@ -2195,7 +2195,7 @@ def _assemble_and_save(project_id: str, job_id: str, doc_type: str, title: str,
     result = {'document_id': item['document_id'], 'title': item['title'], **_without_corpus_ids(feedback_fields),
               **({'methodology': methodology_block} if methodology_block else {})}
     update_job_status(
-        project_id, job_id, 'completed', 100, 'complete', result=result,
+        project_id, job_id, 'completed', 100, 'complete', result=result, workspace=None,
     )
     return result
 

@@ -135,7 +135,7 @@ def _call_step_ai(project_id: str, job_id: str, inference: dict, user_prompt: st
                   *, calling_progress: int, complete_progress: int,
                   complete_status: str) -> str:
     """Run one research step's model call, bracketed by its job-status updates."""
-    update_job_status(project_id, job_id, 'running', calling_progress, 'calling_ai')
+    update_job_status(project_id, job_id, 'running', calling_progress, 'calling_ai', workspace=None)
     text = invoke_bedrock_with_retry(
         inference['system_prompt'],
         user_prompt,
@@ -144,7 +144,7 @@ def _call_step_ai(project_id: str, job_id: str, inference: dict, user_prompt: st
         step_name=inference['step_name'],
     )
 
-    update_job_status(project_id, job_id, 'running', complete_progress, complete_status)
+    update_job_status(project_id, job_id, 'running', complete_progress, complete_status, workspace=None)
 
     return text
 # Wrapper function to pass module-level table reference to shared function
@@ -385,7 +385,7 @@ def _selected_personas_context(
     """Optional: the selected personas' prompt block and the persona ids it used."""
     if not (selected_persona_ids and proj_table):
         return "", []
-    update_job_status(project_id, job_id, 'running', 17, 'fetching_personas')
+    update_job_status(project_id, job_id, 'running', 17, 'fetching_personas', workspace=None)
     selected_personas = [
         p for p in _project_items(proj_table, project_id)
         if _sort_key(p).startswith('PERSONA#') and p.get('persona_id') in selected_persona_ids
@@ -408,7 +408,7 @@ def _selected_documents_context(
     """Optional: the selected reference documents' prompt block and their sources."""
     if not (selected_document_ids and proj_table):
         return "", []
-    update_job_status(project_id, job_id, 'running', 18, 'fetching_documents')
+    update_job_status(project_id, job_id, 'running', 18, 'fetching_documents', workspace=None)
     selected_docs = [
         d for d in _project_items(proj_table, project_id)
         if _sort_key(d).startswith(('DOC#', 'RESEARCH#', 'PRD#', 'PRFAQ#'))
@@ -461,7 +461,7 @@ def _web_search_context(
     if not is_web_search_configured():
         logger.warning("use_web_search requested but web search is not configured; skipping")
         return '', []
-    update_job_status(project_id, job_id, 'running', 19, 'searching_web')
+    update_job_status(project_id, job_id, 'running', 19, 'searching_web', workspace=None)
     question = config.get('question', '')
     try:
         outcome = run_agentic_web_search(question, context_hint=feedback_stats, **_web_query_cap(config))
@@ -485,7 +485,7 @@ def step_initialize(event: dict) -> dict:
     config = event['research_config']
 
     logger.info(f"Initializing research for project {project_id}, job {job_id}")
-    update_job_status(project_id, job_id, 'running', 10, 'initializing')
+    update_job_status(project_id, job_id, 'running', 10, 'initializing', workspace=None)
 
     # Get feedback data - this is the PRIMARY data source for research
     filters = {
@@ -503,7 +503,7 @@ def step_initialize(event: dict) -> dict:
         category_access.SCOPE_CONFIG_KEY: config.get(category_access.SCOPE_CONFIG_KEY),
     }
 
-    update_job_status(project_id, job_id, 'running', 12, 'fetching_feedback')
+    update_job_status(project_id, job_id, 'running', 12, 'fetching_feedback', workspace=None)
 
     char_budget, fetch_limit = research_feedback_budget()
     feedback_items = get_feedback_context(filters, limit=fetch_limit)
@@ -512,7 +512,7 @@ def step_initialize(event: dict) -> dict:
     if not feedback_items:
         raise ValueError("No feedback data found matching the filters")
 
-    update_job_status(project_id, job_id, 'running', 15, 'formatting_data')
+    update_job_status(project_id, job_id, 'running', 15, 'formatting_data', workspace=None)
 
     labels = load_prompt_labels()  # categories and sources by name, never by id
     feedback_context, items_used, trimmed = truncate_feedback_context(
@@ -549,7 +549,7 @@ def step_initialize(event: dict) -> dict:
     # The block is far larger than a Step Functions state may be; only step_analyze needs it.
     _stash_feedback_context(job_id, feedback_context + feature_requests.section)
 
-    update_job_status(project_id, job_id, 'running', 20, 'data_ready')
+    update_job_status(project_id, job_id, 'running', 20, 'data_ready', workspace=None)
 
     return {
         'feedback_stats': feedback_stats,
@@ -602,7 +602,7 @@ def step_analyze(event: dict) -> dict:
     research_question = config.get('question', 'What are the main customer pain points?')
 
     logger.info(f"Starting analysis for job {job_id}")
-    update_job_status(project_id, job_id, 'running', 25, 'preparing_analysis')
+    update_job_status(project_id, job_id, 'running', 25, 'preparing_analysis', workspace=None)
 
     inference = _step_inference('data_analysis', config)
     inference['system_prompt'] = with_guidance(inference['system_prompt'], grounding)
@@ -662,7 +662,7 @@ def step_synthesize(event: dict) -> dict:
     config = event.get('research_config', {})
 
     logger.info(f"Synthesizing findings for job {job_id}")
-    update_job_status(project_id, job_id, 'running', 50, 'preparing_synthesis')
+    update_job_status(project_id, job_id, 'running', 50, 'preparing_synthesis', workspace=None)
 
     inference = _step_inference('synthesis', config)
     grounding = _grounding_for(event)
@@ -696,7 +696,7 @@ def step_validate(event: dict) -> dict:
     config = event.get('research_config', {})
 
     logger.info(f"Validating research for job {job_id}")
-    update_job_status(project_id, job_id, 'running', 75, 'preparing_validation')
+    update_job_status(project_id, job_id, 'running', 75, 'preparing_validation', workspace=None)
 
     inference = _step_inference('validation', config)
 
@@ -736,7 +736,7 @@ def step_save(event: dict) -> dict:
     feedback_usage = _received_feedback_usage(event.get('feedback_usage'))
 
     logger.info(f"Saving research results for job {job_id}")
-    update_job_status(project_id, job_id, 'running', 95, 'saving')
+    update_job_status(project_id, job_id, 'running', 95, 'saving', workspace=None)
 
     research_question = config.get('question', 'Research')
     filters = config.get('filters', {})
@@ -853,8 +853,9 @@ Public-web grounding for this report came from the following searches:
             # The persona job's shape, which the SPA's job list already reads.
             **({'metadata': _job_usage(feedback_usage)} if feedback_usage else {}),
         },
+        workspace=None,
     )
-    notify_project_job(project_id, job_id, 'completed')
+    notify_project_job(project_id, job_id, 'completed', workspace=None)
     _discard_feedback_context(job_id)
 
     return {

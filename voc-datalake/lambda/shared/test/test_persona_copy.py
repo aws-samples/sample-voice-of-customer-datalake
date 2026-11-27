@@ -48,7 +48,8 @@ def _copy(table, s3, *, target='p2', ids=('persona_src',), scope: persona_copy.S
           name='Project p1'):
     return persona_copy.copy_personas(
         table, s3, BUCKET, source_container='p1', source_scope=scope, source_project_name=name,
-        persona_ids=list(ids), target_container=target, copied_by='admin-sub', now=NOW,
+        persona_ids=list(ids), target_container=target, copied_by='admin-sub', now=NOW, workspace=None,
+        source_workspace=None,
     )
 
 
@@ -208,7 +209,7 @@ class TestCompanyContainerMeta:
     def test_the_first_write_creates_an_unlisted_private_meta(self, world):
         table, _ = world
 
-        company_personas.ensure_company_personas_meta(table)
+        company_personas.ensure_company_personas_meta(table, workspace=None)
 
         meta = table.get_item(Key={'pk': 'PROJECT#company_personas', 'sk': 'META'})['Item']
         assert meta['kind'] == 'company_personas'
@@ -220,22 +221,22 @@ class TestCompanyContainerMeta:
 
     def test_a_second_call_keeps_the_existing_row(self, world):
         table, _ = world
-        company_personas.ensure_company_personas_meta(table)
+        company_personas.ensure_company_personas_meta(table, workspace=None)
         table.update_item(Key={'pk': 'PROJECT#company_personas', 'sk': 'META'},
                           UpdateExpression='SET persona_count = :n', ExpressionAttributeValues={':n': 4})
 
-        company_personas.ensure_company_personas_meta(table)
+        company_personas.ensure_company_personas_meta(table, workspace=None)
 
         meta = table.get_item(Key={'pk': 'PROJECT#company_personas', 'sk': 'META'})['Item']
         assert meta['persona_count'] == 4
 
     def test_a_copy_into_the_library_works_once_the_meta_exists(self, world):
         table, s3 = world
-        company_personas.ensure_company_personas_meta(table)
+        company_personas.ensure_company_personas_meta(table, workspace=None)
 
         [copy] = _copy(table, s3, target='company_personas')
 
-        assert company_personas.company_persona_items(table) == [copy]
+        assert company_personas.company_persona_items(table, workspace=None) == [copy]
         head = s3.head_object(Bucket=BUCKET, Key=f"avatars/{copy['persona_id']}/abc123.png")
         assert head['Metadata'] == {AVATAR_OWNER_METADATA_KEY: 'company_personas'}
 

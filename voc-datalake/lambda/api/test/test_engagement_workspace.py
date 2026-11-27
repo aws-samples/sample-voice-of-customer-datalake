@@ -68,7 +68,7 @@ def test_the_brand_name_is_the_scopes_own(world):
 @pytest.mark.usefixtures('world')
 def test_the_participants_project_gate_refuses_a_workspace():
     request = event('GET', '/participants/projects/x', claims=USER)
-    assert require_project_access(request, PUBLIC_PROJECT, 'view') == PUBLIC_PROJECT
+    assert require_project_access(request, PUBLIC_PROJECT, 'view', workspace=None) == PUBLIC_PROJECT
     with pytest.raises(NotPerWorkspaceError, match='Project gate'):
         require_project_access(request, PUBLIC_PROJECT, 'view', workspace=A)
     with pytest.raises(NotPerWorkspaceError, match='Project gate'):

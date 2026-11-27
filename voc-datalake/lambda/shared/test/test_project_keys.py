@@ -16,6 +16,7 @@ from shared.project_keys import (
     job_status_pk,
     legacy_assignment_key,
     legacy_assignment_prefix,
+    persona_keys,
     personas_index_pk,
     project_id_of,
     project_partitions,
@@ -54,11 +55,30 @@ def test_a_documents_keys_list_it_among_its_projects_documents():
 
 
 def test_workspace_none_is_the_deployments_literal_keys():
-    assert project_pk('proj_1', workspace=None) == 'PROJECT#proj_1'
-    assert personas_index_pk('proj_1', workspace=None) == 'PROJECT#proj_1#PERSONAS'
     assert project_type_pk(workspace=None) == 'TYPE#PROJECT'
-    assert document_keys('proj_1', 'DOC#doc_1', LISTED_AT, workspace=None) == {
-        'pk': 'PROJECT#proj_1', 'sk': 'DOC#doc_1', 'gsi1pk': 'PROJECT#proj_1#DOCUMENTS', 'gsi1sk': LISTED_AT}
+
+
+def test_a_personas_keys_are_the_ones_built_by_hand_before_7_99_00():
+    """The persona job and the importer spelled these four fields out until 7.99.00 (3h-S1):
+    ``project_pk(id)``, ``PERSONA#{id}``, ``personas_index_pk(id)`` and the time it was made."""
+    hand_built = {'pk': 'PROJECT#proj_1', 'sk': 'PERSONA#persona_1', 'gsi1pk': 'PROJECT#proj_1#PERSONAS',
+                  'gsi1sk': LISTED_AT}
+    assert persona_keys('proj_1', 'persona_1', LISTED_AT, workspace=None) == hand_built
+    assert persona_keys('proj_1', 'persona_1', LISTED_AT, workspace=A) == {
+        'pk': f'WS#{WS_A}#PROJECT#proj_1', 'sk': 'PERSONA#persona_1', 'gsi1pk': f'WS#{WS_A}#PROJECT#proj_1#PERSONAS',
+        'gsi1sk': LISTED_AT}
+
+
+@pytest.mark.parametrize(('builder', 'args'), [
+    (project_pk, ('proj_1',)),
+    (persona_keys, ('proj_1', 'persona_1', LISTED_AT)),
+    (comments_pk, ('proj_1', 'ser_' + 'a' * 24)),
+    (version_partition_key, ('proj_1',)),
+], ids=['project_pk', 'persona_keys', 'comments_pk', 'version_partition_key'])
+def test_leaving_the_workspace_out_is_a_type_error(builder, args):
+    """No default since 7.99.00 (3h-S1): a key built without its scope fails at the call, never the deployment's."""
+    with pytest.raises(TypeError, match="missing 1 required keyword-only argument: 'workspace'"):
+        builder(*args)
 
 
 def test_a_workspaces_keys_are_the_same_keys_inside_it():
@@ -112,7 +132,6 @@ SHARE = 'shr_' + 'b' * 32
 
 def test_the_comment_and_link_keys_are_the_deployments_stored_keys():
     assert comments_pk('proj_1', SERIES, workspace=None) == f'DCOMMENTS#proj_1#{SERIES}'
-    assert comments_pk('proj_1', SERIES, workspace=None) == f'DCOMMENTS#proj_1#{SERIES}'
     assert review_link_key(SHARE, workspace=None) == {'pk': f'DOCSHARE#{SHARE}', 'sk': 'META'}
     assert review_link_key(SHARE, workspace=None) == share_key(SHARE)
     assert reviewer_rate_pk(SHARE, 'd' * 24, workspace=None) == f"DCRATE#{SHARE}#{'d' * 24}"
@@ -146,7 +165,6 @@ ALLOCATION_SK = f"ALLOCATION#PRD#{sha('job_1')}"
 
 
 def test_the_version_keys_are_the_deployments_stored_keys():
-    assert version_partition_key('proj_1', workspace=None) == 'DOCUMENT_VERSIONS#PROJECT#proj_1'
     assert version_partition_key('proj_1', workspace=None) == 'DOCUMENT_VERSIONS#PROJECT#proj_1'
     counter = version_counter_key('proj_1', 'prd', 'trail map', workspace=None)
     assert counter == {'pk': 'DOCUMENT_VERSIONS#PROJECT#proj_1', 'sk': COUNTER_SK}

@@ -453,9 +453,10 @@ def _started_job(
     # The job config carries the starter's model profile (and never a client-sent one), so the job
     # Lambda / every Step Functions step runs on the same models as the request (shared/model_profile.py).
     model_profile.stamp_config(config)
+    # The deployment's job row, as `_job_event` names no workspace (the switch passes the route's scope to both).
     job_id, _ = create_job(
         project_id, job_type, config_key, config,
-        initiated_by=_request_caller().subject, **kwargs,
+        initiated_by=_request_caller().subject, workspace=None, **kwargs,
     )
     return job_id
 
@@ -485,7 +486,7 @@ def _started_assist(project_id: str, job_type: str, config: dict) -> Response:
     started = assist_jobs.start(
         project_pk(project_id, workspace=None), job_type, config,
         worker_function=assist_jobs.worker_function(),
-        initiated_by=_request_caller().subject, project_id=project_id,
+        initiated_by=_request_caller().subject, project_id=project_id, workspace=None,
     )
     return assist_jobs.accepted(started)
 
@@ -1056,7 +1057,8 @@ def _start_document_generation(project_id: str, doc_config: dict) -> tuple[str, 
 @tracer.capture_method
 def api_create_decision(project_id: str):
     """Create a decision document (edit access, enforced by the project middleware)."""
-    return decision_records.create_decision(get_projects_table(), project_id, json_object_body(app), _request_caller())
+    return decision_records.create_decision(get_projects_table(), project_id, json_object_body(app), _request_caller(),
+                                            workspace=None)
 
 
 @app.put("/projects/<project_id>/decisions/<document_id>")
@@ -1064,7 +1066,7 @@ def api_create_decision(project_id: str):
 def api_update_decision(project_id: str, document_id: str):
     """Edit a decision in place; ``expected_revision`` guards a stale editor (409)."""
     return decision_records.update_decision(
-        get_projects_table(), project_id, document_id, json_object_body(app), _request_caller())
+        get_projects_table(), project_id, document_id, json_object_body(app), _request_caller(), workspace=None)
 
 
 @app.post("/projects/<project_id>/decisions/<document_id>/pursue")
@@ -1074,13 +1076,13 @@ def api_pursue_decision(project_id: str, document_id: str):
     with the decision as its first reference document. A user action, never automatic."""
     _require_ai_writing(project_id, 'prfaq')
     table = get_projects_table()
-    decision = decision_records.stored_decision(table, project_id, document_id)
+    decision = decision_records.stored_decision(table, project_id, document_id, workspace=None)
     doc_config = {
         **decision_records.pursue_doc_config(decision, json_object_body(app)),
         category_access.SCOPE_CONFIG_KEY: _caller_category_scope(),
     }
     job_id, assessment = _start_document_generation(project_id, doc_config)
-    decision_records.record_seeded_prfaq(table, decision, job_id)
+    decision_records.record_seeded_prfaq(table, decision, job_id, workspace=None)
     return Response(
         status_code=202,
         content_type=content_types.APPLICATION_JSON,
@@ -5119,7 +5121,8 @@ def api_prototype_outline(project_id: str, document_id: str):
     """
     document = projects.prototype_document(project_id, document_id)
     store = projects.prototype_store()
-    outline = prototype_outline.outline_of(version_html(store.s3, store.bucket, project_id, document, workspace=None))
+    outline = prototype_outline.outline_of(
+        version_html(store.s3, store.bucket, project_id, document, workspace=store.workspace))
     version = document.get('version')
     return {'document_id': document_id, 'version': int(version) if version is not None else None, **outline}
 
@@ -5139,7 +5142,7 @@ def api_get_prototype_walkthrough(project_id: str, document_id: str):
     """``{steps}`` of that version: its block, re-validated (``[]`` for none, or one that fails)."""
     document = projects.prototype_document(project_id, document_id)
     store = projects.prototype_store()
-    html = version_html(store.s3, store.bucket, project_id, document, workspace=None)
+    html = version_html(store.s3, store.bucket, project_id, document, workspace=store.workspace)
     return {'steps': prototype_walkthrough.extract_steps(html)}
 
 
@@ -5172,7 +5175,7 @@ def api_draft_prototype_walkthrough(project_id: str, document_id: str):
     document = projects.prototype_document(project_id, document_id)
     store = projects.prototype_store()
     # Refused now (400 early spec, 404 lost object) rather than minutes later in the job.
-    version_html(store.s3, store.bucket, project_id, document, workspace=None)
+    version_html(store.s3, store.bucket, project_id, document, workspace=store.workspace)
     return _started_assist(project_id, ASSIST_WALKTHROUGH_DRAFT,
                            {'project_id': project_id, 'document_id': document_id,
                             'response_language': body.get('response_language')})
@@ -5198,7 +5201,8 @@ def _walkthrough_draft_work(config: dict) -> dict:
     project_id = config['project_id']
     document = projects.prototype_document(project_id, config['document_id'])
     store = projects.prototype_store()
-    outline = prototype_outline.outline_of(version_html(store.s3, store.bucket, project_id, document, workspace=None))
+    outline = prototype_outline.outline_of(
+        version_html(store.s3, store.bucket, project_id, document, workspace=store.workspace))
     return prototype_walkthrough_draft.draft_steps(outline=outline,
                                                    sources=_walkthrough_sources(project_id, document),
                                                    language=config.get('response_language'))

@@ -24,13 +24,13 @@ def invoked():
         yield invoke
 
 
-PK = aj.owner_pk('user-sub')
+PK = aj.owner_pk('user-sub', workspace=None)
 
 
 def _start(invoked, job_type='assist_categories', **kwargs) -> dict:
     del invoked  # the fixture only has to be active
     return aj.start(PK, job_type, {'company_description': 'airline'}, worker_function='worker-fn',
-                    initiated_by='user-sub', **kwargs)
+                    initiated_by='user-sub', workspace=None, **kwargs)
 
 
 def _event(started: dict) -> dict:
@@ -68,7 +68,7 @@ class TestStart:
 class TestStartOwned:
     def test_starts_in_the_callers_partition_on_the_configured_twin(self, invoked, table, monkeypatch):
         monkeypatch.setenv('ASSIST_WORKER_FUNCTION', 'twin-fn')
-        started = aj.start_owned('user-sub', 'assist_analyze_url', {'url': 'https://example.com/'})
+        started = aj.start_owned('user-sub', 'assist_analyze_url', {'url': 'https://example.com/'}, workspace=None)
         invoked.assert_called_once_with('twin-fn', _event(started))
         row = table.get_item(Key={'pk': PK, 'sk': f"JOB#{started['job_id']}"})['Item']
         assert (row['initiated_by'], row['config']) == ('user-sub', {'url': 'https://example.com/'})
@@ -76,7 +76,7 @@ class TestStartOwned:
     def test_refuses_with_500_when_no_twin_is_configured(self, invoked, monkeypatch):
         monkeypatch.delenv('ASSIST_WORKER_FUNCTION', raising=False)
         with pytest.raises(ServiceError, match='not configured'):
-            aj.start_owned('user-sub', 'assist_analyze_url', {'url': 'https://example.com/'})
+            aj.start_owned('user-sub', 'assist_analyze_url', {'url': 'https://example.com/'}, workspace=None)
         invoked.assert_not_called()
 
 
@@ -90,8 +90,8 @@ class TestAccepted:
 class TestOwnerPk:
     def test_needs_a_subject(self):
         with pytest.raises(ServiceError):
-            aj.owner_pk('')
-        assert aj.owner_pk('s') == 'ASSIST#s'
+            aj.owner_pk('', workspace=None)
+        assert aj.owner_pk('s', workspace=None) == 'ASSIST#s'
 
 
 @pytest.mark.usefixtures('table')
@@ -101,7 +101,7 @@ class TestRunAndPoll:
         registry = {'assist_categories': aj.Work(lambda cfg: {'categories': [cfg['company_description']], 'score': 0.5},
                                                  'Category generation failed')}
         assert aj.run(_event(started), registry) == {'status': 'completed'}
-        polled = aj.get(PK, started['job_id'])
+        polled = aj.get(PK, started['job_id'], workspace=None)
         assert (polled['status'], polled['result'], polled['error']) == (
             'completed', {'categories': ['airline'], 'score': Decimal('0.5')}, None)
         assert set(polled) == {'success', *aj.VIEW_FIELDS}
@@ -113,7 +113,7 @@ class TestRunAndPoll:
             raise ValidationError('Company description is required')
 
         aj.run(_event(started), {'assist_categories': aj.Work(refuse, 'generic')})
-        assert aj.get(PK, started['job_id'])['error'] == 'Company description is required'
+        assert aj.get(PK, started['job_id'], workspace=None)['error'] == 'Company description is required'
 
     def test_an_unexpected_failure_records_the_generic_message_and_does_not_raise(self, invoked):
         started = _start(invoked)
@@ -123,7 +123,7 @@ class TestRunAndPoll:
 
         assert aj.run(_event(started), {'assist_categories': aj.Work(boom, 'Category generation failed')}) == {
             'status': 'failed'}
-        assert aj.get(PK, started['job_id'])['error'] == 'Category generation failed'
+        assert aj.get(PK, started['job_id'], workspace=None)['error'] == 'Category generation failed'
 
     def test_a_second_delivery_does_not_run_the_work_again(self, invoked):
         started = _start(invoked)
@@ -136,7 +136,7 @@ class TestRunAndPoll:
     def test_an_unregistered_type_fails_the_job(self, invoked):
         started = _start(invoked)
         assert aj.run(_event(started), {}) == {'status': 'failed'}
-        assert aj.get(PK, started['job_id'])['error'] == 'This assistant is not available.'
+        assert aj.get(PK, started['job_id'], workspace=None)['error'] == 'This assistant is not available.'
 
     def test_a_malformed_event_is_ignored(self):
         assert aj.run({'action': aj.ASSIST_ACTION}, {}) == {'status': 'ignored'}
@@ -146,12 +146,12 @@ class TestRunAndPoll:
         table.put_item(Item={'pk': PK, 'sk': 'JOB#job_other', 'job_id': 'job_other', 'job_type': 'generate_personas'})
         for job_id in ('job_missing', 'not-a-job', 'job_other'):
             with pytest.raises(NotFoundError):
-                aj.get(PK, job_id)
+                aj.get(PK, job_id, workspace=None)
 
     def test_another_owner_cannot_read_the_job(self, invoked):
         started = _start(invoked)
         with pytest.raises(NotFoundError):
-            aj.get(aj.owner_pk('someone-else'), started['job_id'])
+            aj.get(aj.owner_pk('someone-else', workspace=None), started['job_id'], workspace=None)
 
 
 class TestEventAndTypes:

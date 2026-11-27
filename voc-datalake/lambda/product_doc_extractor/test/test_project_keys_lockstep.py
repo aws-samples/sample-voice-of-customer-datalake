@@ -86,8 +86,8 @@ def test_every_document_row_write_names_only_the_granted_attributes(extractor):
     extractor._clients[f'table:{TEST_PROJECTS_TABLE}'] = table
 
     extractor._mark_extracting('proj_1', 'abc123', workspace='ws_01JC3Q8ZK6V7W9X2Y4A5B6C7D8')
-    extractor._mark_failed('proj_1', 'abc123', 'No text could be extracted from this file.')
-    extractor._mark_ready('proj_1', 'abc123', 'projects/proj_1/product_docs/extracted/abc123.txt', 4)
+    extractor._mark_failed('proj_1', 'abc123', 'No text could be extracted from this file.', workspace=None)
+    extractor._mark_ready('proj_1', 'abc123', 'projects/proj_1/product_docs/extracted/abc123.txt', 4, workspace=None)
 
     named = {name for request in table.update_item.call_args_list
              for name in [*request.kwargs['Key'], *request.kwargs['ExpressionAttributeNames'].values()]}

@@ -125,7 +125,7 @@ class TestTheSaveKeepsWhatItCan:
         world.seed(('p-1',))
         items = [{'pk': f'PROJECT#{PROJECT}', 'sk': f'PERSONA#p-{i}', 'persona_id': f'p-{i}', 'name': f'N{i}'} for i in (1, 2, 3)]
 
-        saved = persona_save.save_persona_items(world.projects, PROJECT, items)
+        saved = persona_save.save_persona_items(world.projects, PROJECT, items, workspace=None)
 
         assert [s['persona_id'] for s in saved] == ['p-1', 'p-2', 'p-3']
         assert sorted(r['persona_id'] for r in world.persona_rows()) == ['p-1', 'p-2', 'p-3']
@@ -143,7 +143,7 @@ class TestTheSaveKeepsWhatItCan:
         item = {'pk': f'PROJECT#{PROJECT}', 'sk': 'PERSONA#p-1', 'persona_id': 'p-1'}
         sleep = MagicMock()
         with patch.object(persona_save, 'put_project_item', flaky):
-            saved = persona_save.save_persona_items(world.projects, PROJECT, [item], sleep=sleep)
+            saved = persona_save.save_persona_items(world.projects, PROJECT, [item], sleep=sleep, workspace=None)
         assert saved == [item]
         assert [r['persona_id'] for r in world.persona_rows()] == ['p-1']
         sleep.assert_called_once()
@@ -162,7 +162,7 @@ class TestTheSaveKeepsWhatItCan:
 class TestAJobRowThatIsGone:
     def test_a_status_update_for_a_deleted_job_is_info_not_an_error(self):
         with patch.object(shared_jobs, 'logger') as log:
-            shared_jobs.update_job_status(PROJECT, 'job-gone', 'running', 50, 'writing_personas')
+            shared_jobs.update_job_status(PROJECT, 'job-gone', 'running', 50, 'writing_personas', workspace=None)
 
         log.error.assert_not_called()
         (message,) = [c.args[0] for c in log.info.call_args_list]

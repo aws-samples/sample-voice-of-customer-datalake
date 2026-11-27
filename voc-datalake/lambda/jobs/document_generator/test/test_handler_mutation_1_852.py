@@ -365,7 +365,7 @@ class TestDocumentItem:
         with patch.object(handler, 'update_job_status') as status:
             result = handler._complete_with_existing('p1', 'j1', {'document_id': 'd1', 'title': 'T', 'x': 1})
         assert result == {'document_id': 'd1', 'title': 'T'}
-        status.assert_called_once_with('p1', 'j1', 'completed', 100, 'complete', result=result)
+        status.assert_called_once_with('p1', 'j1', 'completed', 100, 'complete', result=result, workspace=None)
 
 
 class TestHtmlExtraction:

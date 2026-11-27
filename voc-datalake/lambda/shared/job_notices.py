@@ -39,7 +39,7 @@ def notify(starter: object, job_id: object, status: object, *, job_type: object 
 
 
 def notify_project_job(project_id: str, job_id: str, status: str, *,
-                       workspace: WorkspaceScope | None = None) -> bool:
+                       workspace: WorkspaceScope | None) -> bool:
     """Tell a project job's starter (the row's ``initiated_by``) that it ended. Never raises.
 
     No read at all without a configured Event API. A row without ``initiated_by`` (a job an

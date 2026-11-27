@@ -970,14 +970,15 @@ def generate_categories():
         raise ValidationError('Company description is required')
     subject = get_caller_subject(app.current_event.raw_event)
     return assist_jobs.accepted(assist_jobs.start_owned(
-        subject, CATEGORIES_JOB, {'company_description': company_description}))
+        subject, CATEGORIES_JOB, {'company_description': company_description}, workspace=None))
 
 
 @app.get("/settings/jobs/<job_id>")
 @tracer.capture_method
 def get_settings_assist_job(job_id: str):
     """Poll one of the caller's own settings assists (404 for anyone else's)."""
-    return assist_jobs.get(assist_jobs.owner_pk(get_caller_subject(app.current_event.raw_event)), job_id)
+    return assist_jobs.get(assist_jobs.owner_pk(get_caller_subject(app.current_event.raw_event), workspace=None),
+                           job_id, workspace=None)
 
 
 # ============================================

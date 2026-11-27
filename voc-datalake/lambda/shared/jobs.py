@@ -7,7 +7,8 @@ A job's row is ``JOB#{job_id}`` in its project's partition of voc-jobs, listed o
 (since 7.29.00, slice 3c of docs/multi-workspace.md's project plan): in one, the row is ``WS#{ws}#PROJECT#{id}`` /
 ``JOB#{job_id}`` and its index partition ``WS#{ws}#STATUS#{status}``, each call through shared/ws_repo.py ``ws_table``
 (shared/ingest_tables.py ``table_view``, shared/workspace_config.py ``get_scoped_item``), which refuses a key or an
-index partition outside it; without one (None, the default) every request is the one sent before. ``job_handler``
+index partition outside it; without one (None, spelled out at every call since 7.102.00, 3h-S1b: no default) every
+request is the one sent before. ``job_handler``
 reads the workspace from the job's event (shared/ws_repo.py ``event_scope``) and hands it to every job-row call, but
 the work itself is not per workspace yet (shared/project_keys.py ``PROJECT_JOB_WORK_STORE``): a job event that names
 a workspace marks its own row failed and does nothing else. No route passes a workspace yet. Nothing reads
@@ -99,7 +100,7 @@ def claim_job_execution(
     job_id: str,
     lambda_context: Any,
     *,
-    workspace: WorkspaceScope | None = None,
+    workspace: WorkspaceScope | None,
 ) -> bool:
     """Claim one direct async delivery until its Lambda deadline (the workspace's job row when given)."""
     jobs_table = get_jobs_table()
@@ -143,7 +144,7 @@ def recover_job_execution_claim(
     event: dict,
     lambda_context: Any,
     *,
-    workspace: WorkspaceScope | None = None,
+    workspace: WorkspaceScope | None,
 ) -> bool:
     """Wait for the owner, or self-redeliver before this waiter loses budget.
 
@@ -210,7 +211,7 @@ def create_job(
     status: str = 'running',
     initiated_by: str | None = None,
     *,
-    workspace: WorkspaceScope | None = None,
+    workspace: WorkspaceScope | None,
 ) -> tuple[str, str]:
     """Create a job record and return (job_id, now).
 
@@ -269,7 +270,7 @@ def update_job_status(
     error: str | None = None,
     result: dict | None = None,
     *,
-    workspace: WorkspaceScope | None = None,
+    workspace: WorkspaceScope | None,
 ):
     """Update job status in DynamoDB.
 
@@ -343,7 +344,7 @@ def update_job_status(
 class JobContext:
     """Context object passed to job handlers for progress updates (``workspace``: the job's, None the deployment)."""
 
-    def __init__(self, project_id: str, job_id: str, *, workspace: WorkspaceScope | None = None):
+    def __init__(self, project_id: str, job_id: str, *, workspace: WorkspaceScope | None):
         self.project_id = project_id
         self.job_id = job_id
         self.workspace = workspace

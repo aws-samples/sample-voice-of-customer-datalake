@@ -696,13 +696,17 @@ def _dimensions_from_head(fmt: str, head: bytes) -> tuple[int, int] | None:
 
 # ── DynamoDB record read / terminal writes ──────────────────────────────────
 
-def _project_pk(project_id: str, workspace: str | None = None) -> str:
-    """The project's partition: `PROJECT#{id}`, or `WS#{ws}#PROJECT#{id}` in a workspace (shared/project_keys.py)."""
+def _project_pk(project_id: str, workspace: str | None) -> str:
+    """The project's partition: `PROJECT#{id}`, or `WS#{ws}#PROJECT#{id}` in a workspace (shared/project_keys.py).
+
+    A copy, not an import: this Lambda takes nothing from `shared/` (above), so
+    test/test_project_keys_lockstep.py holds it to `project_keys.project_pk`. The
+    workspace has no default (since 7.102.00, 3h-S1b): every call names its scope."""
     partition = f'PROJECT#{project_id}'
     return partition if workspace is None else f'WS#{workspace}#{partition}'
 
 
-def _get_doc(project_id: str, doc_id: str, *, workspace: str | None = None) -> dict | None:
+def _get_doc(project_id: str, doc_id: str, *, workspace: str | None) -> dict | None:
     """The product-doc record, or None when it is gone.
 
     The user can delete a document while its extraction is in flight, so a
@@ -755,7 +759,7 @@ def _is_conditional_check_failure(error: Exception) -> bool:
 # jscpd:ignore-end of the accepted pair
 
 
-def _log_refused_write(project_id: str, doc_id: str, values: dict, *, workspace: str | None = None) -> bool:
+def _log_refused_write(project_id: str, doc_id: str, values: dict, *, workspace: str | None) -> bool:
     """Say WHICH of the three causes refused the write. They mean different things. True when the record is gone.
 
     A record that is simply gone was deleted mid-flight — ordinary housekeeping,
@@ -806,7 +810,7 @@ WRITE_GONE = 'gone'
 WRITE_NOT_LANDED = 'not_landed'
 
 
-def _update_doc(project_id: str, doc_id: str, values: dict, *, workspace: str | None = None) -> str:
+def _update_doc(project_id: str, doc_id: str, values: dict, *, workspace: str | None) -> str:
     """Write `values` onto the record, but ONLY while it is still non-terminal. Answers WRITE_LANDED, WRITE_GONE
     (refused: the record was deleted) or WRITE_NOT_LANDED.
 
@@ -860,7 +864,7 @@ def _update_doc(project_id: str, doc_id: str, values: dict, *, workspace: str | 
     return WRITE_LANDED
 
 
-def _mark_extracting(project_id: str, doc_id: str, *, workspace: str | None = None) -> str:
+def _mark_extracting(project_id: str, doc_id: str, *, workspace: str | None) -> str:
     """Publish the in-flight state, once, before the slow work starts.
 
     `extracting` was declared in three places and written in none: the UI renders
@@ -879,7 +883,7 @@ def _mark_extracting(project_id: str, doc_id: str, *, workspace: str | None = No
     return _update_doc(project_id, doc_id, {'status': 'extracting'}, workspace=workspace)
 
 
-def _mark_failed(project_id: str, doc_id: str, message: str, *, workspace: str | None = None) -> None:
+def _mark_failed(project_id: str, doc_id: str, message: str, *, workspace: str | None) -> None:
     """Terminal failure with a short, user-facing reason.
 
     `message` is shown in the UI, so it never carries a stack trace, an AWS
@@ -890,7 +894,7 @@ def _mark_failed(project_id: str, doc_id: str, message: str, *, workspace: str |
 
 
 def _mark_ready(project_id: str, doc_id: str, extracted_key: str, chars: int, *,
-                workspace: str | None = None) -> str:
+                workspace: str | None) -> str:
     return _update_doc(project_id, doc_id, {
         'status': 'ready',
         'error': None,
@@ -914,7 +918,7 @@ def _delete_own_output(bucket: str, key: str, version_id: object, doc_id: str) -
     logger.info(f'Product doc {doc_id} was deleted mid-extraction; its text was deleted too')
 
 
-def _extracted_key(project_id: str, doc_id: str, workspace: str | None = None) -> str:
+def _extracted_key(project_id: str, doc_id: str, workspace: str | None) -> str:
     """Where the text goes: `projects/{id}/product_docs/extracted/{doc}.txt`, under `ws/{ws}/` in a workspace."""
     key = f'projects/{project_id}/product_docs/extracted/{doc_id}.txt'
     return key if workspace is None else f'{WORKSPACE_OBJECT_PREFIX}{workspace}/{key}'
@@ -1147,7 +1151,8 @@ def _process_record(record: dict) -> None:
     # any of those call sites.
     _log_context.update({'project_id': project_id, 'doc_id': doc_id, 's3_key': key})
     try:
-        _extract_document(project_id, doc_id, bucket, key, obj)
+        # The deployment's upload (`projects/…`): a workspace's went to _process_workspace_upload above.
+        _extract_document(project_id, doc_id, bucket, key, obj, workspace=None)
     finally:
         # LOAD-BEARING, not tidiness. A batch loops records (see lambda_handler),
         # so a context left in place would attribute the NEXT document's lines —
@@ -1212,7 +1217,7 @@ def _still_active(workspace: str) -> bool:
 
 
 def _extract_document(project_id: str, doc_id: str, bucket: str, key: str, obj: dict, *,
-                      workspace: str | None = None) -> None:
+                      workspace: str | None) -> None:
     """Extract ONE registered product document. Split from _process_record so that
     the log context above is set and cleared around the whole of it.
 

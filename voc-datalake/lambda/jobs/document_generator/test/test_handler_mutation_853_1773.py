@@ -703,7 +703,7 @@ class TestBuildSteps:
         assert result == {'doc_type': 'prd', 'title': 'Committed', 'feature_idea': 'i',
                           'num_steps': 0, 'replayed': True}
         complete.assert_called_once_with(PROJECT, JOB, existing)
-        job_context.assert_called_once_with(PROJECT, JOB)
+        job_context.assert_called_once_with(PROJECT, JOB, workspace=None)
         job_context.return_value.update_progress.assert_called_once_with(10, 'gathering_context')
         puts.assert_not_called()
 
@@ -780,7 +780,7 @@ class TestRunOneStep:
             prompt='', system_prompt='', max_tokens=4096, thinking_budget=0,
             surface='documents', step_name='llm_step_1',
         )
-        job_context.assert_called_once_with(PROJECT, JOB)
+        job_context.assert_called_once_with(PROJECT, JOB, workspace=None)
         job_context.return_value.update_progress.assert_called_once_with(15, 'llm_step_1')
         put.assert_called_once_with('scratch/document_jobs/job_1/result_0.txt', 'OUT')
         assert log.info.call_args_list == [
@@ -873,6 +873,7 @@ class TestAssembleAndSave:
         ]})
         mocks['update_job_status'].assert_called_once_with(
             PROJECT, JOB, 'completed', 100, 'complete', result={'document_id': 'n', 'title': 'T', 'u': 1},
+            workspace=None,
         )
         log.exception.assert_not_called()
 

@@ -137,7 +137,7 @@ def _accepted(project_id: str, job_type: str, config: dict[str, Any], **extra: A
     started = assist_jobs.start(project_pk(project_id, workspace=None), job_type, {**config, 'project_id': project_id,
                                                                    'actor': _actor()},
                                 worker_function=assist_jobs.worker_function(), initiated_by=_actor()['sub'],
-                                project_id=project_id)
+                                project_id=project_id, workspace=None)
     return Response(status_code=202, content_type=content_types.APPLICATION_JSON,
                     body=json.dumps({**started, **extra}, default=decimal_default))
 

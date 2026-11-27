@@ -1363,7 +1363,7 @@ def approve_plan():
     try:
         # Atomic: the create transaction takes one of plans_store.MAX_ACTIVE_PLANS slots or fails.
         meta = plans_store.create_plan(table, plan, approver=approver, conversation_id=conversation_id, now=now,
-                                       workspace=workspace)
+                                       approval_workspace=workspace)
     except plans_store.PlanCapReached as full:
         raise ConflictError(str(full)) from full
     plans_store.launch_plan(table, meta, now=now)

@@ -41,17 +41,18 @@ def _reader() -> persona_grounding.Reader:
 @tracer.capture_method
 def persona_evidence_pack(project_id: str) -> dict[str, Any]:
     persona_ids, question, limit = persona_grounding.validated_pack_request(json_object_body(app))
-    return persona_grounding.evidence_pack(_reader(), project_id, persona_ids, question, limit)
+    return persona_grounding.evidence_pack(_reader(), project_id, persona_ids, question, limit, workspace=None)
 
 
 @app.get("/projects/<project_id>/personas/<persona_id>/evidence-freshness")
 @tracer.capture_method
 def persona_evidence_freshness(project_id: str, persona_id: str) -> dict[str, Any]:
-    return persona_grounding.evidence_freshness(_reader(), project_id, persona_id)
+    return persona_grounding.evidence_freshness(_reader(), project_id, persona_id, workspace=None)
 
 
 @app.post("/projects/<project_id>/personas/<persona_id>/evidence/refresh")
 @tracer.capture_method
 def refresh_persona_evidence(project_id: str, persona_id: str) -> dict[str, Any]:
     actor = actor_from_event(app.current_event.raw_event)
-    return {'success': True, **persona_grounding.refresh_evidence(_reader(), project_id, persona_id, actor)}
+    return {'success': True, **persona_grounding.refresh_evidence(_reader(), project_id, persona_id, actor,
+                                                                  workspace=None)}

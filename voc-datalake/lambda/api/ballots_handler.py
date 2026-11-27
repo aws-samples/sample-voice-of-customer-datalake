@@ -486,7 +486,7 @@ def _validated_session_id(raw: Any) -> str | None:
     return session_id if _SESSION_ID_PATTERN.fullmatch(session_id) else None
 
 
-def _existing_row(row_id: str, *, workspace: 'WorkspaceScope | None' = None) -> dict | None:
+def _existing_row(row_id: str, *, workspace: 'WorkspaceScope | None') -> dict | None:
     """Does a row record exist for this id — the check a session must pass to open.
 
     One `get_item`, the read this role already grants. A FAILED read raises
@@ -516,7 +516,7 @@ def _existing_row(row_id: str, *, workspace: 'WorkspaceScope | None' = None) -> 
 
 
 def _require_project_level(project_id: Any, level: str, missing_message: str, *,
-                           workspace: 'WorkspaceScope | None' = None) -> None:
+                           workspace: 'WorkspaceScope | None') -> None:
     """The caller's access to ``project_id`` at ``level``, or the contract's refusal.
 
     A caller who cannot even VIEW the project gets ``missing_message`` as a 404 —
@@ -544,7 +544,7 @@ def _require_project_level(project_id: Any, level: str, missing_message: str, *,
                                        workspace=workspace, membership=None)
 
 
-def _require_row_project_edit(row: dict, *, workspace: 'WorkspaceScope | None' = None) -> None:
+def _require_row_project_edit(row: dict, *, workspace: 'WorkspaceScope | None') -> None:
     """Only someone who may EDIT the row's project may open a public vote on it.
 
     A session is a public write window onto a project's row, so it is gated like
@@ -557,7 +557,7 @@ def _require_row_project_edit(row: dict, *, workspace: 'WorkspaceScope | None' =
                            workspace=workspace)
 
 
-def _session_project_id(item: dict, *, workspace: 'WorkspaceScope | None' = None) -> str | None:
+def _session_project_id(item: dict, *, workspace: 'WorkspaceScope | None') -> str | None:
     """The project a session's row belongs to, for the facilitator routes' gate.
 
     Read off the SESSION first: `create_voting_session` copies the row's
@@ -577,7 +577,7 @@ def _session_project_id(item: dict, *, workspace: 'WorkspaceScope | None' = None
     return row_project_id if isinstance(row_project_id, str) and row_project_id else None
 
 
-def _require_session_project_level(item: dict, level: str, *, workspace: 'WorkspaceScope | None' = None) -> None:
+def _require_session_project_level(item: dict, level: str, *, workspace: 'WorkspaceScope | None') -> None:
     """Gate a facilitator route on the session's project: VIEW to read status, EDIT to close.
 
     A session id is 128 bits of entropy, but it is also printed on a screen in
@@ -593,7 +593,7 @@ def _require_session_project_level(item: dict, level: str, *, workspace: 'Worksp
                            workspace=workspace)
 
 
-def _project_gone(project_id: Any, *, workspace: 'WorkspaceScope | None' = None) -> bool:
+def _project_gone(project_id: Any, *, workspace: 'WorkspaceScope | None') -> bool:
     """Whether the project a session belongs to was deleted (META gone or tombstoned).
 
     A missing project id is a session or row from before project scoping: nothing to
@@ -620,7 +620,7 @@ def _status_row_gone(item: dict) -> bool:
     sessions (`shared.voting_session_close`), so an admin reading one sees it closed.
     """
     row_id = _session_row_id(item)
-    return bool(row_id) and _existing_row(row_id) is None
+    return bool(row_id) and _existing_row(row_id, workspace=None) is None
 
 
 def _session_target_gone(item: dict) -> bool:
@@ -637,10 +637,10 @@ def _session_target_gone(item: dict) -> bool:
     row_id = _session_row_id(item)
     if not row_id:
         return False
-    row = _existing_row(row_id)
+    row = _existing_row(row_id, workspace=None)
     if row is None:
         return True
-    return _project_gone(item.get('project_id') or row.get('project_id'))
+    return _project_gone(item.get('project_id') or row.get('project_id'), workspace=None)
 
 
 def _sanitized_text(raw: Any, max_length: int) -> str:
@@ -905,14 +905,14 @@ def create_voting_session():
     """
     body = json_object_body(app)
     row_id = validated_row_id(body.get('row_id'))
-    row = _existing_row(row_id)
+    row = _existing_row(row_id, workspace=None)
     if row is None:
         # 404 about the world, not 400 about the request: the id is well-formed
         # and the page sent one it was shown — a row created moments ago in
         # another tab, or a stale tab after this deployment re-keyed rows. The
         # id is not echoed (unbounded caller input, the module's standing rule).
         raise NotFoundError(_MISSING_ROW_MESSAGE)
-    _require_row_project_edit(row)
+    _require_row_project_edit(row, workspace=None)
     now = _now()
     existing = _open_session_for_row(row_id, now)
     if existing is not None:
@@ -1001,10 +1001,10 @@ def find_open_voting_session():
     """
     params = app.current_event.query_string_parameters or {}
     row_id = validated_row_id(params.get('row_id'))
-    row = _existing_row(row_id)
+    row = _existing_row(row_id, workspace=None)
     if row is None:
         raise NotFoundError(_MISSING_ROW_MESSAGE)
-    _require_project_level(row.get('project_id'), project_access.LEVEL_VIEW, _MISSING_ROW_MESSAGE)
+    _require_project_level(row.get('project_id'), project_access.LEVEL_VIEW, _MISSING_ROW_MESSAGE, workspace=None)
     now = _now()
     session = _open_session_for_row(row_id, now)
     return {'success': True, 'session': _session_payload(session, now) if session else None}
@@ -1020,7 +1020,7 @@ def get_voting_session(session_id: str):
     item = _load_session(validated)
     if not item:
         raise NotFoundError('Voting session not found')
-    _require_session_project_level(item, project_access.LEVEL_VIEW)
+    _require_session_project_level(item, project_access.LEVEL_VIEW, workspace=None)
     if _status_row_gone(item):
         # Its row or project was deleted: there is no vote here to watch any more.
         raise NotFoundError('Voting session not found')
@@ -1051,7 +1051,7 @@ def close_voting_session(session_id: str):
     item = _load_session(validated)
     if not item:
         raise NotFoundError('Voting session not found')
-    _require_session_project_level(item, project_access.LEVEL_EDIT)
+    _require_session_project_level(item, project_access.LEVEL_EDIT, workspace=None)
     now = _now()
     try:
         response = _table().update_item(
@@ -1601,7 +1601,7 @@ def submit_ballot(session_id: str):
         # row or project was deleted answered 409 `closed` here and 410 `gone` there). Asked
         # only on this refusal path; an open session's row is asserted by the ballot write.
         return _refusal(REASON_GONE if _session_target_gone(item) else state)
-    if _project_gone(item.get('project_id')):
+    if _project_gone(item.get('project_id'), workspace=None):
         return _refusal(REASON_GONE)
 
     row_id = _session_row_id(item)

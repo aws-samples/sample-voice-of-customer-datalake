@@ -67,7 +67,7 @@ def _delete_unprotected(table: Any, project_id: str, sort_key: str, *, workspace
     )
 
 
-def clear_personas(table: Any, project_id: str, *, workspace: WorkspaceScope | None = None) -> ClearedPersonas:
+def clear_personas(table: Any, project_id: str, *, workspace: WorkspaceScope | None) -> ClearedPersonas:
     """Delete every unprotected persona row of the project, one by one; a failed delete never stops the rest. A key
     the workspace layer refuses (``OutOfScopeError``) is a programming error: raised, never counted as failed."""
     result = ClearedPersonas()
@@ -99,7 +99,7 @@ def clear_personas(table: Any, project_id: str, *, workspace: WorkspaceScope | N
 
 
 def set_protection(table: Any, project_id: str, persona_id: str, protected: bool, now: str, *,
-                   workspace: WorkspaceScope | None = None) -> None:
+                   workspace: WorkspaceScope | None) -> None:
     """Mark a persona protected (or not); ``NotFoundError`` when the project has no such persona."""
     try:
         table_view(workspace, table).update_item(

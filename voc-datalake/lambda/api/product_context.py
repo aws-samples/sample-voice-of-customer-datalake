@@ -802,7 +802,8 @@ def delete_doc(project_id: str, doc_id: str, *, actor: Mapping[str, str] | None 
             if refused:
                 logger.warning(f'{refused} object version(s) of product doc {doc_id} could not be deleted')
     record_delete(projects_table, kind='product_doc', target={'project_id': project_id, 'doc_id': doc_id}, actor=actor)
-    mark_citing_documents(projects_table, project_id, [DeletedSource('product_doc', doc_id)], deleted_at=now_iso())
+    mark_citing_documents(projects_table, project_id, [DeletedSource('product_doc', doc_id)], deleted_at=now_iso(),
+                          workspace=None)
     return {'success': True}
 
 

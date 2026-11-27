@@ -17,6 +17,74 @@ the platform package version.
 
 ## [Unreleased]
 
+## [7.102.00] - 2026-11-27
+
+The rest of the project-adjacent stores name their scope at every call (slice 3h-S1b of docs/multi-workspace.md's
+project plan, the follow-up of 3h-S1 in 7.99.00; plumbing, no behaviour change). The jobs, the assists, the personas'
+stores, the voice sessions, the human documents, the decisions, the deleted sources' marks, the participants'
+project gate and the product docs' extractor still took `workspace` with a default, the deployment, so a call that
+forgot a request's workspace would have fallen back to the deployment's rows without a sign once the switch lifts
+their refusals. Now they join `GUARDED` (`lambda/shared/test/test_project_workspace_keyword.py`): `workspace` is a
+required keyword, and the static guard keeps every call spelling it out.
+
+### Changed
+
+- `workspace` is a required keyword-only parameter (no default) of every function that takes it in 18 more modules,
+  now in `GUARDED` (21 to 39): `shared/jobs.py` (`create_job`, `update_job_status`, `claim_job_execution`,
+  `recover_job_execution_claim`, `JobContext`), `job_notices.py`, `assist_jobs.py` (`start`, `start_owned`, `get`,
+  `owner_pk`), `company_personas.py`, `persona_save.py` (`require_writable_project`, `save_persona_items`,
+  `count_personas`, `store_persona_count`), `persona_copy.py` (`copy_personas` also takes `source_workspace` with no
+  default), `persona_copy_routes.py`, `persona_replace.py`, `persona_overlap.py`, `persona_grounding.py`,
+  `voice_sessions.py`, `human_documents.py`, `decision_records.py`, `deleted_sources.py`, `engagement_identity.py`'s
+  gate wrappers (`require_project_access`, `can_view_project`), the wrappers in `api/ballots_handler.py` and
+  `agents/plan_waits.py`, and `lambda/product_doc_extractor/handler.py` (`_project_pk`, `_get_doc` and every record
+  helper; its scope is a workspace id). Beyond the slice's list, the scan of the other project-adjacent modules still
+  defaulting added `persona_overlap.py` (the kept personas' read), `deleted_sources.py` (the documents citing a
+  deleted source) and the extractor. The extractor keeps its own copy of the project partition: it takes nothing from
+  `lambda/shared/` (stdlib and boto3 only, no layer), so `project_keys.project_pk` is not a clean swap, and
+  `product_doc_extractor/test/test_project_keys_lockstep.py` already holds the copy to it.
+- Every caller that passed nothing now passes `workspace=None`, the deployment, as the default did: 78 production
+  calls (the projects, product context, ballots, scrapers and settings routes, the document generator's and the
+  research steps' job rows, each step refused in a workspace before it runs, the error steps already passing the
+  run's scope; the company library, persona copy and grounding routes, the participants' and feature requests'
+  project gate, the voice routes, and the extractor's deployment upload). None needs a `# deployment:` marker: the
+  locals that held a category scope, a board viewer's `BoardScope` or the copy's source kind under the name `scope`
+  are now `category_scope` (`voice_session_routes.py`, `voice_sessions.py` `_evidence`), `board_scope`
+  (`feature_requests_routes.py` `promote_request`) and `source_kind` (`persona_copy_routes.py` `copy_personas_in`).
+- `api/projects_handler.py`'s four `version_html` calls (the prototype's outline, its walkthrough read, the
+  walkthrough draft's check and its work) pass their `PrototypeStore`'s `store.workspace` instead of a literal None.
+- `shared/plans_store.py` `create_plan`'s `workspace` (a workspace id stored as the plan's `workspace_id`, not a
+  store's scope) is now `approval_workspace`, so the scope guards never read it as one (`workspace_id` itself is a
+  keyword the raw-access guard keeps out of the request-facing modules).
+- No key, request or answer changes (the CDK baseline's template hashes move with the Lambda code assets only).
+
+### Tests
+
+- `test_project_workspace_keyword.py`: the 17 shared and API modules join `GUARDED`, seen red on 7.101.00's code (17
+  modules with a default and 159 call findings: 77 real calls without `workspace=` and 82 false matches of `dict.get`
+  in the bundle scripts, read by name as `assist_jobs.get`); the extractor, added in review, red on 7.101.00's file (9
+  functions with a default, 1 call); green after. `LITERAL_NONE` rises once, from 191 in 27 modules to 265 in 35: the
+  78 production calls that took the default, every one the deployment's, net +74 because the four `version_html`
+  calls leave it; each module's note names its calls. The bundle scripts' name-only match leaves out exactly the
+  `(module, name)` pairs of `BY_NAME_EXCLUDED`, today `('shared.assist_jobs', 'get')`; a test fails on any other
+  guarded name a builtin container's method also has, and another on an exclusion that names no guarded function.
+- `test_ws_raw_access.py`: its project-accessor lists already held the jobs, the assists and the participants' gate,
+  whose default it did not count; the 40 calls that took it spell `workspace=None` now, so 10 modules' `ALLOWED`
+  entries count `project accessor(workspace=None)` (2 new entries), each with its calls noted beside it: the same
+  access, visible now.
+- `test_project_keys.py`: `persona_keys` is pinned against the keys the persona job and importer built by hand
+  before 7.99.00, and leaving `workspace` out of `project_pk`, `persona_keys`, `comments_pk` or
+  `version_partition_key` raises `TypeError` (replacing the duplicated default and explicit-None assertions). That
+  run-time check covers the key builders of `shared/project_keys.py`; the 18 new modules are covered statically, by
+  the guard's first rule (no default) and its call check.
+- The tests' own calls name their scope, and their call assertions expect `workspace=None`.
+
+### Docs
+
+- docs/multi-workspace.md: the 7.102.00 status row, 3h-S1b marked done, and three follow-ups in 3h's plan: 3h-S1c
+  (the stores still defaulting in other phases), an owner per `LITERAL_NONE` entry, and the research steps passing
+  their checked scope when their slice lifts the refusal.
+
 ## [7.101.00] - 2026-11-27
 
 The access gate decides a workspace's project from that workspace's own membership (slice 3h-S2 of

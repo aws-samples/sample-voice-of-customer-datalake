@@ -67,20 +67,20 @@ class TestReadExistingPersonas:
     def test_every_kept_name_is_compared_while_the_prompt_stays_capped(self):
         table = MagicMock()
         table.query.return_value = {'Items': [{'name': f'P{i}'} for i in range(40)]}
-        existing = po.read_existing_personas(table, 'proj-1')
+        existing = po.read_existing_personas(table, 'proj-1', workspace=None)
         assert existing.name_keys == frozenset(f'p{i}' for i in range(40))
         assert len(_listed(existing.section)) == po.MAX_PROJECTED_PERSONAS
 
     def test_names_are_every_kept_name_as_one_line_in_sort_key_order(self):
         table = MagicMock()
         table.query.return_value = {'Items': [{'name': ' Old\n One '}, {'tagline': 'nameless'}, {'name': 'Newer'}]}
-        existing = po.read_existing_personas(table, 'proj-1')
+        existing = po.read_existing_personas(table, 'proj-1', workspace=None)
         assert existing.names == ('Old One', 'Newer')
 
     def test_the_query_reads_only_the_projected_attributes_aliased(self):
         table = MagicMock()
         table.query.return_value = {'Items': []}
-        assert po.read_existing_personas(table, 'proj-1') == po.NO_EXISTING_PERSONAS
+        assert po.read_existing_personas(table, 'proj-1', workspace=None) == po.NO_EXISTING_PERSONAS
         table.query.assert_called_once_with(
             KeyConditionExpression=Key('pk').eq('PROJECT#proj-1') & Key('sk').begins_with('PERSONA#'),
             ProjectionExpression='#a0, #a1, #a2, #a3, #a4, #a5',

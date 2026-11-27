@@ -126,7 +126,7 @@ def test_a_workspace_jobs_status_partition_is_its_own():
 def test_an_update_in_another_scope_never_writes_a_row(table):
     job_id, _ = jobs.create_job(PROJECT, 'research', 'research_config', {}, workspace=A)
     jobs.update_job_status(PROJECT, job_id, 'failed', 0, 'error', error='x', workspace=B)
-    jobs.update_job_status(PROJECT, job_id, 'failed', 0, 'error', error='x')
+    jobs.update_job_status(PROJECT, job_id, 'failed', 0, 'error', error='x', workspace=None)
     assert _rows(table, project_pk(PROJECT, workspace=B)) == []
     assert _rows(table, project_pk(PROJECT, workspace=None)) == []
     row = _row(table, A, job_id)
@@ -159,8 +159,9 @@ def test_without_a_workspace_the_requests_are_the_deployments():
     with patch.object(jobs, 'get_jobs_table', return_value=recording), \
             patch.object(jobs.uuid, 'uuid4', return_value=SimpleNamespace(hex='0123456789abcdef0000')), \
             patch.object(jobs, 'now_iso', return_value='2026-11-14T09:00:00+00:00'):
-        jobs.create_job(PROJECT, 'research', 'research_config', {'q': 1}, ttl_minutes=0, status='pending')
-        jobs.update_job_status(PROJECT, 'job_0123456789abcdef', 'running', 10, 'starting')
+        jobs.create_job(PROJECT, 'research', 'research_config', {'q': 1}, ttl_minutes=0, status='pending',
+                        workspace=None)
+        jobs.update_job_status(PROJECT, 'job_0123456789abcdef', 'running', 10, 'starting', workspace=None)
     put = recording.put_item.call_args.kwargs['Item']
     assert {key: put[key] for key in ('pk', 'sk', 'gsi1pk', 'gsi1sk', 'status')} == {
         'pk': f'PROJECT#{PROJECT}', 'sk': 'JOB#job_0123456789abcdef', 'gsi1pk': 'STATUS#pending',
@@ -199,7 +200,7 @@ def test_a_job_event_that_names_a_workspace_fails_its_own_row_and_runs_nothing(t
 
 
 def test_a_job_event_without_a_workspace_runs_as_before(table):
-    job_id, _ = jobs.create_job(PROJECT, 'generate_prd', 'doc_config', {}, status='pending')
+    job_id, _ = jobs.create_job(PROJECT, 'generate_prd', 'doc_config', {}, status='pending', workspace=None)
     body = _sample_body()
     answer = jobs.job_handler()(body)({'project_id': PROJECT, 'job_id': job_id, 'doc_config': {'k': 1}}, _context())
     assert answer == {'success': True, 'document_id': 'd1'}
@@ -244,7 +245,7 @@ def test_a_notice_reads_its_workspaces_row(table):
 # ── shared/assist_jobs.py ───────────────────────────────────────────────────────────────────────────────────────────
 
 def test_an_owned_assist_lives_in_its_workspace(table):
-    assert assist_jobs.owner_pk('sub-1') == 'ASSIST#sub-1'
+    assert assist_jobs.owner_pk('sub-1', workspace=None) == 'ASSIST#sub-1'
     assert assist_jobs.owner_pk('sub-1', workspace=CONTEXT_A) == f'WS#{WS_A}#ASSIST#sub-1'
     with patch.object(assist_jobs, 'invoke_lambda_async') as invoke, \
             patch.dict('os.environ', {'ASSIST_WORKER_FUNCTION': 'worker'}):
@@ -334,7 +335,7 @@ def test_an_assist_without_a_workspace_sends_the_event_it_always_sent(table):
     with patch.object(assist_jobs, 'invoke_lambda_async') as invoke, \
             patch.object(assist_jobs, 'payload_fields', return_value={}):
         started = assist_jobs.start('ASSIST#sub-1', 'assist_suggest', {}, worker_function='worker',
-                                    initiated_by='sub-1')
+                                    initiated_by='sub-1', workspace=None)
     invoke.assert_called_once_with('worker', {'action': 'assist_job', 'pk': 'ASSIST#sub-1',
                                               'job_id': started['job_id']})
     row = table.get_item(Key={'pk': 'ASSIST#sub-1', 'sk': f"JOB#{started['job_id']}"}).get('Item')
@@ -357,14 +358,14 @@ def test_a_wait_in_a_workspace_reads_its_rows_only(table, wait, pk, sk):
     table.put_item(Item={'pk': pk, 'sk': sk, 'status': 'completed'})
     assert plan_waits.poll(wait, STARTED, workspace=A).status == plan_waits.WAIT_DONE
     assert plan_waits.poll(wait, STARTED, workspace=B).status == plan_waits.WAIT_PENDING
-    assert plan_waits.poll(wait, STARTED).status == plan_waits.WAIT_PENDING
+    assert plan_waits.poll(wait, STARTED, workspace=None).status == plan_waits.WAIT_PENDING
 
 
 def test_a_wait_without_a_workspace_reads_the_deployments_keys():
     recording = MagicMock()
     recording.get_item.return_value = {}
     with patch.object(plan_waits, 'get_aggregates_table', return_value=recording):
-        plan_waits.poll({'for': 'source_run', 'source': 'web', 'execution_id': 'e1'}, {})
+        plan_waits.poll({'for': 'source_run', 'source': 'web', 'execution_id': 'e1'}, {}, workspace=None)
     recording.get_item.assert_called_once_with(Key={'pk': 'SOURCE_RUN#web', 'sk': 'e1'}, ConsistentRead=True)
 
 

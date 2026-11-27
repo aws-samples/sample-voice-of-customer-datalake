@@ -109,7 +109,7 @@ def verified_email(event: Mapping[str, Any]) -> str:
 
 
 def require_project_access(event: Mapping[str, Any], project_id: object, level: str, *,
-                           workspace: WorkspaceScope | None = None) -> str:
+                           workspace: WorkspaceScope | None) -> str:
     """The project id when the app caller has ``level`` on it (404 without view, 403 without the level).
 
     The participants' project gate is the deployment's: a ``workspace`` is refused (``NotPerWorkspaceError``, a 500),
@@ -129,7 +129,7 @@ def require_project_access(event: Mapping[str, Any], project_id: object, level: 
     return project_id
 
 
-def can_view_project(event: Mapping[str, Any], project_id: str, *, workspace: WorkspaceScope | None = None) -> bool:
+def can_view_project(event: Mapping[str, Any], project_id: str, *, workspace: WorkspaceScope | None) -> bool:
     """Whether the app caller may view the project (a workspace is refused, as ``require_project_access`` refuses
     it: never answered False)."""
     try:

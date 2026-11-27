@@ -211,5 +211,5 @@ def test_the_sweep_prefixes_match_the_writers_key_layout():
     # A prototype draft's object goes with its project too (docs/prototype-builder.md, part 2).
     assert prototype_draft_s3_key('p1', 'job_1', workspace=None).startswith(prototype_project_prefix('p1',
                                                                                                      workspace=None))
-    assert extractor._extracted_key('p1', 'd1').startswith(product_docs_project_prefix('p1', workspace=None))
+    assert extractor._extracted_key('p1', 'd1', None).startswith(product_docs_project_prefix('p1', workspace=None))
     assert "f'projects/{project_id}/product_docs/raw/" in inspect.getsource(product_context)

@@ -202,7 +202,7 @@ def _decided(caller: Caller, now: str) -> dict[str, str]:
 
 
 def create_decision(table: Any, project_id: str, body: Mapping[str, Any], caller: Caller, *,
-                    workspace: WorkspaceScope | None = None) -> dict:
+                    workspace: WorkspaceScope | None) -> dict:
     """Create a decision document; answers ``{success, document}`` (in ``workspace``'s project when given)."""
     fields = validated_fields(body, partial=False)
     title = fields.pop('title')
@@ -225,7 +225,7 @@ def create_decision(table: Any, project_id: str, body: Mapping[str, Any], caller
 
 
 def stored_decision(table: Any, project_id: str, document_id: str, *,
-                    workspace: WorkspaceScope | None = None) -> dict:
+                    workspace: WorkspaceScope | None) -> dict:
     """The decision document, or 404 (a missing id and a non-decision document alike)."""
     if not EVIDENCE_ID_RE.match(document_id):
         raise NotFoundError('Decision not found')
@@ -258,7 +258,7 @@ def _revision(item: Mapping[str, Any]) -> int:
 
 
 def update_decision(table: Any, project_id: str, document_id: str, body: Mapping[str, Any],
-                    caller: Caller, *, workspace: WorkspaceScope | None = None) -> dict:
+                    caller: Caller, *, workspace: WorkspaceScope | None) -> dict:
     """Apply an edit in place (revision + 1); answers ``{success, document}``."""
     expected = validated_expected_revision(body.get('expected_revision'))
     fields = validated_fields(body, partial=True)
@@ -321,7 +321,7 @@ def pursue_doc_config(decision_item: Mapping[str, Any], body: Mapping[str, Any])
 
 
 def record_seeded_prfaq(table: Any, item: Mapping[str, Any], job_id: str, *,
-                        workspace: WorkspaceScope | None = None) -> None:
+                        workspace: WorkspaceScope | None) -> None:
     """Note on the decision which PR/FAQ job it seeded (outside ``decision``, so edits keep it)."""
     table_view(workspace, table).update_item(
         {'pk': item['pk'], 'sk': item['sk']},

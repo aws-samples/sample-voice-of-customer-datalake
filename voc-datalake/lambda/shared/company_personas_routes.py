@@ -93,7 +93,7 @@ def _require_admin() -> None:
 
 def _writable_library() -> None:
     """The container's META exists before any write or job (persona-save checks it)."""
-    ensure_company_personas_meta(projects_table())
+    ensure_company_personas_meta(projects_table(), workspace=None)
 
 
 def _is_storage_key(field: str) -> bool:
@@ -115,7 +115,7 @@ def public_persona(persona: dict, *, admin: bool) -> dict:
 def list_company_personas():
     """``{personas, can_edit}``, newest first: every signed-in user reads the library."""
     admin = acts_as_admin(request_caller())
-    personas = ops().sign_avatars(company_persona_items(projects_table()))
+    personas = ops().sign_avatars(company_persona_items(projects_table(), workspace=None))
     return {'personas': [public_persona(persona, admin=admin) for persona in personas], 'can_edit': admin}
 
 

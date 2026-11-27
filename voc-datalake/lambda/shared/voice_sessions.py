@@ -358,7 +358,7 @@ def _require_person(caller: Caller) -> str:
 
 
 def offer(stores: Stores, config: VoiceConfig | None, project_id: str, persona_id: str, caller: Caller, *,
-          start_finalize: StartFinalize, workspace: WorkspaceScope | None = None) -> dict[str, Any]:
+          start_finalize: StartFinalize, workspace: WorkspaceScope | None) -> dict[str, Any]:
     """What a session with this persona would be (the consent dialog's figures), or ``{enabled: false}``; first the
     caller's sessions of this project that ended without End are saved (``start_finalize`` starts each one's job)."""
     require_deployment(workspace, PROJECT_GATE_STORE)
@@ -450,13 +450,15 @@ def release_stream(stores: Stores, session_id: str) -> None:
 PROFILE_FIELDS: Final = ('persona_id', 'name', 'tagline', 'quotes', 'goals_motivations', 'pain_points')
 
 
-def _evidence(stores: Stores, project_id: str, persona: Mapping[str, Any], scope: CategoryScope) -> list[dict]:
+def _evidence(stores: Stores, project_id: str, persona: Mapping[str, Any],
+              category_scope: CategoryScope) -> list[dict]:
     """The persona's evidence pack, read as the person (their category and source access): its cited reviews and the
     fresh ones that match it, at most ``MAX_STORED_EVIDENCE`` + ``MAX_FRESH``, each an id and a screened, clipped
-    quote."""
-    reader = persona_grounding.Reader(projects_table=stores.projects, feedback_table=stores.feedback, scope=scope)
+    quote. The deployment's (``mint`` refused a workspace first)."""
+    reader = persona_grounding.Reader(projects_table=stores.projects, feedback_table=stores.feedback,
+                                      scope=category_scope)
     pack = persona_grounding.evidence_pack(reader, project_id, [str(persona['persona_id'])], '',
-                                           persona_grounding.MAX_FRESH)
+                                           persona_grounding.MAX_FRESH, workspace=None)
     personas = pack.get('personas') or []
     return list(personas[0].get('evidence') or []) if personas else []
 
@@ -515,7 +517,7 @@ def _write_scratch_and_rows(stores: Stores, config: VoiceConfig, project_id: str
 
 
 def mint(stores: Stores, config: VoiceConfig, project_id: str, persona_id: str, caller: Caller, body: Mapping[str, Any],
-         scope: CategoryScope, *, workspace: WorkspaceScope | None = None) -> dict[str, Any]:
+         scope: CategoryScope, *, workspace: WorkspaceScope | None) -> dict[str, Any]:
     """Start a session (the module's checks, in their order) and answer its 60-second URL."""
     require_deployment(workspace, PROJECT_GATE_STORE)
     subject = _require_person(caller)

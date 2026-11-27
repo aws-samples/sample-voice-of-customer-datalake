@@ -95,7 +95,7 @@ def _generate(call, claims: dict, doc_type: str = 'prd') -> tuple[int, dict]:
 
 def _a_prd(world: World) -> dict:
     return create_human_document(world.projects_table, PROJECT, 'prd', {'title': 'Checkout', 'create_id': 'seed'},
-                                 creator_sub='sub-ada')
+                                 creator_sub='sub-ada', workspace=None)
 
 
 def _assert_nothing_started(world: World) -> None:

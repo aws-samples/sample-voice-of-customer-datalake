@@ -75,7 +75,7 @@ def _code_at(codes: list[str | None], index: int) -> str | None:
     return codes[index] if len(codes) > index else None
 
 
-def require_writable_project(table: Any, project_id: str, *, workspace: WorkspaceScope | None = None) -> None:
+def require_writable_project(table: Any, project_id: str, *, workspace: WorkspaceScope | None) -> None:
     """Raise ``ProjectNotWritableError`` unless the project META exists and is not a tombstone.
 
     Checked before the avatar batch, the billed tail of a generation: a project
@@ -123,7 +123,7 @@ def _put_once(table: Any, project_id: str, item: dict, sleep: Callable[[float], 
 
 def save_persona_items(
     table: Any, project_id: str, items: list[dict], *, sleep: Callable[[float], None] = time.sleep,
-    workspace: WorkspaceScope | None = None,
+    workspace: WorkspaceScope | None,
 ) -> list[dict]:
     """Write each persona in order; the items that are now stored (an already-stored one included)."""
     saved: list[dict] = []
@@ -137,13 +137,13 @@ def save_persona_items(
     return saved
 
 
-def count_personas(table: Any, project_id: str, *, workspace: WorkspaceScope | None = None) -> int:
+def count_personas(table: Any, project_id: str, *, workspace: WorkspaceScope | None) -> int:
     """How many PERSONA# rows the project holds (every page)."""
     return sum(1 for _ in iter_project_rows(table, project_id, workspace=workspace, sort_prefix='PERSONA#',
                                             ProjectionExpression='sk'))
 
 
-def store_persona_count(table: Any, project_id: str, now: str, *, workspace: WorkspaceScope | None = None) -> int:
+def store_persona_count(table: Any, project_id: str, now: str, *, workspace: WorkspaceScope | None) -> int:
     """Set META ``persona_count`` to the project's real persona total; the total."""
     total = count_personas(table, project_id, workspace=workspace)
     try:

@@ -102,7 +102,7 @@ def _project_view(table: Any, project_id: str) -> dict[str, Any]:
 @app.get('/participants/projects/<project_id>')
 @tracer.capture_method
 def get_project_participants(project_id: str):
-    project_id = require_project_access(_event(), project_id, LEVEL_VIEW)
+    project_id = require_project_access(_event(), project_id, LEVEL_VIEW, workspace=None)
     return _project_view(_table(), project_id)
 
 
@@ -110,7 +110,7 @@ def get_project_participants(project_id: str):
 @tracer.capture_method
 def post_project_participants(project_id: str):
     """Edit: link lists and people (existing ids, or new people by email) to the project."""
-    project_id = require_project_access(_event(), project_id, LEVEL_EDIT)
+    project_id = require_project_access(_event(), project_id, LEVEL_EDIT, workspace=None)
     body = json_object_body(app)
     table = _table()
     sub = get_caller_subject(_event())
@@ -130,7 +130,7 @@ def post_project_participants(project_id: str):
 @app.delete('/participants/projects/<project_id>/lists/<list_id>')
 @tracer.capture_method
 def unlink_project_list(project_id: str, list_id: str):
-    project_id = require_project_access(_event(), project_id, LEVEL_EDIT)
+    project_id = require_project_access(_event(), project_id, LEVEL_EDIT, workspace=None)
     if is_id(list_id, LIST_PREFIX):
         unlink(_table(), project_id, 'LIST', list_id)
     return {'success': True}
@@ -139,7 +139,7 @@ def unlink_project_list(project_id: str, list_id: str):
 @app.delete('/participants/projects/<project_id>/people/<person_id>')
 @tracer.capture_method
 def unlink_project_person(project_id: str, person_id: str):
-    project_id = require_project_access(_event(), project_id, LEVEL_EDIT)
+    project_id = require_project_access(_event(), project_id, LEVEL_EDIT, workspace=None)
     if is_id(person_id, PERSON_PREFIX):
         unlink(_table(), project_id, 'PERSON', person_id)
     return {'success': True}
@@ -201,7 +201,7 @@ def _ask_fields(body: Mapping[str, Any], event: dict[str, Any]) -> dict[str, Any
     fields: dict[str, Any] = {'subject': required_text(body, 'subject', MAX_SUBJECT),
                               'message': required_text(body, 'message', MAX_MESSAGE)}
     if body.get('project_id') is not None:
-        fields['project_id'] = require_project_access(event, body['project_id'], LEVEL_EDIT)
+        fields['project_id'] = require_project_access(event, body['project_id'], LEVEL_EDIT, workspace=None)
     api_base = _api_base()
     fields.update(link=_ask_link(body.get('link'), api_base), api_base=api_base,
                   created_by_email=verified_email(event))
@@ -255,7 +255,7 @@ def _listed(ask: Mapping[str, Any], wanted: str | None, event: dict[str, Any], s
     if not isinstance(project_id, str):
         return True
     if project_id not in seen:
-        seen[project_id] = can_view_project(event, project_id)
+        seen[project_id] = can_view_project(event, project_id, workspace=None)
     return seen[project_id]
 
 
@@ -266,7 +266,7 @@ def get_asks():
     event = _event()
     wanted = params.get('project_id')
     if wanted:
-        wanted = require_project_access(event, wanted, LEVEL_VIEW)
+        wanted = require_project_access(event, wanted, LEVEL_VIEW, workspace=None)
     seen: dict[str, bool] = {}
     return {'asks': [ask_view(ask) for ask in list_asks(_table()) if _listed(ask, wanted, event, seen)]}
 
@@ -287,7 +287,7 @@ def get_one_ask(ask_id: str):
     ask = get_ask(table, ask_id) if is_id(ask_id, 'ask') else None
     if ask is None:
         raise NotFoundError(ASK_NOT_FOUND)
-    if isinstance(ask.get('project_id'), str) and not can_view_project(_event(), ask['project_id']):
+    if isinstance(ask.get('project_id'), str) and not can_view_project(_event(), ask['project_id'], workspace=None):
         raise NotFoundError(ASK_NOT_FOUND)
     rows = recipient_rows(table, ask_id)
     people = get_people(table, [str(row['person_id']) for row in rows])

@@ -185,7 +185,7 @@ class TestEveryRouteIsTraced:
 
 def _started(world: World, job_type: str, config_key: str, config: dict, **kwargs) -> None:
     world.create_job.assert_called_once_with('p1', job_type, config_key, config,
-                                             initiated_by='test-user-id', **kwargs)
+                                             initiated_by='test-user-id', workspace=None, **kwargs)
 
 
 class TestThePersonaJobs:

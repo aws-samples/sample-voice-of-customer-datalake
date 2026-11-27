@@ -866,10 +866,10 @@ class TestTheProjectGateIsConsultedExactlyWhenThereIsAProject:
         table = FakeAggregatesTable([open_session()])
         table.row()['project_id'] = 7
         with patch('ballots_handler.get_aggregates_table', return_value=table):
-            assert ballots_handler._session_project_id({'project_id': 'p', 'row_id': ROW_ID}) == 'p'
-            assert ballots_handler._session_project_id({'project_id': '', 'row_id': ROW_ID}) is None
-            assert ballots_handler._session_project_id({'project_id': 'p', 'row_id': ''}) == 'p'
-            assert ballots_handler._session_project_id({'row_id': ''}) is None
+            assert ballots_handler._session_project_id({'project_id': 'p', 'row_id': ROW_ID}, workspace=None) == 'p'
+            assert ballots_handler._session_project_id({'project_id': '', 'row_id': ROW_ID}, workspace=None) is None
+            assert ballots_handler._session_project_id({'project_id': 'p', 'row_id': ''}, workspace=None) == 'p'
+            assert ballots_handler._session_project_id({'row_id': ''}, workspace=None) is None
         assert len(table.get_item_calls) == 1
 
 

@@ -855,8 +855,8 @@ class TestSavingPersonas:
                 patch.object(projects.persona_save, 'save_persona_items', return_value=[ada, anon]) as save, \
                 patch.object(projects.persona_save, 'store_persona_count') as count:
             assert projects._save_personas('proj-1', items, '2026-03-04T05:06:07+00:00') == [ada, anon]
-        save.assert_called_once_with(table, 'proj-1', [ada, anon])
-        count.assert_called_once_with(table, 'proj-1', '2026-03-04T05:06:07+00:00')
+        save.assert_called_once_with(table, 'proj-1', [ada, anon], workspace=None)
+        count.assert_called_once_with(table, 'proj-1', '2026-03-04T05:06:07+00:00', workspace=None)
 
     def test_a_deleted_project_sweeps_the_avatars_it_made_and_re_raises(self):
         with_avatar = {'persona_id': 'persona_0', 'avatar_url': 's3://b/avatars/persona_0/a.jpeg'}
@@ -1456,7 +1456,7 @@ class TestCreateDocument:
                                               creator_sub='sub-1')
         assert result == {'success': True, 'document': {'document_id': 'd1'}}
         create.assert_called_once_with(table, 'proj-1', document_type, {'title': 'T', 'document_type': document_type},
-                                       creator_sub='sub-1')
+                                       creator_sub='sub-1', workspace=None)
 
     def test_without_a_table_the_refusal_names_it(self):
         with patch.object(projects, 'projects_table', None), pytest.raises(ConfigurationError) as exc:

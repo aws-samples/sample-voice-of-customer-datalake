@@ -84,7 +84,7 @@ def _create_id(body: dict) -> str:
 
 
 def create_human_document(table: Any, project_id: str, doc_type: str, body: dict, *, creator_sub: str,
-                          workspace: WorkspaceScope | None = None) -> dict:
+                          workspace: WorkspaceScope | None) -> dict:
     """File a hand-written PR/FAQ / PRD as the next version of its series; answers the item. ``workspace``: the
     project's scope (the document, its listing and its version rows are that scope's)."""
     if doc_type not in HUMAN_DOC_TYPES:

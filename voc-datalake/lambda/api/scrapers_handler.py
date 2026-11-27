@@ -735,14 +735,15 @@ def analyze_url():
     body = json_object_body(app)
     url = _validated_analyze_url(body.get('url'))
     subject = get_caller_subject(app.current_event.raw_event)
-    return assist_jobs.accepted(assist_jobs.start_owned(subject, ANALYZE_URL_JOB, {'url': url}))
+    return assist_jobs.accepted(assist_jobs.start_owned(subject, ANALYZE_URL_JOB, {'url': url}, workspace=None))
 
 
 @app.get("/scrapers/jobs/<job_id>")
 @tracer.capture_method
 def get_scrapers_assist_job(job_id: str):
     """Poll one of the caller's own scraper assists (404 for anyone else's)."""
-    return assist_jobs.get(assist_jobs.owner_pk(get_caller_subject(app.current_event.raw_event)), job_id)
+    return assist_jobs.get(assist_jobs.owner_pk(get_caller_subject(app.current_event.raw_event), workspace=None),
+                           job_id, workspace=None)
 
 
 def _validated_analyze_url(url: object) -> str:

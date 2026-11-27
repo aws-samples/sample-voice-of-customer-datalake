@@ -145,7 +145,7 @@ def _describe_existing(rows: Iterable[dict]) -> ExistingPersonas:
 
 
 def read_existing_personas(table: Any, project_id: str, *, only_protected: bool = False,
-                           workspace: WorkspaceScope | None = None) -> ExistingPersonas:
+                           workspace: WorkspaceScope | None) -> ExistingPersonas:
     """The personas a generation keeps (every page): all of them when adding, the protected ones when replacing."""
     rows = iter_project_rows(table, project_id, workspace=workspace, sort_prefix='PERSONA#',
                              ProjectionExpression=', '.join(_ATTRIBUTE_NAMES),

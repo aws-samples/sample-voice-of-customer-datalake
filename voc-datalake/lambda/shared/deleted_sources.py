@@ -129,7 +129,7 @@ def _documents(table: Any, project_id: str, *, workspace: WorkspaceScope | None)
 
 def mark_citing_documents(
     table: Any, project_id: str, deleted: Sequence[DeletedSource], *, deleted_at: str,
-    workspace: WorkspaceScope | None = None,
+    workspace: WorkspaceScope | None,
 ) -> int:
     """Mark every document of the project that cites one of ``deleted``; how many were marked (in ``workspace``'s
     project when given, through its ``ws_table`` view). A key outside the workspace is a programming error and is

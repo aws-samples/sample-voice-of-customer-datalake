@@ -389,14 +389,14 @@ class TestTheRecordRead:
         wire()
         projects = _mock_table(extractor, TEST_PROJECTS_TABLE)
 
-        assert extractor._get_doc('proj_1', 'abc123') is None
+        assert extractor._get_doc('proj_1', 'abc123', workspace=None) is None
         projects.get_item.assert_called_once_with(Key=DOC_KEY)
 
     def test_a_failed_read_is_logged_with_the_doc_id(self, extractor, wire, caplog):
         mocks = wire()
         mocks['projects'].get_error = RuntimeError('boom')
 
-        assert extractor._get_doc('proj_1', 'abc123') is None
+        assert extractor._get_doc('proj_1', 'abc123', workspace=None) is None
         assert _messages(caplog) == ['Could not read product doc abc123: boom']
 
 
@@ -443,14 +443,14 @@ class TestEveryRefusalIsLoggedVerbatim:
     def test_a_deleted_record(self, extractor, wire, caplog):
         wire(doc=None, update_error=conditional_check_failed())
 
-        extractor._update_doc('proj_1', 'abc123', {'status': 'ready'})
+        extractor._update_doc('proj_1', 'abc123', {'status': 'ready'}, workspace=None)
 
         assert _messages(caplog) == ['Product doc abc123 was deleted mid-extraction; write skipped']
 
     def test_a_record_the_api_failed(self, extractor, wire, pending_doc, caplog):
         wire(doc=pending_doc('text/plain', status='failed'), update_error=conditional_check_failed())
 
-        extractor._update_doc('proj_1', 'abc123', {'status': 'ready', 'error': None})
+        extractor._update_doc('proj_1', 'abc123', {'status': 'ready', 'error': None}, workspace=None)
 
         assert _messages(caplog) == [
             ("Product doc abc123 is already failed; refusing to overwrite ['error', 'status'] onto it"
@@ -460,7 +460,7 @@ class TestEveryRefusalIsLoggedVerbatim:
     def test_a_malformed_record(self, extractor, wire, pending_doc, caplog):
         wire(doc=pending_doc('text/plain', status='sideways'), update_error=conditional_check_failed())
 
-        extractor._update_doc('proj_1', 'abc123', {'status': 'ready'})
+        extractor._update_doc('proj_1', 'abc123', {'status': 'ready'}, workspace=None)
 
         assert _messages(caplog) == [
             ("Product doc abc123 has no usable status ('sideways'); refusing to overwrite ['status']"
@@ -471,7 +471,7 @@ class TestEveryRefusalIsLoggedVerbatim:
     def test_any_other_write_failure(self, extractor, wire, caplog):
         wire(update_error=RuntimeError('boom'))
 
-        extractor._update_doc('proj_1', 'abc123', {'status': 'ready'})
+        extractor._update_doc('proj_1', 'abc123', {'status': 'ready'}, workspace=None)
 
         assert _messages(caplog) == ['Could not update product doc abc123: boom']
 

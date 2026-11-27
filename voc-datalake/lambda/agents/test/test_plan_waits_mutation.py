@@ -68,19 +68,19 @@ class TestEachKindReadsItsOwnRow:
         (JOB_WAIT, 'jobs', {'pk': 'PROJECT#proj_1', 'sk': 'JOB#job_7'}),
     ])
     def test_the_key_and_table(self, tables: Tables, wait: dict, table: str, key: dict):
-        assert poll(wait, {}) == WaitResult('pending')
+        assert poll(wait, {}, workspace=None) == WaitResult('pending')
         used, unused = (tables.aggregates, tables.jobs) if table == 'aggregates' else (tables.jobs, tables.aggregates)
         used.get_item.assert_called_once_with(Key=key, ConsistentRead=True)
         unused.get_item.assert_not_called()
 
     def test_references_are_resolved_into_the_key(self, tables: Tables):
         wait = {'for': 'project_job', 'project_id': '{{s1.project_id}}', 'job_id': '{{s12.job_id}}'}
-        poll(wait, {'s1.project_id': 'proj_2', 's12.job_id': 'job_3'})
+        poll(wait, {'s1.project_id': 'proj_2', 's12.job_id': 'job_3'}, workspace=None)
         tables.jobs.get_item.assert_called_once_with(Key={'pk': 'PROJECT#proj_2', 'sk': 'JOB#job_3'},
                                                      ConsistentRead=True)
 
     def test_a_non_string_id_is_formatted_as_is(self, tables: Tables):
-        poll({'for': 'source_run', 'source': 7, 'execution_id': None}, {})
+        poll({'for': 'source_run', 'source': 7, 'execution_id': None}, {}, workspace=None)
         tables.aggregates.get_item.assert_called_once_with(Key={'pk': 'SOURCE_RUN#7', 'sk': 'None'},
                                                            ConsistentRead=True)
 
@@ -94,7 +94,7 @@ class TestEveryEndingNamesItsCause:
     ])
     def test_done_statuses(self, tables: Tables, wait: dict, status: str):
         _rows(tables, {'status': status})
-        assert poll(wait, {}) == WaitResult('done', {'status': status}, None)
+        assert poll(wait, {}, workspace=None) == WaitResult('done', {'status': status}, None)
 
     @pytest.mark.parametrize(('wait', 'status', 'error'), [
         (SOURCE_WAIT, 'error', 'The import failed.'),
@@ -103,7 +103,7 @@ class TestEveryEndingNamesItsCause:
     ])
     def test_failed_statuses(self, tables: Tables, wait: dict, status: str, error: str):
         _rows(tables, {'status': status})
-        assert poll(wait, {}) == WaitResult('failed', {}, error)
+        assert poll(wait, {}, workspace=None) == WaitResult('failed', {}, error)
 
     @pytest.mark.parametrize(('wait', 'status'), [
         (SOURCE_WAIT, 'completed_with_errors'),
@@ -115,23 +115,24 @@ class TestEveryEndingNamesItsCause:
     ])
     def test_another_kinds_status_is_still_pending(self, tables: Tables, wait: dict, status: str):
         _rows(tables, {'status': status})
-        assert poll(wait, {}) == WaitResult('pending', {}, None)
+        assert poll(wait, {}, workspace=None) == WaitResult('pending', {}, None)
 
     @pytest.mark.parametrize('response', [{}, {'Item': None}, {'Item': ['completed']}, {'Item': {}},
                                           {'Item': {'status': None}}])
     def test_a_missing_row_or_status_is_pending(self, tables: Tables, response: dict):
         tables.aggregates.get_item.return_value = response
-        assert poll(SOURCE_WAIT, {}) == WaitResult('pending', {}, None)
+        assert poll(SOURCE_WAIT, {}, workspace=None) == WaitResult('pending', {}, None)
 
     @pytest.mark.parametrize('kind', [None, 'nope', 'SOURCE_RUN'])
     def test_an_unknown_kind_fails_without_a_read(self, tables: Tables, kind: Any):
-        assert poll({'for': kind}, {}) == WaitResult('failed', {}, 'The step waits for an unknown kind of job.')
+        assert poll({'for': kind}, {},
+                    workspace=None) == WaitResult('failed', {}, 'The step waits for an unknown kind of job.')
         tables.aggregates.get_item.assert_not_called()
         tables.jobs.get_item.assert_not_called()
 
     def test_an_unrecorded_reference_fails_without_a_read(self, tables: Tables):
         wait = {**SOURCE_WAIT, 'execution_id': '{{s2.execution_id}}'}
-        assert poll(wait, {'s1.execution_id': 'x'}) == WaitResult(
+        assert poll(wait, {'s1.execution_id': 'x'}, workspace=None) == WaitResult(
             'failed', {}, 'The output s2.execution_id was not recorded.')
         tables.aggregates.get_item.assert_not_called()
 
@@ -141,14 +142,14 @@ class TestEveryEndingNamesItsCause:
     ])
     def test_a_failed_read_is_pending_and_logged(self, tables: Tables, exc: Exception):
         tables.jobs.get_item.side_effect = exc
-        assert poll(JOB_WAIT, {}) == WaitResult('pending', {}, None)
+        assert poll(JOB_WAIT, {}, workspace=None) == WaitResult('pending', {}, None)
         tables.logger.warning.assert_called_once_with('Plan wait poll failed; trying again next time',
                                                       extra={'wait_for': 'project_job'})
 
     def test_another_error_propagates(self, tables: Tables):
         tables.jobs.get_item.side_effect = ValueError('boom')
         with pytest.raises(ValueError, match=r'^boom$'):
-            poll(JOB_WAIT, {})
+            poll(JOB_WAIT, {}, workspace=None)
 
     @pytest.mark.parametrize(('getter', 'wait', 'message'), [
         ('get_aggregates_table', SOURCE_WAIT, '^aggregates table is not configured$'),
@@ -157,7 +158,7 @@ class TestEveryEndingNamesItsCause:
     @pytest.mark.usefixtures('tables')
     def test_an_unconfigured_table_raises(self, getter: str, wait: dict, message: str):
         with patch.object(plan_waits, getter, return_value=None), pytest.raises(RuntimeError, match=message):
-            poll(wait, {})
+            poll(wait, {}, workspace=None)
 
 
 class TestDoneOutputs:
@@ -169,7 +170,7 @@ class TestDoneOutputs:
     ])
     def test_items_found_only_when_present(self, tables: Tables, found: object, outputs: dict):
         tables.aggregates.get_item.return_value = {'Item': {'status': 'completed', 'items_found': found}}
-        assert poll(SOURCE_WAIT, {}) == WaitResult('done', outputs, None)
+        assert poll(SOURCE_WAIT, {}, workspace=None) == WaitResult('done', outputs, None)
 
 
 class TestResolveValue:

@@ -58,7 +58,7 @@ def _start_finalize(project_id: str) -> StartFinalize:
             project_pk(project_id, workspace=None), ASSIST_VOICE_FINALIZE,
             {'project_id': project_id, 'persona_id': str(row['persona_id']), 'session_id': str(row['session_id'])},
             worker_function=assist_jobs.worker_function(), initiated_by=str(row.get('starter_sub') or ''),
-            project_id=project_id)
+            project_id=project_id, workspace=None)
         return str(started['job_id'])
     return start
 
@@ -73,7 +73,7 @@ def finalize_work(config: dict) -> dict:
 def voice_session_offer(project_id: str, persona_id: str) -> dict[str, Any]:
     caller = company_personas_routes.caller_of(app)
     return voice_sessions.offer(_stores(), VoiceConfig.from_env(), project_id, persona_id, caller,
-                                start_finalize=_start_finalize(project_id))
+                                start_finalize=_start_finalize(project_id), workspace=None)
 
 
 @app.post("/projects/<project_id>/personas/<persona_id>/voice-sessions")
@@ -81,8 +81,9 @@ def voice_session_offer(project_id: str, persona_id: str) -> dict[str, Any]:
 def start_voice_session(project_id: str, persona_id: str):
     config = voice_sessions.require_config()
     caller = company_personas_routes.caller_of(app)
-    scope = category_gate.scope_for_event(app.current_event.raw_event, get_aggregates_table())
-    started = voice_sessions.mint(_stores(), config, project_id, persona_id, caller, json_object_body(app), scope)
+    category_scope = category_gate.scope_for_event(app.current_event.raw_event, get_aggregates_table())
+    started = voice_sessions.mint(_stores(), config, project_id, persona_id, caller, json_object_body(app),
+                                  category_scope, workspace=None)
     return Response(status_code=201, content_type=content_types.APPLICATION_JSON, body=json.dumps(started))
 
 

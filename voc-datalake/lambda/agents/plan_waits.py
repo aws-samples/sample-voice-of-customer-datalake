@@ -122,7 +122,7 @@ def _read(target: _Target, key: dict[str, str], *, workspace: WorkspaceScope | N
 
 
 def poll(wait: Mapping[str, Any], resolved: Mapping[str, str], *,
-         workspace: WorkspaceScope | None = None) -> WaitResult:
+         workspace: WorkspaceScope | None) -> WaitResult:
     """One look at the job's status row (the workspace's when given: only for ``WORKSPACE_KINDS``; a project job's
     wait refuses one, ``NotPerWorkspaceError``). A missing row is still pending (the timeout ends it)."""
     target = _TARGETS.get(str(wait.get('for')))

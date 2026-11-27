@@ -2344,7 +2344,7 @@ def _clear_existing_personas(project_id: str, actor: Mapping[str, str] | None = 
     generation) and the documents written from it say so.
     """
     try:
-        cleared = persona_replace.clear_personas(projects_table, project_id)
+        cleared = persona_replace.clear_personas(projects_table, project_id, workspace=None)
     except Exception:
         logger.exception("[PERSONA] Failed to read the existing personas to clear (continuing)")
         return
@@ -2564,8 +2564,8 @@ def _save_personas(project_id: str, persona_items: list[tuple[str, dict, dict]],
     """
     items = [item for _pid, _persona, item in persona_items]
     try:
-        saved_personas = persona_save.save_persona_items(projects_table, project_id, items)
-        persona_save.store_persona_count(projects_table, project_id, now)
+        saved_personas = persona_save.save_persona_items(projects_table, project_id, items, workspace=None)
+        persona_save.store_persona_count(projects_table, project_id, now, workspace=None)
     except persona_save.ProjectNotWritableError:
         _sweep_removed_persona_avatars(project_id, [str(item['persona_id']) for item in items if item.get('avatar_url')])
         raise
@@ -2582,7 +2582,7 @@ def _kept_personas(project_id: str, filters: dict) -> persona_overlap.ExistingPe
     """
     try:
         return persona_overlap.read_existing_personas(
-            projects_table, project_id, only_protected=not _is_additive(filters),
+            projects_table, project_id, only_protected=not _is_additive(filters), workspace=None,
         )
     except Exception:
         logger.exception("[PERSONA] Could not read the kept personas (continuing)")
@@ -2705,7 +2705,7 @@ def generate_personas(
 
         if generate_avatars and persona_items:
             # The avatars are the billed tail: none for a project deleted during the model calls.
-            persona_save.require_writable_project(projects_table, project_id)
+            persona_save.require_writable_project(projects_table, project_id, workspace=None)
             _attach_avatars(project_id, persona_items, update_progress)
 
         saved_personas = _save_personas(project_id, persona_items, now)
@@ -3081,7 +3081,8 @@ def create_document(project_id: str, body: dict, *, creator_sub: str = '', categ
     document_type = body.get('document_type', 'custom')
 
     if document_type in HUMAN_DOC_TYPES:
-        item = create_human_document(projects_table, project_id, document_type, body, creator_sub=creator_sub)
+        item = create_human_document(projects_table, project_id, document_type, body, creator_sub=creator_sub,
+                                     workspace=None)
         return {'success': True, 'document': item}
     if document_type not in ('custom', FOCUS_GROUP_TYPE):
         raise ValidationError(
@@ -3414,7 +3415,8 @@ def _after_document_deleted(
     record_delete(projects_table, kind='document', target=target, actor=actor)
     if revisions:
         record_delete(projects_table, kind='document_revisions', target=target, actor=actor)
-    mark_citing_documents(projects_table, project_id, [DeletedSource('document', document_id)], deleted_at=now_iso())
+    mark_citing_documents(projects_table, project_id, [DeletedSource('document', document_id)], deleted_at=now_iso(),
+                          workspace=None)
 
 
 def _delete_saved_revisions(project_id: str, document_id: str) -> None:
@@ -3658,7 +3660,7 @@ def set_persona_protection(project_id: str, persona_id: str, body: dict) -> dict
     protected = body.get('protected')
     if not isinstance(protected, bool):
         raise ValidationError('protected must be true or false')
-    persona_replace.set_protection(projects_table, project_id, persona_id, protected, now_iso())
+    persona_replace.set_protection(projects_table, project_id, persona_id, protected, now_iso(), workspace=None)
     return {'success': True, 'persona_id': persona_id, 'protected': protected}
 
 
@@ -3833,7 +3835,7 @@ def _after_personas_deleted(
     for source in deleted:
         record_delete(projects_table, kind=kind,
                       target={'project_id': project_id, 'persona_id': source.id}, actor=actor)
-    mark_citing_documents(projects_table, project_id, deleted, deleted_at=now)
+    mark_citing_documents(projects_table, project_id, deleted, deleted_at=now, workspace=None)
 
 
 @tracer.capture_method

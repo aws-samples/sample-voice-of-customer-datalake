@@ -84,7 +84,7 @@ def frozen_clock() -> Iterator[None]:
 
 
 def _running(progress: int, step: str) -> Any:
-    return call(P, J, 'running', progress, step)
+    return call(P, J, 'running', progress, step, workspace=None)
 
 
 class TestLazyTableAccessors:
@@ -229,7 +229,7 @@ class TestSelectedPersonas:
         assert context == personas_prompt_context([PERSONA], header='## Selected Personas')
         assert context.startswith('## Selected Personas\n\n')
         assert used == ['a']
-        job_status.assert_called_once_with(P, J, 'running', 17, 'fetching_personas')
+        job_status.assert_called_once_with(P, J, 'running', 17, 'fetching_personas', workspace=None)
 
     def test_a_blank_persona_id_is_not_recorded(self, job_status: MagicMock) -> None:
         blank = {'sk': 'PERSONA#x', 'persona_id': '', 'name': 'Blank'}
@@ -240,7 +240,7 @@ class TestSelectedPersonas:
 
     def test_no_match_is_empty_after_the_status(self, job_status: MagicMock) -> None:
         assert rsh._selected_personas_context(_table([PERSONA]), P, J, ['zzz']) == ('', [])
-        job_status.assert_called_once_with(P, J, 'running', 17, 'fetching_personas')
+        job_status.assert_called_once_with(P, J, 'running', 17, 'fetching_personas', workspace=None)
 
 
 def _doc(sk: str, doc_id: str, **extra: Any) -> dict:
@@ -260,7 +260,7 @@ class TestSelectedDocuments:
         context, sources = rsh._selected_documents_context(table, P, J, ['1'])
         assert context == '## Reference Documents\n\n### T (PRD)\n\nbody\n\n---\n\n'
         assert sources == [{'document_id': '1', 'role': 'reference'}]
-        job_status.assert_called_once_with(P, J, 'running', 18, 'fetching_documents')
+        job_status.assert_called_once_with(P, J, 'running', 18, 'fetching_documents', workspace=None)
 
     def test_a_bare_document_reads_untitled_doc_with_no_body(self, job_status: MagicMock) -> None:
         context, _ = rsh._selected_documents_context(_table([_doc('DOC#1', '1')]), P, J, ['1'])
@@ -314,7 +314,7 @@ class TestWebSearchContext:
                 patch('research_step_handler.run_agentic_web_search', return_value=outcome) as search:
             assert rsh._web_search_context(P, J, {'use_web_search': True}, 'hint') == ('CTX', ['q1', 'q2'])
         search.assert_called_once_with('', context_hint='hint')
-        job_status.assert_called_once_with(P, J, 'running', 19, 'searching_web')
+        job_status.assert_called_once_with(P, J, 'running', 19, 'searching_web', workspace=None)
         log.info.assert_called_once_with('Web search grounding: 2 queries, 3 results')
 
     def test_a_failure_is_logged_and_degrades(self, job_status: MagicMock, log: MagicMock) -> None:
@@ -582,7 +582,8 @@ class TestStepSave:
         title = 'Research: Research — 2026-03-04 05:06 UTC'
         assert job_status.call_args_list == [
             _running(95, 'saving'),
-            call(P, J, 'completed', 100, 'complete', result={'document_id': RESEARCH_ID, 'title': title}),
+            call(P, J, 'completed', 100, 'complete', result={'document_id': RESEARCH_ID, 'title': title},
+                 workspace=None),
         ]
         table, project_id, item, counter = saved.call_args.args
         assert (project_id, counter, saved.call_args.kwargs) == (P, 'document_count', {'workspace': None})
@@ -616,7 +617,8 @@ class TestStepSave:
         item = _saved_item(saved)
         title = 'Named — 2026-03-04 05:06 UTC'
         assert (item['title'], item['question'], item['derivation']) == (title, 'Q' * 60, derivation)
-        assert job_status.call_args.kwargs == {'result': {'document_id': RESEARCH_ID, 'title': title}}
+        assert job_status.call_args.kwargs == {'result': {'document_id': RESEARCH_ID, 'title': title},
+                                               'workspace': None}
 
     def test_a_long_question_titles_on_its_first_50_characters(self, saved: MagicMock,
                                                                job_status: MagicMock) -> None:
@@ -625,7 +627,8 @@ class TestStepSave:
         result = rsh.step_save(_save_event({'question': 'abcde' * 12}))
         title = 'Research: ' + ('abcde' * 10)[:49] + '… — 2026-03-04 05:06 UTC'
         assert _saved_item(saved)['title'] == title
-        assert job_status.call_args.kwargs == {'result': {'document_id': result['document_id'], 'title': title}}
+        assert job_status.call_args.kwargs == {'result': {'document_id': result['document_id'], 'title': title},
+                                               'workspace': None}
 
     @pytest.mark.usefixtures('job_status')
     def test_report_kept_whole_at_350000_and_cut_after(self, saved: MagicMock) -> None:

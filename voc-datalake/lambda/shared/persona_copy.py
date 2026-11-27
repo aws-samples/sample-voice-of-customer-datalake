@@ -46,7 +46,7 @@ ONE_WORKSPACE: Final = 'a persona copy stays within one workspace'
 
 
 def read_source_personas(table: Any, container: str, persona_ids: Sequence[str], *,
-                         workspace: WorkspaceScope | None = None) -> list[dict]:
+                         workspace: WorkspaceScope | None) -> list[dict]:
     """Each source persona row, in request order; 404 when one is not in ``container``."""
     personas = []
     for persona_id in persona_ids:
@@ -120,8 +120,8 @@ def _new_item(source: dict, target: str, new_id: str, now: str, provenance: dict
 def copy_personas(
     table: Any, s3: Any, bucket: str, *, source_container: str, source_scope: SourceScope,
     source_project_name: str, persona_ids: Sequence[str], target_container: str, copied_by: str,
-    now: datetime | None = None, workspace: WorkspaceScope | None = None,
-    source_workspace: WorkspaceScope | None = None,
+    now: datetime | None = None, workspace: WorkspaceScope | None,
+    source_workspace: WorkspaceScope | None,
 ) -> list[dict]:
     """Copy ``persona_ids`` from ``source_container`` (in ``source_workspace``) into ``target_container`` (in
     ``workspace``); the new rows.

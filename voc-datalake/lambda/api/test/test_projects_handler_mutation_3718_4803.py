@@ -465,7 +465,7 @@ class TestTheGeneratorJobs:
         }
         assert config == expected
         create_job.assert_called_once_with('proj-1', 'build_prototype', 'doc_config', expected,
-                                           initiated_by='test-user-id', status='pending')
+                                           initiated_by='test-user-id', workspace=None, status='pending')
         invoke.assert_called_once_with(
             'doc-gen', {'project_id': 'proj-1', 'job_id': 'job_1', 'doc_config': expected})
         assert json.loads(response['body']) == {

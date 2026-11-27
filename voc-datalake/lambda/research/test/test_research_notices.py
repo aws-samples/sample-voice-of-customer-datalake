@@ -22,7 +22,7 @@ def test_a_saved_research_tells_its_starter(notified: MagicMock) -> None:
         'feedback_count': 1, 'analysis': 'A', 'synthesis': 'S', 'validation': 'V',
     }
     assert rsh.step_save(event)['success'] is True
-    notified.assert_called_once_with('p1', 'j1', 'completed')
+    notified.assert_called_once_with('p1', 'j1', 'completed', workspace=None)
 
 
 def test_a_failed_research_tells_its_starter(notified: MagicMock) -> None:

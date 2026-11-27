@@ -168,8 +168,8 @@ class TestHowItTravels:
         with patch.object(assist_jobs, '_table', return_value=table), \
                 patch.object(assist_jobs, 'invoke_lambda_async') as invoke:
             with model_profile_scope(E2E_PROFILE):
-                assist_jobs.start('ASSIST#u', 'assist_x', {}, worker_function='w', initiated_by='u')
-            assist_jobs.start('ASSIST#u', 'assist_x', {}, worker_function='w', initiated_by='u')
+                assist_jobs.start('ASSIST#u', 'assist_x', {}, worker_function='w', initiated_by='u', workspace=None)
+            assist_jobs.start('ASSIST#u', 'assist_x', {}, worker_function='w', initiated_by='u', workspace=None)
         first, second = (c.args[1] for c in invoke.call_args_list)
         assert first[PAYLOAD_KEY] == 'e2e'
         assert PAYLOAD_KEY not in second

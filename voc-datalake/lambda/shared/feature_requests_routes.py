@@ -326,10 +326,10 @@ def promote_request(request_id: str):
     """Admin with edit on the project: the supporters become participants of the project."""
     viewer = require_board_admin(app.current_event.raw_event)
     body = json_object_body(app)
-    project_id = require_project_access(app.current_event.raw_event, body.get('project_id'), LEVEL_EDIT)
-    scope = scope_for(viewer)
-    request, board = _scoped(scope, request_id)
+    project_id = require_project_access(app.current_event.raw_event, body.get('project_id'), LEVEL_EDIT, workspace=None)
+    board_scope = scope_for(viewer)
+    request, board = _scoped(board_scope, request_id)
     participants = engagement_config.participants_table()
     settings = load_settings(participants, engagement_config.brand_name())
-    answer = promote(scope.table, participants, request, board, project_id, settings, viewer.subject)
+    answer = promote(board_scope.table, participants, request, board, project_id, settings, viewer.subject)
     return {**answer, 'request': request_view(answer['request'], _template(board))}

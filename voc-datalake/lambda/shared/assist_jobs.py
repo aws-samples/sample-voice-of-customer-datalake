@@ -31,8 +31,9 @@ request side (``start``, ``start_owned``, ``get``, ``owner_pk``) takes the reque
 ``WS#{ws}#ASSIST#{sub}``, its index partition ``WS#{ws}#STATUS#{status}``: shared/project_keys.py ``job_status_pk``),
 every call through shared/ws_repo.py ``ws_table``, and the worker's event names it (shared/workspace_routing.py
 ``workspace_payload``). ``run`` reads it back (shared/ws_repo.py ``event_scope``) and keys every row call by it, but the
-work is not per workspace yet (``ASSIST_WORK_STORE``): it records the job failed and runs nothing. Without one, every
-request and event is the one sent before.
+work is not per workspace yet (``ASSIST_WORK_STORE``): it records the job failed and runs nothing. Without one
+(``workspace=None``, spelled out at every call since 7.102.00, 3h-S1b: no default), every request and event is the one
+sent before.
 
 The work function receives the job's ``config`` and returns a JSON-able dict.
 Raising an ``ApiError`` with a 4xx status records its message as the job's
@@ -104,7 +105,7 @@ def _owner_prefix(*, workspace: WorkspaceScope | None) -> str:
     return _OWNER_PREFIX if workspace is None else f'{workspace.prefix}{_OWNER_PREFIX}'
 
 
-def owner_pk(subject: str, *, workspace: WorkspaceContext | None = None) -> str:
+def owner_pk(subject: str, *, workspace: WorkspaceContext | None) -> str:
     """The partition of a caller's assists outside any project (``WS#{ws}#ASSIST#{sub}`` in a workspace)."""
     if not subject:
         raise ServiceError('An assist needs a signed-in caller')
@@ -165,7 +166,7 @@ def view(item: Mapping[str, Any]) -> dict[str, Any]:
 
 def start(pk: str, job_type: str, config: Mapping[str, Any], *, worker_function: str,
           initiated_by: str | None, project_id: str | None = None,
-          workspace: WorkspaceContext | None = None) -> dict[str, Any]:
+          workspace: WorkspaceContext | None) -> dict[str, Any]:
     """Record a pending assist and hand it to the worker; the route answers this dict with 202.
 
     The row is written BEFORE the invoke, so the worker always finds it. If the
@@ -208,7 +209,7 @@ def worker_function() -> str:
 
 
 def start_owned(subject: str, job_type: str, config: Mapping[str, Any], *,
-                workspace: WorkspaceContext | None = None) -> dict[str, Any]:
+                workspace: WorkspaceContext | None) -> dict[str, Any]:
     """Start a global assist only ``subject`` may poll (pk ``ASSIST#{subject}``, the workspace's when given)."""
     return start(owner_pk(subject, workspace=workspace), job_type, config, worker_function=worker_function(),
                  initiated_by=subject, workspace=workspace)
@@ -219,7 +220,7 @@ def accepted(started: Mapping[str, Any]) -> Response:
     return Response(status_code=202, content_type=content_types.APPLICATION_JSON, body=json.dumps(started))
 
 
-def get(pk: str, job_id: str, *, workspace: WorkspaceContext | None = None) -> dict[str, Any]:
+def get(pk: str, job_id: str, *, workspace: WorkspaceContext | None) -> dict[str, Any]:
     """The poll answer for ``job_id`` in ``pk`` (a partition of ``workspace`` when given); 404 when missing or not an
     assist."""
     if not job_id.startswith(JOB_ID_PREFIX):

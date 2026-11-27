@@ -95,7 +95,7 @@ class TestTheClear:
         refused = ClientError({'Error': {'Code': 'ConditionalCheckFailedException'}}, 'DeleteItem')
         table.delete_item.side_effect = [refused, None]
 
-        cleared = persona_replace.clear_personas(table, 'p1')
+        cleared = persona_replace.clear_personas(table, 'p1', workspace=None)
 
         assert (cleared.deleted, cleared.protected, cleared.failed) == (['PERSONA#b'], ['PERSONA#a'], [])
         assert table.delete_item.call_args_list[0].kwargs['ConditionExpression'] == (

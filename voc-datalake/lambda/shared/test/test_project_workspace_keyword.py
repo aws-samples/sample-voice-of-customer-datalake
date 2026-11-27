@@ -32,7 +32,14 @@ from beside it, ``import projects``), wherever in the module the import is; a gu
 functions by their bare names; and a name one guarded module imports from another, called through it
 (``document_comments.comments_pk``). A class whose ``__init__`` takes ``workspace`` is called like a function. The
 bundle scripts reach the stores through lazy imports (``remap.py`` ``project_keys()``, ``_shared_helpers()``), so there
-an attribute call whose receiver no import resolves is matched by the function's name alone (``BY_NAME``).
+an attribute call whose receiver no import resolves is matched by the function's name alone (``BY_NAME``), except the
+``(module, name)`` pairs of ``BY_NAME_EXCLUDED`` (``assist_jobs.get`` is not every ``dict.get``); any other guarded
+name a builtin container's method also has fails a test, so the exclusions never grow unseen.
+
+Since 7.102.00 (3h-S1b) ``GUARDED`` holds every project-adjacent store, not only the gate and the project stores: the
+jobs and their notices, the personas' stores, the voice sessions, the human documents, the decisions, the deleted
+sources' marks, the participants' project gate, the ballots' and the plan waits' wrappers and the product docs'
+extractor.
 
 Not seen (docs/multi-workspace.md, 3h's guard line): a method called on an instance (``store.method(…)``: the
 method's own signature is still held to the first rule); ``import shared`` followed by attribute access
@@ -69,44 +76,98 @@ GUARDED: Final = (
     'shared.prototype_feedback', 'shared.prototype_drafts', 'shared.prototype_incorporation',
     # The API's own: a project's product documents, its create and its object prefixes.
     'api.product_context', 'api.projects',
+    # Since 7.102.00 (3h-S1b): the other project-adjacent stores. The jobs and their notices.
+    'shared.jobs', 'shared.job_notices', 'shared.assist_jobs',
+    # The personas: the company's, the save, the copy (and its routes), the replace, the overlap and the grounding.
+    'shared.company_personas', 'shared.persona_save', 'shared.persona_copy', 'shared.persona_copy_routes',
+    'shared.persona_replace', 'shared.persona_overlap', 'shared.persona_grounding',
+    # The voice sessions, the human documents, the decisions and the deleted sources' marks.
+    'shared.voice_sessions', 'shared.human_documents', 'shared.decision_records', 'shared.deleted_sources',
+    # The participants' project gate wrappers, the ballots' and the plan waits'.
+    'shared.engagement_identity', 'api.ballots_handler', 'agents.plan_waits',
+    # The product docs' extractor (its scope a workspace id: a stdlib-only Lambda, its keys a copy held in lockstep).
+    'product_doc_extractor.handler',
 )
 #: The modules that read projects outside the API (docs/multi-workspace.md, 3h): each must be in the scan.
 NON_API_READERS: Final = ('lambda/auth/board_triggers.py', 'lambda/jobs/retention')
 #: Where an unresolved attribute call is matched by the function's name alone (the lazy imports above).
 BY_NAME: Final = (BUNDLE_SCRIPTS,)
+#: The guarded ``(module, name)`` pairs the name-only match leaves out, each one by name (since 7.102.00): by its name
+#: alone a ``dict.get`` would read as ``assist_jobs.get``, and the bundle's lazy helpers never reach the assists. Any
+#: other guarded name a builtin container's method also has fails ``test_no_other_guarded_name_is_a_builtin_methods``.
+BY_NAME_EXCLUDED: Final = frozenset({('shared.assist_jobs', 'get')})
+#: The method names of the builtin containers a script's values are (the clash the exclusions above answer).
+BUILTIN_METHODS: Final = frozenset(name for kind in (dict, list, set, str, bytes, tuple) for name in dir(kind))
 # The ratchet: per module, the guarded calls that name the deployment by a literal ``workspace=None``. Must match
 # exactly and may only go down: each later 3h slice that resolves a route's or a job's scope lowers its module's count
 # (or removes the entry) in the same change, and a raise is refused in review. Separate from test_ws_raw_access.py's
 # `project accessor(workspace=None)` kind, which counts its own accessor list; this one counts every GUARDED call.
+#
+# 7.102.00 (3h-S1b) raised it once, from 191 in 27 modules to 265 in 35, as the other project-adjacent stores joined
+# GUARDED: 78 production calls took the default before and now spell `workspace=None` out, every one the deployment's
+# (no route or job resolves a workspace for them yet), net +74 because projects_handler.py's four `version_html` calls
+# pass `store.workspace` instead. Per module, the "+n (3h-S1b)" notes below say which calls.
 LITERAL_NONE: Final[dict[str, int]] = {
     'lambda/agents/artifacts.py': 1,
+    # +10 (3h-S1b): the ballots' row, project and session checks (`_existing_row`, `_project_gone`, the
+    # `_require_*_project_level` gates), whose rows are the deployment's (`BALLOT_ROWS_STORE` refuses a workspace).
+    'lambda/api/ballots_handler.py': 10,
     # A credential's pin, the deployment's until 3h-S9 (marked on the line).
     'lambda/api/mcp_tokens_handler.py': 1,
-    'lambda/api/product_context.py': 16,
+    # +1 (3h-S1b): a deleted product doc's citing documents (`mark_citing_documents`).
+    'lambda/api/product_context.py': 17,
     # 3 more since 7.101.00 (3h-S2): the sharing summary and the email redaction take the project's scope, so the list
     # (`list_projects`: its summary and its redaction), `get_project` and `get_project_members` name the deployment,
     # while `_with_sharing_fields` and the create pass theirs on. Lifted with the projects routes' slice.
-    'lambda/api/projects.py': 66,
-    'lambda/api/projects_handler.py': 32,
+    # +9 (3h-S1b): the persona job's save, count, clear, protection, kept-personas read and writable check, the human
+    # document's create and the two deleted-source marks.
+    'lambda/api/projects.py': 75,
+    # +6 -4 (3h-S1b): the job row (`create_job` in `_started_job`), the project assist (`assist_jobs.start`) and the
+    # four decision routes name the deployment; the four `version_html` calls pass their PrototypeStore's
+    # `store.workspace` (the S1 follow-up).
+    'lambda/api/projects_handler.py': 34,
+    # +3 each (3h-S1b): the caller's own assists outside any project (`start_owned`, `owner_pk`, `get`).
+    'lambda/api/scrapers_handler.py': 3,
+    'lambda/api/settings_handler.py': 3,
     'lambda/api/verification_fixture_provider.py': 7,
-    'lambda/jobs/document_generator/handler.py': 20,
+    # +5 (3h-S1b): the chain's job progress and outcome (`JobContext`, `update_job_status`): its steps are the
+    # deployment's (the error step alone passes the run's scope).
+    'lambda/jobs/document_generator/handler.py': 25,
     'lambda/jobs/document_merger/handler.py': 6,
     'lambda/jobs/persona_importer/handler.py': 2,
     'lambda/jobs/retention/registries.py': 2,
-    'lambda/research/research_step_handler.py': 3,
+    # +1 (3h-S1b): the deployment's upload (`projects/…`), handed to `_extract_document`; a workspace's upload passes
+    # the workspace id its key and claim named.
+    'lambda/product_doc_extractor/handler.py': 1,
+    # +15 (3h-S1b): each step's job status and the completed notice; a step is refused in a workspace before it runs
+    # (`require_deployment(event_scope(event), PROJECT_JOB_WORK_STORE)`), the error step passes the run's scope.
+    'lambda/research/research_step_handler.py': 18,
+    # +2 (3h-S1b): the company library's META and read.
+    'lambda/shared/company_personas_routes.py': 2,
+    # +1 (3h-S1b): the promote's project gate (beside the board viewer's `BoardScope`, `board_scope`).
+    'lambda/shared/feature_requests_routes.py': 1,
     # A credential's pin, the deployment's until 3h-S9 (marked on the line).
     'lambda/shared/mcp_oauth_consent_routes.py': 1,
-    'lambda/shared/persona_copy_routes.py': 1,
+    # +8 (3h-S1b): the participants' and asks' project gate (`require_project_access`, `can_view_project`).
+    'lambda/shared/participants_ask_routes.py': 8,
+    # +6 (3h-S1b): the promote route, the source project's META, its persona count, the library read and the two
+    # copies (the copy's company-or-project kind is `source_kind`).
+    'lambda/shared/persona_copy_routes.py': 7,
     'lambda/shared/persona_grounding.py': 2,
+    # +3 (3h-S1b): the evidence pack, its freshness and its refresh.
+    'lambda/shared/persona_grounding_routes.py': 3,
     'lambda/shared/project_validation.py': 2,
-    'lambda/shared/project_validation_routes.py': 7,
+    # +1 (3h-S1b): the validation assists' start.
+    'lambda/shared/project_validation_routes.py': 8,
     'lambda/shared/project_writes.py': 1,
     'lambda/shared/prototype_drafts.py': 1,
     'lambda/shared/prototype_feedback.py': 2,
     'lambda/shared/prototype_pins.py': 6,
     'lambda/shared/validation_documents.py': 2,
-    'lambda/shared/voice_session_routes.py': 1,
-    'lambda/shared/voice_sessions.py': 4,
+    # +3 (3h-S1b): the offer, the mint (beside the caller's `category_scope`) and the transcript job.
+    'lambda/shared/voice_session_routes.py': 4,
+    # +1 (3h-S1b): the session's evidence pack (`mint` refused a workspace first; its `category_scope` is categories).
+    'lambda/shared/voice_sessions.py': 5,
     'lambda/shared/voice_transcripts.py': 2,
     # The bundle scripts and the backfill are the deployment's by design (they refuse a workspace).
     'scripts/project_bundle/exporter.py': 1,
@@ -360,6 +421,13 @@ MEMBERSHIP_CALLS: Final = frozenset({
 MEMBERSHIP_MISSING: Final = 'is called without membership= (None for the deployment, membership_of(context) in one)'
 
 
+def by_name_names(table: dict[str, frozenset[str]]) -> frozenset[str]:
+    """The names an unresolved attribute call is matched by in ``BY_NAME``: every guarded name but the excluded pairs'
+    (a name another guarded module also has stays)."""
+    return frozenset(name for module, names in table.items() for name in names
+                     if (module, name) not in BY_NAME_EXCLUDED)
+
+
 def _is_literal_none(node: ast.Call) -> bool:
     return any(keyword.arg == 'workspace' and isinstance(keyword.value, ast.Constant) and keyword.value.value is None
                for keyword in node.keywords)
@@ -375,7 +443,7 @@ def scan(path: Path, table: dict[str, frozenset[str]], source: str | None = None
     bindings = _bindings(tree, path, table)
     rel = path.relative_to(REPO).as_posix()
     name_match = rel.startswith(BY_NAME)
-    by_name = frozenset().union(*table.values())
+    by_name = by_name_names(table)
     held = _held_scopes(tree)
     findings = [Finding(rel, line, module, 'is imported relatively or with *: import it by name')
                 for line, module in bindings.unresolvable]
@@ -526,6 +594,30 @@ def test_a_bundle_script_is_matched_by_name():
     source = 'helpers.keys.version_partition_key("p")\nhelpers.keys.version_partition_key("p", workspace=None)\n'
     assert _probe(source, REPO / BUNDLE_SCRIPTS / '_probe.py') == [f'1: ?.version_partition_key {MISSING}']
     assert _probe(source) == []
+
+
+def test_an_excluded_pair_is_not_matched_by_name():
+    """``assist_jobs.get`` is guarded, but a bundle script's ``row.get(…)`` is a dict's: by name alone it is left out,
+    while the same call through an import is still seen."""
+    assert 'get' in _guarded_table()['shared.assist_jobs']
+    assert _probe('row.get("pk")\n', REPO / BUNDLE_SCRIPTS / '_probe.py') == []
+    assert _probe('from shared import assist_jobs\nassist_jobs.get("pk", "job")\n') == [
+        f'2: shared.assist_jobs.get {MISSING}']
+
+
+def test_every_excluded_pair_is_a_guarded_name():
+    """An exclusion whose store no longer has the name (renamed, unguarded) is stale: drop it."""
+    table = _guarded_table()
+    assert all(name in table.get(module, ()) for module, name in BY_NAME_EXCLUDED)
+
+
+def test_no_other_guarded_name_is_a_builtin_methods():
+    """The exclusions cannot grow unseen: a guarded name a builtin container's method also has (a store's ``keys``,
+    ``update``, ``pop``…) fails here, to be renamed or excluded by its pair in review. Today only ``get``, excluded."""
+    table = _guarded_table()
+    clashes = {(module, name) for module, names in table.items() for name in names if name in BUILTIN_METHODS}
+    assert clashes == {('shared.assist_jobs', 'get')} == BY_NAME_EXCLUDED
+    assert not by_name_names(table) & BUILTIN_METHODS
 
 
 def test_a_default_or_a_positional_workspace_is_named():

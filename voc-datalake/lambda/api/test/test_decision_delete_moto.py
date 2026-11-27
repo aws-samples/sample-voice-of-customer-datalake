@@ -35,7 +35,7 @@ def test_deleting_a_decision_removes_only_that_record(table):
 
     created = decision_records.create_decision(table, PROJECT, {
         'title': 'Offline mode', 'verdict': 'park', 'rationale': 'Few asks',
-    }, CALLER)['document']
+    }, CALLER, workspace=None)['document']
     document_id = created['document_id']
     assert table.get_item(Key={'pk': f'PROJECT#{PROJECT}', 'sk': f'DOC#{document_id}'}).get('Item')
 

@@ -67,7 +67,8 @@ def stores():
 def _mint(store: voice.Stores, caller: Caller = PERSON, body: dict | None = None, persona: str = 'persona_1',
           project: str = 'p1') -> dict[str, Any]:
     with patch.object(voice.persona_grounding, 'evidence_pack', return_value=PACK):
-        return voice.mint(store, CONFIG, project, persona, caller, body or {'consent': True}, UNRESTRICTED)
+        return voice.mint(store, CONFIG, project, persona, caller, body or {'consent': True}, UNRESTRICTED,
+                          workspace=None)
 
 
 def _item(table: Any, pk: str, sk: str) -> dict[str, Any]:
@@ -288,11 +289,12 @@ def _recorded_jobs() -> tuple[list[str], voice.StartFinalize]:
 class TestOffer:
     def test_without_voice_is_disabled(self, stores):
         store, _ = stores
-        assert voice.offer(store, None, 'p1', 'persona_1', PERSON, start_finalize=_no_job) == {'enabled': False}
+        assert voice.offer(store, None, 'p1', 'persona_1', PERSON, start_finalize=_no_job,
+                           workspace=None) == {'enabled': False}
 
     def test_answers_the_consent_dialog_s_figures(self, stores):
         store, _ = stores
-        offer = voice.offer(store, CONFIG, 'p1', 'persona_1', PERSON, start_finalize=_no_job)
+        offer = voice.offer(store, CONFIG, 'p1', 'persona_1', PERSON, start_finalize=_no_job, workspace=None)
         assert {k: offer[k] for k in ('enabled', 'session_minutes', 'minutes_left', 'sessions_left_today',
                                       'estimated_cents_per_minute')} == {
             'enabled': True, 'session_minutes': 15, 'minutes_left': 300.0, 'sessions_left_today': 5,
@@ -315,7 +317,8 @@ class TestCostCaps:
         with pytest.raises(ConflictError) as refused:
             _mint(store)
         assert refused.value.code == 'budget_exhausted'
-        assert voice.offer(store, CONFIG, 'p1', 'persona_1', PERSON, start_finalize=_no_job)['minutes_left'] == 0
+        assert voice.offer(store, CONFIG, 'p1', 'persona_1', PERSON, start_finalize=_no_job,
+                           workspace=None)['minutes_left'] == 0
         assert voice.usage(store, CONFIG)['minutes_left'] == 0
 
 
@@ -334,10 +337,10 @@ class TestSessionsLeftUnsaved:
         sid = _mint(store)['session_id']
         self._relay_ended(store, sid)
         jobs, start = _recorded_jobs()
-        voice.offer(store, CONFIG, 'p1', 'persona_1', PERSON, start_finalize=start)
+        voice.offer(store, CONFIG, 'p1', 'persona_1', PERSON, start_finalize=start, workspace=None)
         row = _item(store.projects, f'VOICE#{sid}', 'SESSION')
         assert (jobs, row['status'], row['finalize_job_id']) == ([sid], 'finalizing', 'job-left')
-        voice.offer(store, CONFIG, 'p1', 'persona_1', PERSON, start_finalize=start)
+        voice.offer(store, CONFIG, 'p1', 'persona_1', PERSON, start_finalize=start, workspace=None)
         assert jobs == [sid]
 
     def test_only_the_caller_s_own_sessions_and_only_a_person_s_read(self, stores):
@@ -346,7 +349,7 @@ class TestSessionsLeftUnsaved:
         self._relay_ended(store, sid)
         jobs, start = _recorded_jobs()
         for caller in (OTHER, Caller(subject='sub-ada', delegated=True), Caller(subject='sub-ada', agent_id='agent-1')):
-            voice.offer(store, CONFIG, 'p1', 'persona_1', caller, start_finalize=start)
+            voice.offer(store, CONFIG, 'p1', 'persona_1', caller, start_finalize=start, workspace=None)
         assert (jobs, _item(store.projects, f'VOICE#{sid}', 'SESSION')['status']) == ([], 'ended')
 
     def test_an_unused_url_is_ended_and_saved_and_a_failing_job_leaves_the_offer_answered(self, stores):
@@ -357,14 +360,16 @@ class TestSessionsLeftUnsaved:
         def failing(_row: Mapping[str, Any]) -> str:
             raise RuntimeError('lambda invoke refused')
 
-        assert voice.offer(store, CONFIG, 'p1', 'persona_1', PERSON, start_finalize=failing)['enabled'] is True
+        assert voice.offer(store, CONFIG, 'p1', 'persona_1', PERSON, start_finalize=failing,
+                           workspace=None)['enabled'] is True
         row = _item(store.projects, f'VOICE#{unused}', 'SESSION')
         assert (row['status'], row['end_reason']) == ('ended', 'disconnected')
 
     def test_a_listing_that_fails_leaves_the_offer_answered(self, stores):
         store, _ = stores
         with patch.object(voice, 'query_all', side_effect=RuntimeError('throttled')):
-            assert voice.offer(store, CONFIG, 'p1', 'persona_1', PERSON, start_finalize=_no_job)['enabled'] is True
+            assert voice.offer(store, CONFIG, 'p1', 'persona_1', PERSON, start_finalize=_no_job,
+                               workspace=None)['enabled'] is True
 
 
 class TestEndAndStatus:

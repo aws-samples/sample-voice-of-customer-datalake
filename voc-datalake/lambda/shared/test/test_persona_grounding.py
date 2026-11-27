@@ -90,7 +90,7 @@ def _reader(tables: tuple[Any, Any], scope: CategoryScope = UNRESTRICTED) -> gro
 
 def _pack(tables: tuple[Any, Any], scope: CategoryScope = UNRESTRICTED, question: str = '', limit: int = 8,
           persona_ids: tuple[str, ...] = (PERSONA,)) -> dict:
-    return grounding.evidence_pack(_reader(tables, scope), PROJECT, list(persona_ids), question, limit)
+    return grounding.evidence_pack(_reader(tables, scope), PROJECT, list(persona_ids), question, limit, workspace=None)
 
 
 def _ids(pack: dict, index: int = 0) -> list[str]:
@@ -206,10 +206,10 @@ class TestThePack:
     def test_no_micro_feedback_is_counted_fresh_or_added_by_a_refresh(self, tables):
         _, feedback = tables
         reader = _reader(tables)
-        before = grounding.evidence_freshness(reader, PROJECT, PERSONA)['count']
+        before = grounding.evidence_freshness(reader, PROJECT, PERSONA, workspace=None)['count']
         feedback.put_item(Item=_review('app_fresh', 0, tags=['voc_app'], text='The delivery screen is slow'))
-        after = grounding.evidence_freshness(reader, PROJECT, PERSONA)['count']
-        added = grounding.refresh_evidence(reader, PROJECT, PERSONA, {'sub': 'u1', 'kind': 'user'})
+        after = grounding.evidence_freshness(reader, PROJECT, PERSONA, workspace=None)['count']
+        added = grounding.refresh_evidence(reader, PROJECT, PERSONA, {'sub': 'u1', 'kind': 'user'}, workspace=None)
         projects, _ = tables
         stored = projects.get_item(Key={'pk': f'PROJECT#{PROJECT}', 'sk': f'PERSONA#{PERSONA}'})['Item']
         refreshed = [one for entry in stored.get('evidence_updates', []) for one in entry['feedback_ids']]
@@ -257,7 +257,7 @@ class TestWhatThePersonMaySee:
 
 class TestFreshness:
     def test_counts_the_matching_reviews_since_it_was_generated(self, tables):
-        answer = grounding.evidence_freshness(_reader(tables), PROJECT, PERSONA)
+        answer = grounding.evidence_freshness(_reader(tables), PROJECT, PERSONA, workspace=None)
         assert answer['count'] == 7
         assert answer['since'] == _day(3)
         assert answer['count_is_lower_bound'] is False
@@ -265,43 +265,47 @@ class TestFreshness:
 
     def test_counts_only_what_the_person_may_see(self, tables):
         no_app_store = CategoryScope(all=False, categories_all=True, source_deny=frozenset({'app_store'}))
-        assert grounding.evidence_freshness(_reader(tables, no_app_store), PROJECT, PERSONA)['count'] == 6
+        assert grounding.evidence_freshness(_reader(tables, no_app_store), PROJECT, PERSONA,
+                                            workspace=None)['count'] == 6
 
     def test_a_refresh_starts_the_count_again(self, tables):
-        grounding.refresh_evidence(_reader(tables), PROJECT, PERSONA, {'sub': 'u1', 'kind': 'user'})
-        answer = grounding.evidence_freshness(_reader(tables), PROJECT, PERSONA)
+        grounding.refresh_evidence(_reader(tables), PROJECT, PERSONA, {'sub': 'u1', 'kind': 'user'}, workspace=None)
+        answer = grounding.evidence_freshness(_reader(tables), PROJECT, PERSONA, workspace=None)
         assert answer['count'] == 0
         assert answer['updates'] == 1
         assert answer['refreshed_at'] is not None
 
     def test_a_refresh_that_took_some_leaves_the_rest_to_count(self, tables, monkeypatch):
         monkeypatch.setattr(grounding, 'MAX_FRESH', 3)
-        assert grounding.refresh_evidence(_reader(tables), PROJECT, PERSONA, {'sub': 'u1', 'kind': 'user'})['added'] == 3
-        assert grounding.evidence_freshness(_reader(tables), PROJECT, PERSONA)['count'] == 4
+        assert grounding.refresh_evidence(_reader(tables), PROJECT, PERSONA, {'sub': 'u1', 'kind': 'user'},
+                                          workspace=None)['added'] == 3
+        assert grounding.evidence_freshness(_reader(tables), PROJECT, PERSONA, workspace=None)['count'] == 4
 
     def test_the_reviews_it_was_written_from_are_never_new(self, tables):
         projects, _ = tables
         projects.put_item(Item=_persona(input_feedback_ids=['cited1', 'fresh_late', 'fresh_app']))
-        assert grounding.evidence_freshness(_reader(tables), PROJECT, PERSONA)['count'] == 5
+        assert grounding.evidence_freshness(_reader(tables), PROJECT, PERSONA, workspace=None)['count'] == 5
         assert 'fresh_late' not in _ids(_pack(tables))
 
     def test_an_unknown_persona_is_404(self, tables):
         with pytest.raises(NotFoundError):
-            grounding.evidence_freshness(_reader(tables), PROJECT, 'persona_gone')
+            grounding.evidence_freshness(_reader(tables), PROJECT, 'persona_gone', workspace=None)
 
     def test_a_walk_cut_short_is_a_lower_bound(self, tables, monkeypatch):
         class Spent(grounding.WalkBudget):
             def exhausted(self) -> bool:
                 return True
         monkeypatch.setattr(grounding, 'WalkBudget', Spent)
-        assert grounding.evidence_freshness(_reader(tables), PROJECT, PERSONA)['count_is_lower_bound'] is True
+        assert grounding.evidence_freshness(_reader(tables), PROJECT, PERSONA,
+                                            workspace=None)['count_is_lower_bound'] is True
 
 
 class TestRefresh:
     def test_appends_the_new_ids_with_who_when_and_why_and_never_the_persona_s_text(self, tables):
         projects, _ = tables
         before = projects.get_item(Key={'pk': f'PROJECT#{PROJECT}', 'sk': f'PERSONA#{PERSONA}'})['Item']
-        answer = grounding.refresh_evidence(_reader(tables), PROJECT, PERSONA, {'sub': 'u1', 'kind': 'user'})
+        answer = grounding.refresh_evidence(_reader(tables), PROJECT, PERSONA, {'sub': 'u1', 'kind': 'user'},
+                                            workspace=None)
         after = projects.get_item(Key={'pk': f'PROJECT#{PROJECT}', 'sk': f'PERSONA#{PERSONA}'})['Item']
         assert answer['added'] == 7
         [entry] = after['evidence_updates']
@@ -315,13 +319,15 @@ class TestRefresh:
 
     def test_stores_only_ids_the_person_may_see(self, tables):
         no_app_store = CategoryScope(all=False, categories_all=True, source_deny=frozenset({'app_store'}))
-        answer = grounding.refresh_evidence(_reader(tables, no_app_store), PROJECT, PERSONA, {'sub': 'u1', 'kind': 'user'})
+        answer = grounding.refresh_evidence(_reader(tables, no_app_store), PROJECT, PERSONA,
+                                            {'sub': 'u1', 'kind': 'user'}, workspace=None)
         assert 'fresh_app' not in answer['evidence_updates'][0]['feedback_ids']
 
     def test_nothing_new_writes_nothing(self, tables):
         projects, _ = tables
-        grounding.refresh_evidence(_reader(tables), PROJECT, PERSONA, {'sub': 'u1', 'kind': 'user'})
-        second = grounding.refresh_evidence(_reader(tables), PROJECT, PERSONA, {'sub': 'u2', 'kind': 'user'})
+        grounding.refresh_evidence(_reader(tables), PROJECT, PERSONA, {'sub': 'u1', 'kind': 'user'}, workspace=None)
+        second = grounding.refresh_evidence(_reader(tables), PROJECT, PERSONA, {'sub': 'u2', 'kind': 'user'},
+                                            workspace=None)
         assert second['added'] == 0
         item = projects.get_item(Key={'pk': f'PROJECT#{PROJECT}', 'sk': f'PERSONA#{PERSONA}'})['Item']
         assert len(item['evidence_updates']) == 1
@@ -331,7 +337,8 @@ class TestRefresh:
         old = [{'at': f'2026-01-{n + 1:02d}T00:00:00+00:00', 'by': {'sub': 'u0', 'kind': 'user'},
                 'reason': 'manual_refresh', 'feedback_ids': [f'gone{n}']} for n in range(20)]
         projects.put_item(Item=_persona(evidence_updates=old, evidence_refreshed_at=GENERATED))
-        answer = grounding.refresh_evidence(_reader(tables), PROJECT, PERSONA, {'sub': 'u1', 'kind': 'admin'})
+        answer = grounding.refresh_evidence(_reader(tables), PROJECT, PERSONA, {'sub': 'u1', 'kind': 'admin'},
+                                            workspace=None)
         assert len(answer['evidence_updates']) == grounding.MAX_EVIDENCE_UPDATES
         assert answer['evidence_updates'][0]['feedback_ids'] == ['gone1']
         assert answer['evidence_updates'][-1]['by'] == {'sub': 'u1', 'kind': 'admin'}
@@ -348,7 +355,7 @@ class TestRefresh:
             return persona
         monkeypatch.setattr(grounding, '_stored_persona', stale)
         with pytest.raises(ConflictError):
-            grounding.refresh_evidence(_reader(tables), PROJECT, PERSONA, {'sub': 'u1', 'kind': 'user'})
+            grounding.refresh_evidence(_reader(tables), PROJECT, PERSONA, {'sub': 'u1', 'kind': 'user'}, workspace=None)
         item = projects.get_item(Key={'pk': f'PROJECT#{PROJECT}', 'sk': f'PERSONA#{PERSONA}'})['Item']
         assert item['evidence_updates'] == [{'at': 'x', 'feedback_ids': ['other']}]
 
@@ -362,11 +369,12 @@ class TestRefresh:
             return persona
         monkeypatch.setattr(grounding, '_stored_persona', regenerated)
         with pytest.raises(ConflictError):
-            grounding.refresh_evidence(_reader(tables), PROJECT, PERSONA, {'sub': 'u1', 'kind': 'user'})
+            grounding.refresh_evidence(_reader(tables), PROJECT, PERSONA, {'sub': 'u1', 'kind': 'user'}, workspace=None)
 
     def test_an_unknown_persona_is_404(self, tables):
         with pytest.raises(NotFoundError):
-            grounding.refresh_evidence(_reader(tables), PROJECT, 'persona_gone', {'sub': 'u1', 'kind': 'user'})
+            grounding.refresh_evidence(_reader(tables), PROJECT, 'persona_gone', {'sub': 'u1', 'kind': 'user'},
+                                       workspace=None)
 
 
 class TestVisibleIds:

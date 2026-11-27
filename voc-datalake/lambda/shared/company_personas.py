@@ -37,7 +37,7 @@ def is_company_container(project_id: object) -> bool:
     return project_id == COMPANY_PERSONAS_CONTAINER
 
 
-def ensure_company_personas_meta(table: Any, *, workspace: WorkspaceScope | None = None) -> None:
+def ensure_company_personas_meta(table: Any, *, workspace: WorkspaceScope | None) -> None:
     """Create the container's META row on the first company write; a no-op afterwards.
 
     Conditional (``attribute_not_exists``), so two first writes racing each other both
@@ -72,7 +72,7 @@ def _created_at(item: dict) -> str:
     return str(item.get('created_at') or '')
 
 
-def company_persona_items(table: Any, *, workspace: WorkspaceScope | None = None) -> list[dict]:
+def company_persona_items(table: Any, *, workspace: WorkspaceScope | None) -> list[dict]:
     """Every company persona row, newest ``created_at`` first (the workspace's library when given)."""
     rows = list(iter_project_rows(table, COMPANY_PERSONAS_CONTAINER, workspace=workspace, sort_prefix='PERSONA#'))
     return sorted(rows, key=_created_at, reverse=True)

@@ -72,31 +72,32 @@ class TestValidation:
 class TestCreate:
     def test_creates_a_doc_row_with_server_set_decider_and_derivation(self):
         table = _table()
-        item = dr.create_decision(table, 'p1', VALID, ANA)['document']
+        item = dr.create_decision(table, 'p1', VALID, ANA, workspace=None)['document']
         assert (item['document_type'], item['sk'], item['revision']) == ('decision', f"DOC#{item['document_id']}", 1)
         assert (item['decision']['decided_by'], item['decision']['decided_by_name']) == ('sub-user', 'Ana')
         assert item['derivation']['sources'] == [{'document_id': 'prd_1', 'role': 'reference'}]
         assert item['derivation']['feedback_count'] == 2
 
     def test_client_supplied_decider_is_ignored(self):
-        item = dr.create_decision(_table(), 'p1', {**VALID, 'decided_by': 'sub-x'}, ANA)['document']
+        item = dr.create_decision(_table(), 'p1', {**VALID, 'decided_by': 'sub-x'}, ANA, workspace=None)['document']
         assert item['decision']['decided_by'] == 'sub-user'
 
     def test_content_renders_the_fields(self):
-        content = dr.create_decision(_table(), 'p1', VALID, ANA)['document']['content']
+        content = dr.create_decision(_table(), 'p1', VALID, ANA, workspace=None)['document']['content']
         assert content.startswith('# Offline mode\n')
         assert '**Verdict:** Pursue' in content
         assert '- Feedback: fb_2' in content
 
     def test_evidence_documents_must_be_in_the_project(self):
         with pytest.raises(ValidationError, match='not in this project'):
-            dr.create_decision(_table(document_ids=('prd_9',)), 'p1', VALID, ANA)
+            dr.create_decision(_table(document_ids=('prd_9',)), 'p1', VALID, ANA, workspace=None)
 
 
 class TestUpdate:
     def test_a_new_verdict_restamps_the_decider_and_keeps_history(self):
         table = _table(stored=_stored())
-        doc = dr.update_decision(table, 'p1', 'doc_1', {'verdict': 'pursue', 'expected_revision': 2}, BEN)['document']
+        doc = dr.update_decision(table, 'p1', 'doc_1', {'verdict': 'pursue', 'expected_revision': 2}, BEN,
+                                 workspace=None)['document']
         assert (doc['revision'], doc['decision']['verdict'], doc['decision']['decided_by']) == (3, 'pursue', 'sub-other')
         assert doc['decision']['history'][0]['verdict'] == 'park'
         update = _transact_update(table)
@@ -104,30 +105,31 @@ class TestUpdate:
 
     def test_other_edits_keep_who_decided(self):
         table = _table(stored=_stored())
-        doc = dr.update_decision(table, 'p1', 'doc_1', {'rationale': 'Now'}, ANA)['document']
+        doc = dr.update_decision(table, 'p1', 'doc_1', {'rationale': 'Now'}, ANA, workspace=None)['document']
         assert (doc['decision']['decided_by'], doc['decision']['updated_by']) == ('sub-other', 'sub-user')
         assert doc['decision']['history'] == []
 
     def test_a_stale_expected_revision_is_a_409(self):
         with pytest.raises(ConflictError):
-            dr.update_decision(_table(stored=_stored()), 'p1', 'doc_1', {'rationale': 'x', 'expected_revision': 1}, ANA)
+            dr.update_decision(_table(stored=_stored()), 'p1', 'doc_1', {'rationale': 'x', 'expected_revision': 1}, ANA,
+                               workspace=None)
 
     def test_a_concurrent_save_is_a_409(self):
         table = _table(stored=_stored())
         table.meta.client.transact_write_items.side_effect = ClientError(
             {'Error': {'Code': 'TransactionCanceledException'}}, 'TransactWriteItems')
         with pytest.raises(ConflictError):
-            dr.update_decision(table, 'p1', 'doc_1', {'rationale': 'x'}, ANA)
+            dr.update_decision(table, 'p1', 'doc_1', {'rationale': 'x'}, ANA, workspace=None)
 
     def test_a_decision_cannot_cite_itself(self):
         table = _table(document_ids=('doc_1',), stored=_stored())
         with pytest.raises(ValidationError, match='itself'):
-            dr.update_decision(table, 'p1', 'doc_1', {'evidence': {'document_ids': ['doc_1']}}, ANA)
+            dr.update_decision(table, 'p1', 'doc_1', {'evidence': {'document_ids': ['doc_1']}}, ANA, workspace=None)
 
     @pytest.mark.parametrize('stored', [None, {**_stored(), 'document_type': 'custom'}])
     def test_a_missing_or_non_decision_document_is_a_404(self, stored):
         with pytest.raises(NotFoundError):
-            dr.stored_decision(_table(stored=stored), 'p1', 'doc_1')
+            dr.stored_decision(_table(stored=stored), 'p1', 'doc_1', workspace=None)
 
 
 class TestPursue:
@@ -145,5 +147,5 @@ class TestPursue:
 
     def test_the_seeded_job_is_recorded_outside_the_fields(self):
         table = _table()
-        dr.record_seeded_prfaq(table, _stored(), 'job-1')
+        dr.record_seeded_prfaq(table, _stored(), 'job-1', workspace=None)
         assert table.update_item.call_args.kwargs['ExpressionAttributeValues'][':job'] == 'job-1'

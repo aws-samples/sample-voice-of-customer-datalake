@@ -26,7 +26,7 @@ def persist() -> Iterator[MagicMock]:
 
 
 def _create(body: dict, doc_type: str = 'prd', creator_sub: str = 'sub-ada') -> dict:
-    return human_documents.create_human_document('TABLE', 'p1', doc_type, body, creator_sub=creator_sub)
+    return human_documents.create_human_document('TABLE', 'p1', doc_type, body, creator_sub=creator_sub, workspace=None)
 
 
 def _refusal(body: dict, doc_type: str = 'prd') -> str:
@@ -174,8 +174,8 @@ class TestStoredInDynamoDB:
     def test_a_retried_click_files_one_document(self, table: Any):
         body = {'title': 'Faster checkout', 'create_id': 'click_1'}
 
-        first = human_documents.create_human_document(table, 'p1', 'prd', body, creator_sub='sub-ada')
-        second = human_documents.create_human_document(table, 'p1', 'prd', body, creator_sub='sub-ada')
+        first = human_documents.create_human_document(table, 'p1', 'prd', body, creator_sub='sub-ada', workspace=None)
+        second = human_documents.create_human_document(table, 'p1', 'prd', body, creator_sub='sub-ada', workspace=None)
 
         assert first['document_id'] == second['document_id']
         assert first['origin'] == 'human'
@@ -184,9 +184,9 @@ class TestStoredInDynamoDB:
 
     def test_a_second_click_files_the_next_version_of_the_series(self, table: Any):
         first = human_documents.create_human_document(
-            table, 'p1', 'prfaq', {'title': 'Checkout', 'create_id': 'c1'}, creator_sub='sub-ada')
+            table, 'p1', 'prfaq', {'title': 'Checkout', 'create_id': 'c1'}, creator_sub='sub-ada', workspace=None)
         second = human_documents.create_human_document(
-            table, 'p1', 'prfaq', {'title': 'Checkout', 'create_id': 'c2'}, creator_sub='sub-ada')
+            table, 'p1', 'prfaq', {'title': 'Checkout', 'create_id': 'c2'}, creator_sub='sub-ada', workspace=None)
 
         assert first['document_id'] != second['document_id']
         assert (first.get('version'), second.get('version')) == (1, 2)

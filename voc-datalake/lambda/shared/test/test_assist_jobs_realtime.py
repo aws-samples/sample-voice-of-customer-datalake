@@ -9,6 +9,9 @@ from shared import assist_jobs as aj
 from shared.exceptions import ValidationError
 from shared.test.assist_job_fixtures import assist_jobs_table
 
+#: The caller's own assists outside any project, the deployment's.
+OWNER_PK = aj.owner_pk('owner-sub', workspace=None)
+
 
 @pytest.fixture
 def table():
@@ -24,7 +27,7 @@ def published():
 
 def _run(pk: str, work: aj.Work, *, initiated_by: str = 'starter-sub', project_id: str | None = None) -> dict:
     started = aj.start(pk, 'assist_categories', {}, worker_function='worker-fn',
-                       initiated_by=initiated_by, project_id=project_id)
+                       initiated_by=initiated_by, project_id=project_id, workspace=None)
     aj.run({'action': aj.ASSIST_ACTION, 'pk': pk, 'job_id': started['job_id']}, {'assist_categories': work})
     return started
 
@@ -32,7 +35,7 @@ def _run(pk: str, work: aj.Work, *, initiated_by: str = 'starter-sub', project_i
 @pytest.mark.usefixtures('table')
 class TestJobNotices:
     def test_a_completed_owned_assist_tells_the_sub_in_its_pk(self, published):
-        started = _run(aj.owner_pk('owner-sub'), aj.Work(lambda _cfg: {'ok': True}, 'x'))
+        started = _run(OWNER_PK, aj.Work(lambda _cfg: {'ok': True}, 'x'))
         published.assert_called_once_with('jobs', 'owner-sub', {
             'type': 'job', 'job_id': started['job_id'], 'job_type': 'assist_categories', 'status': 'completed'})
 
@@ -45,23 +48,24 @@ class TestJobNotices:
     def test_a_failed_assist_tells_too(self, published):
         def refuse(_cfg: dict) -> dict:
             raise ValidationError('no')
-        _run(aj.owner_pk('owner-sub'), aj.Work(refuse, 'x'))
+        _run(OWNER_PK, aj.Work(refuse, 'x'))
         assert published.call_args.args[2]['status'] == 'failed'
 
     def test_an_unregistered_kind_tells_its_failure(self, published, table):
-        started = aj.start(aj.owner_pk('owner-sub'), 'assist_other', {}, worker_function='w', initiated_by='owner-sub')
-        aj.run({'action': aj.ASSIST_ACTION, 'pk': aj.owner_pk('owner-sub'), 'job_id': started['job_id']}, {})
+        started = aj.start(OWNER_PK, 'assist_other', {}, worker_function='w', initiated_by='owner-sub',
+                           workspace=None)
+        aj.run({'action': aj.ASSIST_ACTION, 'pk': OWNER_PK, 'job_id': started['job_id']}, {})
         assert published.call_args.args[2]['status'] == 'failed'
-        assert table.get_item(Key={'pk': aj.owner_pk('owner-sub'), 'sk': f"JOB#{started['job_id']}"})['Item']['status'] == 'failed'
+        assert table.get_item(Key={'pk': OWNER_PK, 'sk': f"JOB#{started['job_id']}"})['Item']['status'] == 'failed'
 
     def test_a_lost_notice_leaves_the_recorded_outcome(self, published, table):
         published.return_value = False
-        started = _run(aj.owner_pk('owner-sub'), aj.Work(lambda _cfg: {'n': 1}, 'x'))
-        row = table.get_item(Key={'pk': aj.owner_pk('owner-sub'), 'sk': f"JOB#{started['job_id']}"})['Item']
+        started = _run(OWNER_PK, aj.Work(lambda _cfg: {'n': 1}, 'x'))
+        row = table.get_item(Key={'pk': OWNER_PK, 'sk': f"JOB#{started['job_id']}"})['Item']
         assert (row['status'], row['result']) == ('completed', {'n': 1})
 
     def test_a_skipped_redelivery_sends_nothing(self, published):
-        started = _run(aj.owner_pk('owner-sub'), aj.Work(lambda _cfg: {}, 'x'))
+        started = _run(OWNER_PK, aj.Work(lambda _cfg: {}, 'x'))
         published.reset_mock()
-        aj.run({'action': aj.ASSIST_ACTION, 'pk': aj.owner_pk('owner-sub'), 'job_id': started['job_id']}, {})
+        aj.run({'action': aj.ASSIST_ACTION, 'pk': OWNER_PK, 'job_id': started['job_id']}, {})
         published.assert_not_called()
