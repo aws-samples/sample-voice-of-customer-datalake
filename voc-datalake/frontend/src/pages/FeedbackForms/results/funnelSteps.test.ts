@@ -29,7 +29,7 @@ const reach = (answered: number, skipped = 0, notShown = 0) => ({ answered, skip
 const RESULTS: FormResults = {
   total: 10, test_count: 0, last_response_at: null,
   questions: { q_a: reach(10), q_b: reach(3, 0, 7), q_c: reach(10) },
-  endings: {}, removed_questions: [], removed_options: {}, funnel: null,
+  endings: {}, removed_questions: [], removed_options: {}, funnel: null, link_health: null,
 }
 const FUNNEL: FormFunnel = {
   opened: 50, started: 30,

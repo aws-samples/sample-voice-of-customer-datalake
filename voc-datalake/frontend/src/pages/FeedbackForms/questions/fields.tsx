@@ -10,8 +10,9 @@ import { useTranslation } from 'react-i18next'
 import clsx from 'clsx'
 import { AlertTriangle, CircleX } from 'lucide-react'
 import type { FormProblem } from '../model/validateForm'
+import { problemMessage } from '../builder/problemText'
 
-/** The problems of one field, as the problems list words them. */
+/** The problems of one field, as the problems list words them (`problemMessage`: languages by their names). */
 export function FieldProblems({ id, problems }: Readonly<{ id: string; problems: readonly FormProblem[] }>) {
   const { t } = useTranslation('feedbackForms')
   if (problems.length === 0) return null
@@ -23,7 +24,7 @@ export function FieldProblems({ id, problems }: Readonly<{ id: string; problems:
           {problem.severity === 'error'
             ? <CircleX size={12} className="mt-0.5 shrink-0" aria-hidden="true" />
             : <AlertTriangle size={12} className="mt-0.5 shrink-0 text-warn" aria-hidden="true" />}
-          <span>{t(`problems.${problem.code}`, problem.params)}</span>
+          <span>{problemMessage(t, problem)}</span>
         </li>
       ))}
     </ul>
@@ -44,6 +45,10 @@ export interface TextFieldProps {
   readonly inputRef?: Ref<HTMLInputElement & HTMLTextAreaElement>
   readonly mono?: boolean
   readonly type?: 'text' | 'url' | 'number'
+  /** A control beside the label (recall's "Insert a value" menu). */
+  readonly action?: ReactNode
+  /** Lines under the field, above its problems (recall's preview). */
+  readonly below?: ReactNode
 }
 
 function Counter({ value, max }: Readonly<{ value: string; max: number }>) {
@@ -75,12 +80,16 @@ export function TextField(props: TextFieldProps) {
         <label htmlFor={id} className="flex items-center gap-1 text-sm font-medium text-text">
           {label}{required && <span aria-hidden="true">*</span>}
         </label>
-        {counter !== undefined && <Counter value={value} max={counter} />}
+        <span className="flex items-center gap-1">
+          {counter !== undefined && <Counter value={value} max={counter} />}
+          {props.action}
+        </span>
       </div>
       {multiline
         ? <textarea {...shared} ref={inputRef} rows={2} className={clsx(shared.className, 'min-h-[2.5rem] resize-y')} onChange={(event) => onChange(event.target.value)} />
         : <input {...shared} ref={inputRef} type={type} onChange={(event) => onChange(event.target.value)} />}
       {hint !== undefined && <p id={hintId} className="mt-1 text-[12px] text-muted">{hint}</p>}
+      {props.below}
       <FieldProblems id={problemsId} problems={problems} />
     </div>
   )

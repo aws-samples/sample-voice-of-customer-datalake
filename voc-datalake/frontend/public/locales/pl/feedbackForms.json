@@ -53,7 +53,11 @@
       "other": "Inne"
     },
     "ending": "Zakończenie",
-    "welcome": "Ekran powitalny"
+    "welcome": "Ekran powitalny",
+    "matrix": {
+      "name": "Macierz",
+      "hint": "Oceń kilka pozycji na jednej skali"
+    }
   },
   "problems": {
     "count_one": "{{count, number}} problem",
@@ -138,7 +142,22 @@
     "skippedOnRequired": "To pytanie jest wymagane, więc nigdy nie zostanie pominięte: ta reguła nigdy się nie uruchomi.",
     "ruleNeverRuns": "Ta reguła nigdy się nie uruchomi: reguła {{number}} pasuje już do każdej odpowiedzi, do której pasowałaby ta.",
     "whereAnyway": "Ta reguła nic nie zmienia: każdy, kto do niej dotrze, i tak przechodzi do pytania {{number}}.",
-    "whereAnywayEnding": "Ta reguła nic nie zmienia: każdy, kto do niej dotrze, i tak widzi zakończenie „{{title}}”."
+    "whereAnywayEnding": "Ta reguła nic nie zmienia: każdy, kto do niej dotrze, i tak widzi zakończenie „{{title}}”.",
+    "matrixNoRows": "Dodaj co najmniej jeden wiersz.",
+    "matrixTooManyRows": "Macierz ma najwyżej {{max, number}} wierszy.",
+    "matrixFewColumns": "Macierz potrzebuje co najmniej {{min, number}} kolumn.",
+    "matrixTooManyColumns": "Macierz ma najwyżej {{max, number}} kolumn.",
+    "matrixRowEmpty": "Wiersz {{number}} nie ma tekstu.",
+    "matrixColumnEmpty": "Kolumna {{number}} nie ma tekstu.",
+    "matrixCodeInvalid": "Kod składa się z małych liter, cyfr i _, do 40 znaków.",
+    "matrixCodeTwice": "Dwa wiersze lub kolumny mają kod {{code}}.",
+    "matrixCodeReserved": "{{code}} to nazwa zastrzeżona; wybierz inną.",
+    "matrixScoreRange": "Wynik kolumny {{number}} musi być liczbą całkowitą od -{{max, number}} do {{max, number}}.",
+    "matrixMinRows": "Liczba wierszy do odpowiedzi musi wynosić od 1 do liczby wierszy ({{count, number}}).",
+    "recallUnknown": "{{placeholder}} nie wskazuje żadnego pola ukrytego ani pytania tego formularza ({{language}}).",
+    "recallNotBefore": "{{placeholder}} wskazuje późniejsze pytanie: można przywołać tylko odpowiedź na wcześniejsze pytanie ({{language}}).",
+    "recallType": "{{placeholder}} wskazuje pytanie, którego odpowiedź nigdy nie jest pokazywana: przywołać można tylko ocenę lub jednokrotny wybór ({{language}}).",
+    "recallNotHere": "{{placeholder}} zostałby pokazany dosłownie: wartości wypełniają tylko tytuł, pytanie, opis lub zakończenie. Usuń go, aby opublikować ({{language}})."
   },
   "logic": {
     "ops": {
@@ -249,7 +268,9 @@
       "update": "Zaktualizuj aktywny formularz",
       "failed": "Nie udało się zapisać: {{reason}}.",
       "failedGeneric": "Nie udało się zapisać. Sprawdź połączenie i spróbuj ponownie.",
-      "retry": "Spróbuj ponownie"
+      "retry": "Spróbuj ponownie",
+      "placeholderRefused": "Nie udało się zapisać: aktywny formularz nie może pokazywać symbolu {…} dosłownie. Popraw teksty wymienione w Problemach albo zapisz go jako wyłączony.",
+      "recallRefused": "Nie udało się zapisać: tekst przywołuje wartość, której w tym miejscu nie da się pokazać. Popraw to w Problemach."
     },
     "published": "Aktywny. Od teraz respondenci widzą tę wersję.",
     "firstSave": "Zapisano. Ten formularz jest wyłączony: jego link wyświetla „Formularz jest niedostępny.”, dopóki go nie opublikujesz.",
@@ -1275,7 +1296,11 @@
         "description": "Opis",
         "button": "Przycisk",
         "enabled": "Wyświetlany",
-        "logic": "Logika"
+        "logic": "Logika",
+        "rows": "Wiersze",
+        "columns": "Kolumny",
+        "shuffle_rows": "Losowa kolejność wierszy",
+        "min_rows": "Wiersze do odpowiedzi"
       },
       "values": {
         "yes": "Tak",
@@ -1354,7 +1379,15 @@
         "smiley": "buźki {{range}}"
       },
       "textOnly": "Tylko tekst",
-      "linkButton": "Z przyciskiem z linkiem"
+      "linkButton": "Z przyciskiem z linkiem",
+      "rows_one": "{{count, number}} wiersz",
+      "rows_few": "{{count, number}} wiersze",
+      "rows_many": "{{count, number}} wierszy",
+      "rows_other": "{{count, number}} wierszy",
+      "columns_one": "{{count, number}} kolumna",
+      "columns_few": "{{count, number}} kolumny",
+      "columns_many": "{{count, number}} kolumn",
+      "columns_other": "{{count, number}} kolumn"
     }
   },
   "question": {
@@ -1812,7 +1845,9 @@
       "welcomeButton": "Etykieta przycisku",
       "endingTitle": "Tytuł",
       "endingDescription": "Opis",
-      "endingButton": "Etykieta przycisku"
+      "endingButton": "Etykieta przycisku",
+      "matrixRow": "Wiersz {{number}}",
+      "matrixColumn": "Kolumna {{number}}"
     },
     "confirm": {
       "text": "Ten formularz powstał, zanim formularze miały język.",
@@ -1894,14 +1929,20 @@
     "saveFirstTitle": "Brak linków",
     "saveFirst": "Zapisz formularz, aby otrzymać jego linki.",
     "showProblems": "Pokaż problemy",
-    "save": "Zapisz"
+    "save": "Zapisz",
+    "toHiddenFields": "Otwórz Pola ukryte",
+    "values": {
+      "title": "Wartości w tym linku",
+      "hint": "Opcjonalnie: każda wartość trafia do linku, iframe i osadzonego skryptu.",
+      "warnings": "Pola ukryte, które ten link zostawia puste",
+      "leavesEmpty": "Ten link zostawia {{id}} puste: respondenci zobaczą tekst bez tej wartości."
+    }
   },
   "results": {
     "summary": "Podsumowanie",
     "responsesView": "Odpowiedzi",
     "view": "Widok wyników",
     "loading": "Wczytywanie wyników…",
-    "csv": "Eksportuj CSV",
     "csvFailed": "Nie udało się wyeksportować odpowiedzi.",
     "includeTest": "Uwzględnij odpowiedzi testowe",
     "including_one": "Uwzględniono {{formatted}} odpowiedź testową. Te liczby nie są prawdziwymi wynikami.",
@@ -2057,7 +2098,38 @@
     "contactLeft_one": "{{count, number}} osoba zostawiła dane kontaktowe",
     "contactLeft_few": "{{count, number}} osoby zostawiły dane kontaktowe",
     "contactLeft_many": "{{count, number}} osób zostawiło dane kontaktowe",
-    "contactLeft_other": "{{count, number}} osoby zostawiło dane kontaktowe"
+    "contactLeft_other": "{{count, number}} osoby zostawiło dane kontaktowe",
+    "download": "Pobierz",
+    "downloadOptions": "Więcej opcji pobierania",
+    "downloadDetailed": "Szczegółowy CSV (dla skryptów)",
+    "downloadWithIds": "CSV z wierszem identyfikatorów",
+    "matrix": {
+      "rowsLabel": "Odpowiedzi według wierszy",
+      "columnsLabel": "Odpowiedzi dla: {{row}}",
+      "rated_one": "Ocenione przez {{formatted}} osobę",
+      "rated_few": "Ocenione przez {{formatted}} osoby",
+      "rated_many": "Ocenione przez {{formatted}} osób",
+      "rated_other": "Ocenione przez {{formatted}} osoby",
+      "average": "średnio {{average}} (oceny od {{low}} do {{high}})",
+      "removedLabel": "Odpowiedzi dla usuniętych wierszy i kolumn",
+      "removedRow_one": "Wiersz {{code}} (usunięty): {{formatted}} odpowiedź",
+      "removedRow_few": "Wiersz {{code}} (usunięty): {{formatted}} odpowiedzi",
+      "removedRow_many": "Wiersz {{code}} (usunięty): {{formatted}} odpowiedzi",
+      "removedRow_other": "Wiersz {{code}} (usunięty): {{formatted}} odpowiedzi",
+      "removedColumn_one": "Kolumna {{code}} (usunięta): {{formatted}} odpowiedź",
+      "removedColumn_few": "Kolumna {{code}} (usunięta): {{formatted}} odpowiedzi",
+      "removedColumn_many": "Kolumna {{code}} (usunięta): {{formatted}} odpowiedzi",
+      "removedColumn_other": "Kolumna {{code}} (usunięta): {{formatted}} odpowiedzi"
+    },
+    "linkHealth": {
+      "title": "Sprawdź swoje linki",
+      "never_filled": "{{filled, number}} z {{total, number}} odpowiedzi miało {{id}}: sprawdź swój link.",
+      "mostly_missing": "Tylko {{filled, number}} z {{total, number}} odpowiedzi miało {{id}}: sprawdź swój link.",
+      "hint": "Link wypełnia je parametrem {{param}}.",
+      "from": "Brak w: {{channels}}.",
+      "channel": "{{channel}} {{missing}}",
+      "unknown": "Nieznany"
+    }
   },
   "theme": {
     "presets": {
@@ -2203,5 +2275,62 @@
       "failed": "Nie udało się usunąć formularza. Spróbuj ponownie za chwilę.",
       "unnamed": "ten formularz"
     }
+  },
+  "matrix": {
+    "rows": "Wiersze",
+    "columns": "Kolumny (skala)",
+    "rowN": "Wiersz {{number}}",
+    "columnN": "Kolumna {{number}}",
+    "codeOf": {
+      "row": "Kod wiersza {{number}}",
+      "column": "Kod kolumny {{number}}"
+    },
+    "codeLocked": "Odpowiedzi są zapisywane pod tym kodem, więc po pojawieniu się odpowiedzi nie można go zmienić. Zmień raczej etykietę.",
+    "score": "Wynik",
+    "scoreOf": "Wynik kolumny {{number}}",
+    "scoreHint": "Wyniki to opcjonalne liczby całkowite od -100 do 100: w Wynikach są uśredniane dla każdego wiersza.",
+    "menu": {
+      "row": "Więcej działań dla wiersza {{number}}",
+      "column": "Więcej działań dla kolumny {{number}}"
+    },
+    "last": {
+      "rows": "Macierz potrzebuje co najmniej jednego wiersza.",
+      "columns": "Macierz potrzebuje co najmniej dwóch kolumn."
+    },
+    "add": {
+      "rows": "Dodaj wiersz",
+      "columns": "Dodaj kolumnę"
+    },
+    "shuffleRows": "Losowa kolejność wierszy",
+    "shuffleRowsHint": "Każda osoba widzi wiersze we własnej kolejności.",
+    "display": {
+      "auto": "Automatycznie",
+      "grid": "Siatka",
+      "stacked": "Jeden pod drugim"
+    },
+    "displayHint": {
+      "auto": "Siatka na szerokim ekranie (do 7 kolumn), na telefonie każdy wiersz osobno.",
+      "grid": "Zawsze siatka wierszy i kolumn.",
+      "stacked": "Zawsze każdy wiersz osobno, z odpowiedziami pod nim."
+    },
+    "minRows": "Wiersze do odpowiedzi, co najmniej",
+    "minRowsHint": "Gdy odpowiedź padnie w dowolnym wierszu. Puste: dowolna liczba.",
+    "requiredHint": "Trzeba odpowiedzieć w każdym wierszu.",
+    "scale": {
+      "poor": "Słabo",
+      "fair": "Przeciętnie",
+      "good": "Dobrze",
+      "excellent": "Świetnie"
+    }
+  },
+  "recall": {
+    "insert": "Wstaw wartość",
+    "hiddenItem": "Pole ukryte · {{name}}",
+    "questionItem": "P{{number}} · {{headline}}",
+    "nothing": "Nie ma tu czego wstawić",
+    "nothingHint": "Dodaj pole ukryte albo pytanie z oceną lub jednokrotnym wyborem przed tym tekstem.",
+    "preview": "Respondenci widzą: {{text}}",
+    "previewMissing": "Bez wartości: {{text}}",
+    "previewEmpty": "(nic)"
   }
 }

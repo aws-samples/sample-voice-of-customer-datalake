@@ -1,7 +1,7 @@
 /**
  * @fileoverview A stored answer as people read it (contract "Response, v2"): a choice by its option labels in the
  * form's primary language, Other with its typed text, a score as a number, a consent as accepted or not, contact
- * details joined. Also a response's one-line summary for the Responses table (UX §10.4), its ending's title and its
+ * details joined, a matrix as "Row: Column" per row it rated. Also a response's one-line summary for the Responses table (UX §10.4), its ending's title and its
  * hidden values.
  *
  * @module pages/FeedbackForms/results/answers
@@ -19,7 +19,21 @@ function otherLabel(t: TFunction<'feedbackForms'>, form: FormV2, question: Quest
   return own === '' ? t('results.other') : own
 }
 
+/** A matrix answer as "Row: Column" lines, in the question's row order, by their labels in the primary language (a
+ * row or a column it no longer has by its code). */
+export function matrixLines(form: FormV2, question: Question, rows: Readonly<Record<string, string>>): string[] {
+  const rowOrder = question.type === 'matrix' ? question.rows : []
+  const columns = new Map((question.type === 'matrix' ? question.columns : []).map((column) => [column.code, textIn(column.label, form.language) || column.code]))
+  const known = rowOrder.filter((row) => rows[row.code] !== undefined).map((row) => ({ label: textIn(row.label, form.language) || row.code, code: row.code }))
+  const gone = Object.keys(rows).filter((code) => !rowOrder.some((row) => row.code === code)).map((code) => ({ label: code, code }))
+  return [...known, ...gone].map(({ label, code }) => {
+    const column = rows[code] ?? ''
+    return `${label}: ${columns.get(column) ?? column}`
+  })
+}
+
 function objectText(t: TFunction<'feedbackForms'>, form: FormV2, question: Question, value: Exclude<AnswerValue, string | number | boolean>): string {
+  if ('rows' in value) return matrixLines(form, question, value.rows).join('; ')
   if ('codes' in value) {
     const labels = value.codes.map((code) => codeLabel(t, form, question, code))
     const other = value.other === undefined || value.other === '' ? [] : [t('results.otherAnswer', { label: otherLabel(t, form, question), text: value.other })]

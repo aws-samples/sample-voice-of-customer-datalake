@@ -29,10 +29,17 @@ export const LIMITS = {
   maxChars: 5000,
   headlineChars: 300,
   describeChars: 2000,
+  /** A matrix's rows and columns. */
+  matrixRows: 20,
+  matrixColumns: 10,
+  minMatrixColumns: 2,
+  /** A matrix column's optional score, a whole number in this range. */
+  matrixScore: 100,
 } as const
 
 export type QuestionType =
   | 'single_select' | 'multi_select' | 'open_text' | 'rating' | 'nps' | 'csat' | 'ces' | 'statement' | 'consent' | 'contact_info'
+  | 'matrix'
 
 export const RULE_OPS = [
   'equals', 'not_equals', 'includes_any', 'includes_all', 'lt', 'lte', 'gt', 'gte', 'submitted', 'skipped',
@@ -151,9 +158,39 @@ export interface ContactQuestion extends QuestionBase {
   readonly fields: Readonly<Record<ContactField, ContactFieldSetting>>
 }
 
+/** One row of a matrix: what is rated (its code locks like an option code once the form is answered). */
+export interface MatrixRow {
+  readonly code: string
+  readonly label: I18nText
+}
+
+/** One column of a matrix: a point of its scale, with an optional whole-number score for the rows' averages. */
+export interface MatrixColumn {
+  readonly code: string
+  readonly label: I18nText
+  readonly score?: number
+}
+
+export const MATRIX_DISPLAYS = ['auto', 'grid', 'stacked'] as const
+/** Auto: a grid where the form is wide enough, stacked rows on a phone. */
+export type MatrixDisplay = (typeof MATRIX_DISPLAYS)[number]
+
+/**
+ * Several rows rated on one scale: one choice per row. `required` asks for every row; an optional matrix
+ * may ask for at least `min_rows` once any row is answered. Its answer is `{rows: {<row code>: <column code>}}`.
+ */
+export interface MatrixQuestion extends QuestionBase {
+  readonly type: 'matrix'
+  readonly rows: readonly MatrixRow[]
+  readonly columns: readonly MatrixColumn[]
+  readonly shuffle_rows: boolean
+  readonly display: MatrixDisplay
+  readonly min_rows?: number
+}
+
 export type Question =
   | OpenTextQuestion | ChoiceQuestion | RatingQuestion | ScoreQuestion
-  | StatementQuestion | ConsentQuestion | ContactQuestion
+  | StatementQuestion | ConsentQuestion | ContactQuestion | MatrixQuestion
 
 export interface Ending {
   readonly id: string
@@ -290,6 +327,8 @@ export function isFormLanguage(value: unknown): value is FormLanguage {
 
 export const isChoice = (question: Question): question is ChoiceQuestion =>
   question.type === 'single_select' || question.type === 'multi_select'
+
+export const isMatrix = (question: Question): question is MatrixQuestion => question.type === 'matrix'
 
 /** The types with a numeric scale: rating, NPS, CSAT and CES. */
 export const isScale = (question: Question): question is RatingQuestion | ScoreQuestion =>

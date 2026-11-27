@@ -410,7 +410,8 @@ class TestTheLockOfAnAnsweredForm:
         assert fv2.unnamed_removals(_ANSWERED, copy.deepcopy(_ANSWERED), fv2.validate_removes({})) == {}
 
     def test_removes_is_closed_and_bounded(self):
-        assert fv2.validate_removes({'questions': ['q_a', 'q_a']}) == {'questions': {'q_a'}, 'options': {}}
+        assert fv2.validate_removes({'questions': ['q_a', 'q_a']}) == {'questions': {'q_a'}, 'options': {}, 'rows': {},
+                                                                       'columns': {}}
         for bad in ([], {'questions': 'q_a'}, {'questions': [1]}, {'options': []}, {'options': {'q_a': 'x'}},
                     {'other': []}, {'questions': ['q_x'] * (fv2.MAX_QUESTIONS + 1)},
                     {'options': {f'q_{n}': [] for n in range(fv2.MAX_QUESTIONS + 1)}}):
@@ -483,11 +484,11 @@ class TestPublishing:
         assert not fv2.same_theme(self.GREY, {**self.GREY, 'border_radius': '4px'})
 
 
-def test_the_module_imports_nothing_but_the_standard_library_and_three_pure_shared_modules():
+def test_the_module_imports_nothing_but_the_standard_library_and_four_pure_shared_modules():
     """Pure (portable to main as is): no AWS client; of shared, only the exceptions, dynamo_values' ``plain`` and
-    form_theme (the theme's contrast rules), all standard library only."""
+    form_theme (the theme's contrast rules) and forms_recall (the recall grammar), all standard library only."""
     source = Path(fv2.__file__).read_text(encoding='utf-8')
     imports = [line.split('  #')[0] for line in source.splitlines() if line.startswith(('import ', 'from '))]
     assert [line for line in imports if 'shared' in line] == [
-        'from shared import form_theme', 'from shared.dynamo_values import plain',
-        'from shared.exceptions import ValidationError']
+        'from shared import form_theme, forms_recall', 'from shared.dynamo_values import plain',
+        'from shared.exceptions import ConflictError, ValidationError']

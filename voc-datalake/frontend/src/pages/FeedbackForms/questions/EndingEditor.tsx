@@ -1,5 +1,6 @@
 /**
- * @fileoverview An ending (UX §7): its title (required) and description, an optional button (label and an https
+ * @fileoverview An ending (UX §7): its title (required) and description (both may recall any question's score or
+ * choice, or a hidden field: RecallField), an optional button (label and an https
  * address), which paths end here ("Reached by: 7 is not accepted · the end of the questions (default)"), and its id
  * under Advanced (locked after the first response).
  *
@@ -24,6 +25,7 @@ import { TextField } from './fields'
 import { fieldProblems } from './fieldHelpers'
 import { takeFocusRequest } from './focusRequest'
 import IdField from './IdField'
+import RecallField from './RecallField'
 
 /** "7 is not accepted", "the end of the questions (default)": each way a respondent reaches `ending`. */
 function reachedBy(t: TFunction<'feedbackForms'>, form: FormV2, ending: Ending): string[] {
@@ -61,10 +63,10 @@ export default function EndingEditor({ ending }: Readonly<{ ending: Ending }>) {
         <Flag size={16} className="text-muted" aria-hidden="true" />{t('types.ending')}
         {form.endings[0]?.id === ending.id && <span className="badge badge-muted">{t('endings.default')}</span>}
       </h2>
-      <TextField label={t('endings.title')} required inputRef={title} value={textIn(ending.title, lng)} problems={fieldProblems(problems, 'title')}
-        onChange={(value) => set((e) => ({ ...e, title: withText(e.title, lng, value) }))} />
-      <TextField label={t('endings.description')} multiline value={textIn(ending.description, lng)}
-        onChange={(value) => set((e) => ({ ...e, description: withText(e.description, lng, value) }))} />
+      <RecallField before={form.questions.length} label={t('endings.title')} required inputRef={title} value={textIn(ending.title, lng)}
+        problems={fieldProblems(problems, 'title')} onChange={(value) => set((e) => ({ ...e, title: withText(e.title, lng, value) }))} />
+      <RecallField before={form.questions.length} label={t('endings.description')} multiline value={textIn(ending.description, lng)}
+        problems={fieldProblems(problems, 'description')} onChange={(value) => set((e) => ({ ...e, description: withText(e.description, lng, value) }))} />
       <SwitchField checked={button !== undefined} label={t('endings.addButton')}
         onChange={(on) => set((e) => ({ ...e, button: on ? { label: {}, url: '' } : undefined }))} />
       {button !== undefined && (

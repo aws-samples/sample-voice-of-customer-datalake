@@ -17,6 +17,8 @@ import Segmented from '../ui/Segmented'
 import { useAnnounce } from './statusLineContext'
 import { withNpsFollowUps } from './npsHelper'
 import { TextField } from './fields'
+import { fieldProblems } from './fieldHelpers'
+import { useQuestionFields } from './useQuestionFields'
 
 type Scaled = RatingQuestion | ScoreQuestion
 
@@ -89,15 +91,14 @@ function FixedScale({ question }: Readonly<{ question: ScoreQuestion }>) {
 
 export default function ScaleEditor({ question, onChange }: Readonly<{ question: Scaled; onChange: (q: Scaled) => void }>) {
   const { t } = useTranslation('feedbackForms')
-  const { form } = useDraft()
-  const lng = form.language
+  const { lng, problems } = useQuestionFields(question.id)
   return (
     <div className="space-y-3">
       {question.type === 'rating' ? <RatingFields question={question} onChange={onChange} /> : <FixedScale question={question} />}
       <div className="grid gap-2 sm:grid-cols-2">
-        <TextField label={t('scale.lowEnd')} value={textIn(question.lower_label, lng)}
+        <TextField label={t('scale.lowEnd')} value={textIn(question.lower_label, lng)} problems={fieldProblems(problems, 'lower_label')}
           onChange={(value) => onChange({ ...question, lower_label: withText(question.lower_label, lng, value) })} />
-        <TextField label={t('scale.highEnd')} value={textIn(question.upper_label, lng)}
+        <TextField label={t('scale.highEnd')} value={textIn(question.upper_label, lng)} problems={fieldProblems(problems, 'upper_label')}
           onChange={(value) => onChange({ ...question, upper_label: withText(question.upper_label, lng, value) })} />
       </div>
     </div>

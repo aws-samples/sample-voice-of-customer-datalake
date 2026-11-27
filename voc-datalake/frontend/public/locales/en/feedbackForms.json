@@ -53,7 +53,11 @@
       "other": "Other"
     },
     "ending": "Ending",
-    "welcome": "Welcome card"
+    "welcome": "Welcome card",
+    "matrix": {
+      "name": "Matrix",
+      "hint": "Rate several items on one scale"
+    }
   },
   "problems": {
     "count_one": "{{count, number}} problem",
@@ -132,7 +136,22 @@
     "skippedOnRequired": "This question is required, so it is never skipped: this rule never runs.",
     "ruleNeverRuns": "This rule never runs: rule {{number}} already matches every answer it would.",
     "whereAnyway": "This rule has no effect: everyone who reaches it goes to question {{number}} anyway.",
-    "whereAnywayEnding": "This rule has no effect: everyone who reaches it sees the ending “{{title}}” anyway."
+    "whereAnywayEnding": "This rule has no effect: everyone who reaches it sees the ending “{{title}}” anyway.",
+    "matrixNoRows": "Add at least one row.",
+    "matrixTooManyRows": "A matrix has at most {{max, number}} rows.",
+    "matrixFewColumns": "A matrix needs at least {{min, number}} columns.",
+    "matrixTooManyColumns": "A matrix has at most {{max, number}} columns.",
+    "matrixRowEmpty": "Row {{number}} has no text.",
+    "matrixColumnEmpty": "Column {{number}} has no text.",
+    "matrixCodeInvalid": "A code uses lower-case letters, digits and _, up to 40 characters.",
+    "matrixCodeTwice": "Two rows or columns have the code {{code}}.",
+    "matrixCodeReserved": "{{code}} is a reserved name; choose another.",
+    "matrixScoreRange": "The score of column {{number}} must be a whole number from -{{max, number}} to {{max, number}}.",
+    "matrixMinRows": "Rows to answer must be from 1 to the number of rows ({{count, number}}).",
+    "recallUnknown": "{{placeholder}} names no hidden field and no question of this form ({{language}}).",
+    "recallNotBefore": "{{placeholder}} names a question that comes later: recall only an earlier question's answer ({{language}}).",
+    "recallType": "{{placeholder}} names a question whose answer is never shown: only a score or a single choice can be recalled ({{language}}).",
+    "recallNotHere": "{{placeholder}} would show as written: values only fill a title, a question, a description or an ending. Remove it to publish ({{language}})."
   },
   "logic": {
     "ops": {
@@ -237,7 +256,9 @@
       "update": "Update live form",
       "failed": "Couldn't save: {{reason}}.",
       "failedGeneric": "Couldn't save. Check your connection and try again.",
-      "retry": "Try again"
+      "retry": "Try again",
+      "placeholderRefused": "Couldn't save: a live form can't show a {…} placeholder as written. Fix the texts listed in Problems, or save it Off.",
+      "recallRefused": "Couldn't save: a text recalls a value it can't show where it stands. Fix it in Problems."
     },
     "published": "Live. Respondents see this version from now on.",
     "firstSave": "Saved. This form is Off: its link shows “Feedback form unavailable.” until you publish it.",
@@ -1229,7 +1250,11 @@
         "description": "Description",
         "button": "Button",
         "enabled": "Shown",
-        "logic": "Logic"
+        "logic": "Logic",
+        "rows": "Rows",
+        "columns": "Columns",
+        "shuffle_rows": "Shuffle rows",
+        "min_rows": "Rows to answer"
       },
       "values": {
         "yes": "Yes",
@@ -1302,7 +1327,11 @@
         "smiley": "{{range}} faces"
       },
       "textOnly": "Text only",
-      "linkButton": "With a link button"
+      "linkButton": "With a link button",
+      "rows_one": "{{count, number}} row",
+      "rows_other": "{{count, number}} rows",
+      "columns_one": "{{count, number}} column",
+      "columns_other": "{{count, number}} columns"
     }
   },
   "question": {
@@ -1722,7 +1751,9 @@
       "welcomeButton": "Button label",
       "endingTitle": "Title",
       "endingDescription": "Description",
-      "endingButton": "Button label"
+      "endingButton": "Button label",
+      "matrixRow": "Row {{number}}",
+      "matrixColumn": "Column {{number}}"
     },
     "confirm": {
       "text": "This form was made before forms had a language.",
@@ -1804,14 +1835,20 @@
     "saveFirstTitle": "No links yet",
     "saveFirst": "Save the form to get its links.",
     "showProblems": "Show problems",
-    "save": "Save"
+    "save": "Save",
+    "toHiddenFields": "Open Hidden fields",
+    "values": {
+      "title": "Values in this link",
+      "hint": "Optional: each value goes into the link, the iframe and the script embed.",
+      "warnings": "Hidden fields this link leaves empty",
+      "leavesEmpty": "This link leaves {{id}} empty: respondents see the text without it."
+    }
   },
   "results": {
     "summary": "Summary",
     "responsesView": "Responses",
     "view": "Results view",
     "loading": "Loading results…",
-    "csv": "Export CSV",
     "csvFailed": "Couldn't export the responses.",
     "includeTest": "Include test responses",
     "including_one": "Including {{formatted}} test response. These numbers aren't your real results.",
@@ -1949,7 +1986,32 @@
       "next": "Next"
     },
     "contactLeft_one": "{{count, number}} person left contact details",
-    "contactLeft_other": "{{count, number}} people left contact details"
+    "contactLeft_other": "{{count, number}} people left contact details",
+    "download": "Download",
+    "downloadOptions": "More download options",
+    "downloadDetailed": "Detailed CSV (for scripts)",
+    "downloadWithIds": "CSV with a row of ids",
+    "matrix": {
+      "rowsLabel": "Answers by row",
+      "columnsLabel": "Answers for {{row}}",
+      "rated_one": "Rated by {{formatted}}",
+      "rated_other": "Rated by {{formatted}}",
+      "average": "average {{average}} (scores {{low}} to {{high}})",
+      "removedLabel": "Answers to removed rows and columns",
+      "removedRow_one": "Row {{code}} (removed): {{formatted}} answer",
+      "removedRow_other": "Row {{code}} (removed): {{formatted}} answers",
+      "removedColumn_one": "Column {{code}} (removed): {{formatted}} answer",
+      "removedColumn_other": "Column {{code}} (removed): {{formatted}} answers"
+    },
+    "linkHealth": {
+      "title": "Check your links",
+      "never_filled": "{{filled, number}} of {{total, number}} responses had {{id}}: check your link.",
+      "mostly_missing": "Only {{filled, number}} of {{total, number}} responses had {{id}}: check your link.",
+      "hint": "A link fills it with {{param}}.",
+      "from": "Missing from: {{channels}}.",
+      "channel": "{{channel}} {{missing}}",
+      "unknown": "Unknown"
+    }
   },
   "theme": {
     "presets": {
@@ -2087,5 +2149,62 @@
       "failed": "Couldn't delete the form. Try again in a moment.",
       "unnamed": "this form"
     }
+  },
+  "matrix": {
+    "rows": "Rows",
+    "columns": "Columns (the scale)",
+    "rowN": "Row {{number}}",
+    "columnN": "Column {{number}}",
+    "codeOf": {
+      "row": "Code of row {{number}}",
+      "column": "Code of column {{number}}"
+    },
+    "codeLocked": "Answers are stored under this code, so it can't change once there are responses. Rename the label instead.",
+    "score": "Score",
+    "scoreOf": "Score of column {{number}}",
+    "scoreHint": "Scores are optional whole numbers from -100 to 100: Results average them per row.",
+    "menu": {
+      "row": "More actions for row {{number}}",
+      "column": "More actions for column {{number}}"
+    },
+    "last": {
+      "rows": "A matrix needs at least one row.",
+      "columns": "A matrix needs at least two columns."
+    },
+    "add": {
+      "rows": "Add row",
+      "columns": "Add column"
+    },
+    "shuffleRows": "Shuffle rows",
+    "shuffleRowsHint": "Each respondent sees the rows in their own order.",
+    "display": {
+      "auto": "Auto",
+      "grid": "Grid",
+      "stacked": "Stacked"
+    },
+    "displayHint": {
+      "auto": "A grid on a wide screen (up to 7 columns), each row on its own on a phone.",
+      "grid": "Always a grid of rows and columns.",
+      "stacked": "Always each row on its own, with its choices under it."
+    },
+    "minRows": "Rows to answer, at least",
+    "minRowsHint": "Once a respondent answers any row. Blank: any number.",
+    "requiredHint": "Every row must be answered.",
+    "scale": {
+      "poor": "Poor",
+      "fair": "Fair",
+      "good": "Good",
+      "excellent": "Excellent"
+    }
+  },
+  "recall": {
+    "insert": "Insert a value",
+    "hiddenItem": "Hidden field · {{name}}",
+    "questionItem": "Q{{number}} · {{headline}}",
+    "nothing": "Nothing to insert here",
+    "nothingHint": "Add a hidden field, or a score or single-choice question before this text.",
+    "preview": "Respondents see: {{text}}",
+    "previewMissing": "Without a value: {{text}}",
+    "previewEmpty": "(nothing)"
   }
 }

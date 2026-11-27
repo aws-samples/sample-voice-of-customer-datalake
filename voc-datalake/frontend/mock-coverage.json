@@ -4584,10 +4584,10 @@
   {
     "file": "api/feedbackFormsV2Api.ts",
     "method": "GET",
-    "call": "`${getBaseUrl()}${formPath(formId)}/responses?${filterQuery(filters, { format: 'csv' })}`",
+    "call": "`${getBaseUrl()}${formPath(formId)}/responses?${filterQuery(filters, csvParams(choice))}`",
     "probes": [
       {
-        "path": "/feedback-forms/fv2_old_ui/responses?format=csv&include_test=false"
+        "path": "/feedback-forms/fv2_old_ui/responses?format=csv&layout=familiar&include_test=false"
       }
     ]
   },

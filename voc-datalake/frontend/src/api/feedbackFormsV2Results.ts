@@ -11,8 +11,13 @@
  *   endings: { <eid>: n },
  *   removed_questions?: [{ id, type, headline, answered }],
  *   removed_options?: { <qid>: [{ code, label, count }] },
- *   funnel?: { opened, started, steps: [{ question_id, reached }], completed } | null }
+ *   funnel?: { opened, started, steps: [{ question_id, reached }], completed } | null,
+ *   link_health: { responses, hidden: {<id>: {filled, missing}}, by_channel: {<channel>: {responses, hidden}},
+ *                  warnings: [{ id, kind, filled, total }] } | null }
  * ```
+ * A matrix question's aggregate adds `matrix: { rows: [{ code, answered, counts: {<column>: n}, average }], scored,
+ * removed_rows: {<code>: n}, removed_columns: {<code>: n} }`. `link_health` is null from a server
+ * that answers none.
  * `GET /feedback-forms/{id}/responses` → `{ responses: [{ response_id, submitted_at, form_revision, language,
  * answers: {<qid>: value}, hidden: {<id>: value}, ending_id, is_test, feedback_id? }], next_cursor }`.
  *
@@ -36,6 +41,10 @@ const listOf = <T extends z.ZodType>(item: T) => z.array(z.unknown()).catch([]).
   return parsed.success ? [parsed.data] : []
 }))
 
+const matrixRow = z.object({ code: z.string().min(1), answered: count, counts: countMap, average: z.number().nullable().catch(null) })
+const matrixAggregate = z.object({ rows: listOf(matrixRow), scored: z.boolean().catch(false), removed_rows: countMap, removed_columns: countMap })
+export type MatrixAggregate = z.infer<typeof matrixAggregate>
+
 const questionAggregate = z.object({
   answered: count,
   skipped: count,
@@ -52,6 +61,7 @@ const questionAggregate = z.object({
     .optional().catch(undefined),
   latest: listOf(latestAnswer).optional(),
   changed_at: optionalText,
+  matrix: matrixAggregate.optional().catch(undefined),
 })
 export type QuestionAggregate = z.infer<typeof questionAggregate>
 
@@ -71,19 +81,34 @@ const funnel = z.object({
 })
 export type FormFunnel = z.infer<typeof funnel>
 
+/** Each entry of a record that parses, the others left out. */
+const recordOf = <T extends z.ZodType>(item: T) => z.record(z.string(), z.unknown()).catch({}).transform((raw) =>
+  Object.fromEntries(Object.entries(raw).flatMap(([key, value]) => {
+    const parsed = item.safeParse(value)
+    return parsed.success ? [[key, parsed.data] as const] : []
+  })))
+const hiddenFills = recordOf(z.object({ filled: count, missing: count }))
+const linkWarning = z.object({ id: z.string().min(1), kind: z.enum(['never_filled', 'mostly_missing']), filled: count, total: count })
+const linkHealth = z.object({
+  responses: count,
+  hidden: hiddenFills,
+  by_channel: recordOf(z.object({ responses: count, hidden: hiddenFills })),
+  warnings: listOf(linkWarning),
+})
+export type LinkHealth = z.infer<typeof linkHealth>
+export type LinkWarning = z.infer<typeof linkWarning>
+
 const results = z.object({
   total: count,
   test_count: count,
   last_response_at: z.string().nullable().catch(null),
-  questions: z.record(z.string(), z.unknown()).catch({}).transform((raw) => Object.fromEntries(Object.entries(raw).flatMap(([id, value]) => {
-    const parsed = questionAggregate.safeParse(value)
-    return parsed.success ? [[id, parsed.data] as const] : []
-  }))),
+  questions: recordOf(questionAggregate),
   endings: countMap,
   removed_questions: listOf(removedQuestion),
   removed_options: z.record(z.string(), z.unknown()).catch({}).transform((raw) => Object.fromEntries(Object.entries(raw)
     .map(([id, value]) => [id, listOf(removedOption).parse(value)] as const))),
   funnel: funnel.nullable().optional().catch(null).transform((value) => value ?? null),
+  link_health: linkHealth.nullable().optional().catch(null).transform((value) => value ?? null),
 })
 export type FormResults = z.infer<typeof results>
 
@@ -98,6 +123,8 @@ const answerValue = z.union([
   // otherwise read as `{other}` alone and lose its codes)
   z.object({ codes: z.array(z.string()), other: z.string().optional() }),
   z.object({ code: z.string() }), z.object({ other: z.string() }),
+  // (a matrix's `{rows}` before the contact object, whose every field is optional: it would read any object as an empty contact)
+  z.object({ rows: z.record(z.string(), z.string()) }),
   z.object({ name: optionalText, email: optionalText, phone: optionalText, company: optionalText }),
 ])
 export type AnswerValue = z.infer<typeof answerValue>
@@ -107,10 +134,7 @@ const response = z.object({
   submitted_at: z.string().catch(''),
   form_revision: z.number().int().nullable().catch(null),
   language: z.string().catch(''),
-  answers: z.record(z.string(), z.unknown()).catch({}).transform((raw) => Object.fromEntries(Object.entries(raw).flatMap(([id, value]) => {
-    const parsed = answerValue.safeParse(value)
-    return parsed.success ? [[id, parsed.data] as const] : []
-  }))),
+  answers: recordOf(answerValue),
   hidden: z.record(z.string(), z.string()).catch({}),
   ending_id: z.string().catch(''),
   is_test: z.boolean().catch(false),

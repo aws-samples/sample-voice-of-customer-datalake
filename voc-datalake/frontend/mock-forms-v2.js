@@ -30,7 +30,8 @@
 //   GET    /feedback-forms/{id}/results?…            per-question results (include_test, language, ending, hidden.<id>,
 //                                                    from) and the funnel {opened, left: {qid: n}, completed}
 //   GET    /feedback-forms/{id}/responses?…          paged responses (limit, cursor, include_test=false|true|only)
-//   GET    /feedback-forms/{id}/responses?format=csv the same as CSV
+//   GET    /feedback-forms/{id}/responses?format=csv the same as CSV: layout=familiar (the default: a BOM, one
+//                                                    header row, `ids=true` adds the row of ids) or detailed
 //   POST   /feedback-forms/draft                     an AI draft: 202 {job_id}, a marker in the description or the
 //                                                    instruction refuses (mock-forms-draft.js)
 //   GET    /feedback-forms/draft/{job_id}            the draft job: {status, result, error}
@@ -49,6 +50,7 @@ import { readFileSync } from 'node:fs';
 import { seedResponses } from './mock-forms-seeds.js';
 import { formResults, filteredResponses, headlineOf, responseView, responsesCsv } from './mock-forms-results.js';
 import { draftAnswer, draftJob } from './mock-forms-draft.js';
+import { familiarCsv, familiarFilename } from './mock-forms-csv.js';
 
 const ROUTE = /^\/feedback-forms\/([^/]+)(?:\/(test-link|responses|results|config|submit|events))?$/;
 /** A beacon's visit id and question id (lambda/shared/forms_v2_responses.py SESSION_ID, forms_v2.py QUESTION_ID). */
@@ -614,11 +616,23 @@ function classify(method, pathname, shared) {
   return { op, item, formId: match[1] };
 }
 
+/** A CSV request's layout and ids parameters checked (the handler's 400s), or the refusal. */
+function csvChoiceError(url) {
+  const layout = url.searchParams.get('layout') ?? 'familiar';
+  const ids = url.searchParams.get('ids') ?? 'false';
+  if (layout !== 'familiar' && layout !== 'detailed') return fail(400, 'layout must be one of: familiar, detailed');
+  if (ids !== 'true' && ids !== 'false') return fail(400, 'ids must be true or false');
+  return null;
+}
+
 function sendCsv(res, item, url) {
+  const rows = filteredResponses(responsesOf(item.form_id), url.searchParams);
+  const detailed = url.searchParams.get('layout') === 'detailed';
   res.setHeader('Content-Type', 'text/csv; charset=utf-8');
-  res.setHeader('Content-Disposition', `attachment; filename="${item.form_id}-responses.csv"`);
+  const filename = detailed ? `${item.form_id}-responses.csv` : familiarFilename(item);
+  res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
   res.writeHead(200);
-  res.end(responsesCsv(item, filteredResponses(responsesOf(item.form_id), url.searchParams)));
+  res.end(detailed ? responsesCsv(item, rows) : familiarCsv(item, rows, url.searchParams.get('ids') === 'true'));
 }
 
 /** The writes: their body is read first. */
@@ -649,7 +663,7 @@ export function handleFormV2Routes(req, res, url, send, shared, projectV1) {
     return true;
   }
   if (route.op === 'responses' && url.searchParams.get('format') === 'csv') {
-    const refused = includeTestError(url, true);
+    const refused = includeTestError(url, true) ?? csvChoiceError(url);
     if (refused) send(...refused);
     else sendCsv(res, route.item, url);
     return true;

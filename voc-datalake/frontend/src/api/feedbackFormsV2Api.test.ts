@@ -279,11 +279,23 @@ describe('the forms builder client (reconciled with part A)', () => {
   })
 
   describe('the CSV export', () => {
-    it('downloads the responses as CSV with the filters', async () => {
+    it('downloads the familiar CSV with the filters by default', async () => {
       fetchMock.mockResolvedValue(new Response('q_feedback,language\nFaster,en\n', { status: 200, headers: { 'Content-Type': 'text/csv' } }))
       const csv = await feedbackFormsV2Api.downloadResponsesCsv('f_1', NO_FILTERS)
-      expect(await csv.text()).toBe('q_feedback,language\nFaster,en\n')
-      expect(fetchMock).toHaveBeenCalledWith('https://api.example.com/feedback-forms/f_1/responses?format=csv&include_test=false', expect.objectContaining({ method: 'GET' }))
+      expect(await csv.blob.text()).toBe('q_feedback,language\nFaster,en\n')
+      expect(csv.filename).toBeNull()
+      expect(fetchMock).toHaveBeenCalledWith('https://api.example.com/feedback-forms/f_1/responses?format=csv&layout=familiar&include_test=false', expect.objectContaining({ method: 'GET' }))
+    })
+
+    it('asks for the detailed layout, or a row of ids, and keeps the name the answer gives', async () => {
+      fetchMock.mockImplementation(() => Promise.resolve(new Response('a', { status: 200, headers: { 'Content-Disposition': 'attachment; filename="form-responses-2026-11-20.csv"' } })))
+      const detailed = await feedbackFormsV2Api.downloadResponsesCsv('f_1', NO_FILTERS, { layout: 'detailed', ids: false })
+      await feedbackFormsV2Api.downloadResponsesCsv('f_1', NO_FILTERS, { layout: 'familiar', ids: true })
+      expect(detailed.filename).toBe('form-responses-2026-11-20.csv')
+      expect(fetchMock.mock.calls.map((call) => call[0])).toStrictEqual([
+        'https://api.example.com/feedback-forms/f_1/responses?format=csv&layout=detailed&include_test=false',
+        'https://api.example.com/feedback-forms/f_1/responses?format=csv&layout=familiar&ids=true&include_test=false',
+      ])
     })
 
     it('is an AuthError when the session is gone, and a FormsApiError when refused', async () => {

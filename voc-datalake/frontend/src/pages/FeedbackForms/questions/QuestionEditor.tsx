@@ -12,7 +12,7 @@ import { useTranslation } from 'react-i18next'
 import SwitchField from '../../../components/SwitchField/SwitchField'
 import CollapsibleSection from '../../../components/CollapsibleSection/CollapsibleSection'
 import type { Question } from '../model/formsV2'
-import { LIMITS, isChoice, isScale } from '../model/formsV2'
+import { LIMITS, isChoice, isMatrix, isScale } from '../model/formsV2'
 import { textIn, withText } from '../model/i18nText'
 import { isValidQuestionId } from '../model/codes'
 import { questionIds, renameQuestionId, updateQuestion } from '../model/mutations'
@@ -31,7 +31,9 @@ import TextEditor from './TextEditor'
 import StatementEditor from './StatementEditor'
 import ConsentEditor from './ConsentEditor'
 import ContactEditor from './ContactEditor'
+import MatrixEditor from './MatrixEditor'
 import TranslationBanner from './TranslationBanner'
+import RecallField from './RecallField'
 import IdField from './IdField'
 
 function OwnFields({ question, index, showCodes, onChange, onEditLogic }: Readonly<{
@@ -44,11 +46,13 @@ function OwnFields({ question, index, showCodes, onChange, onEditLogic }: Readon
     case 'statement': return <StatementEditor question={question} onChange={onChange} />
     case 'consent': return <ConsentEditor question={question} onChange={onChange} />
     case 'contact_info': return <ContactEditor question={question} onChange={onChange} />
+    case 'matrix': return <MatrixEditor question={question} showCodes={showCodes} onChange={onChange} />
     default: return null
   }
 }
 
 function requiredHint(t: (key: string) => string, question: Question): string | undefined {
+  if (question.type === 'matrix') return t('matrix.requiredHint')
   return isScale(question) ? t('question.requiredScaleHint') : undefined
 }
 
@@ -80,12 +84,12 @@ export default function QuestionEditor({ question, index }: Readonly<{ question:
     <div className="space-y-4">
       <EditorHeader question={question} index={index} />
       <div className="space-y-1.5">
-        <TextField label={question.type === 'statement' ? t('statement.text') : t('question.headline')} required multiline counter={LIMITS.headlineChars}
+        <RecallField before={index} label={question.type === 'statement' ? t('statement.text') : t('question.headline')} required multiline counter={LIMITS.headlineChars}
           inputRef={headline} value={textIn(question.headline, lng)} placeholder={t('question.newQuestion')} problems={fieldProblems(problems, 'headline')}
           onChange={(value) => replace({ ...question, headline: withText(question.headline, lng, value) })} />
         <TranslationBanner ownerId={question.id} />
       </div>
-      <TextField label={t('question.description')} multiline value={textIn(question.subheader, lng)}
+      <RecallField before={index} label={t('question.description')} multiline value={textIn(question.subheader, lng)} problems={fieldProblems(problems, 'subheader')}
         onChange={(value) => replace({ ...question, subheader: withText(question.subheader, lng, value) })} />
       <OwnFields question={question} index={index} showCodes={showCodes} onChange={replace} onEditLogic={editLogic} />
       {question.type !== 'statement' && (
@@ -102,8 +106,9 @@ export default function QuestionEditor({ question, index }: Readonly<{ question:
           <IdField label={t('question.id')} value={question.id} locked={draft.locked} lockedText={t('question.idLocked')} check={checkId}
             onCommit={(id) => { draft.update((current) => renameQuestionId(current, question.id, id)); go('questions', [id], { replace: true }) }} />
           <TextField label={t('question.buttonLabel')} value={textIn(question.button_label, lng)} placeholder={t('question.buttonLabelPlaceholder')}
+            problems={fieldProblems(problems, 'button_label')}
             onChange={(value) => replace({ ...question, button_label: withText(question.button_label, lng, value) })} />
-          {isChoice(question) && <SwitchField checked={showCodes} label={t('choice.showCodes')} hint={t('choice.showCodesHint')} onChange={setShowCodes} />}
+          {(isChoice(question) || isMatrix(question)) && <SwitchField checked={showCodes} label={t('choice.showCodes')} hint={t('choice.showCodesHint')} onChange={setShowCodes} />}
         </div>
       </CollapsibleSection>
     </div>

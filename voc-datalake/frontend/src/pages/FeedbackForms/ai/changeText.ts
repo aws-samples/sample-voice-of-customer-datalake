@@ -1,7 +1,7 @@
 /**
  * @fileoverview How a change from the AI reads in the Improve sheet (UX §12.2): what it is ("question 2", "ending
  * “Dziękujemy”", "language English · 42 texts"), its headline, and each changed field's before → after in words
- * (texts in the primary language, options by their labels, rules as sentences).
+ * (texts in the primary language, options and a matrix's rows and columns by their labels, rules as sentences).
  *
  * @module pages/FeedbackForms/ai/changeText
  */
@@ -73,6 +73,9 @@ const changedOptionLabels = (value: unknown, form: FormV2): string | null => {
   return labels.join(' · ')
 }
 
+/** The fields that are lists of labelled entries: a choice's options, a matrix's rows and columns. */
+const LABELLED_LISTS: ReadonlySet<string> = new Set(['options', 'rows', 'columns'])
+
 const yesNo = (t: TFunction<'feedbackForms'>, value: boolean): string => (value ? t('ai.diff.values.yes') : t('ai.diff.values.no'))
 
 /** An object field (Other, None, a link button, an ending's button): its label and address, or whether it is on. */
@@ -92,7 +95,7 @@ export function valueText(t: TFunction<'feedbackForms'>, form: FormV2, value: un
   if (typeof value === 'boolean') return yesNo(t, value)
   if (typeof value === 'string' || typeof value === 'number') return String(value)
   if (isTextValue(value)) return textIn(value, form.language) || t('ai.diff.values.empty')
-  if (field === 'options') return changedOptionLabels(value, form) ?? ''
+  if (LABELLED_LISTS.has(field)) return changedOptionLabels(value, form) ?? ''
   return typeof value === 'object' ? objectText(t, form, value) : t('ai.diff.values.empty')
 }
 

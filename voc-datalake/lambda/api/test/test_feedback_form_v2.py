@@ -934,7 +934,7 @@ class TestResultsAndResponses:
         _, results = _call(lambda_context, 'GET', f'/feedback-forms/{form_id}/results', query=query, claims=claims)
         _, page = _call(lambda_context, 'GET', f'/feedback-forms/{form_id}/responses', query=query, claims=claims)
         status, response = _call(lambda_context, 'GET', f'/feedback-forms/{form_id}/responses', claims=claims,
-                                 query={**query, 'format': 'csv'}, raw=True)
+                                 query={**query, 'format': 'csv', 'layout': 'detailed'}, raw=True)
         assert status == 200
         csv_rows = list(csv.reader(io.StringIO(response['body'])))[2:]
         return results['responses'] - results['test_responses'], results['test_responses'], page['total'], len(csv_rows)
@@ -975,16 +975,18 @@ class TestResultsAndResponses:
     def test_a_headline_that_reads_as_a_formula_is_quoted_off_in_the_csv_header(self, lambda_context):
         questions = [{**V2_FORM['questions'][1], 'headline': {'pl': '=HYPERLINK("https://x.example")'}}]
         fid = _create(lambda_context, {**V2_FORM, 'questions': questions})['form_id']
-        _status, response = _call(lambda_context, 'GET', f'/feedback-forms/{fid}/responses', query={'format': 'csv'},
-                                  raw=True)
+        _status, response = _call(lambda_context, 'GET', f'/feedback-forms/{fid}/responses',
+                                  query={'format': 'csv', 'layout': 'detailed'}, raw=True)
         [labels, ids] = list(csv.reader(io.StringIO(response['body'])))[:2]
         assert (labels[6], ids[6]) == ('\'=HYPERLINK("https://x.example")', 'q_which')
 
-    def test_the_csv_has_both_header_rows_and_no_formula(self, seeded, lambda_context):
+    def test_the_detailed_csv_has_both_header_rows_and_no_formula(self, seeded, lambda_context):
+        """``layout=detailed``: 7.04.00's file, unchanged for the scripts that read it (no BOM)."""
         status, response = _call(lambda_context, 'GET', f'/feedback-forms/{seeded}/responses',
-                                 query={'format': 'csv'}, raw=True)
+                                 query={'format': 'csv', 'layout': 'detailed'}, raw=True)
         assert status == 200
         assert response['multiValueHeaders']['Content-Type'] == ['text/csv; charset=utf-8']
+        assert not response['body'].startswith('\ufeff')
         rows = list(csv.reader(io.StringIO(response['body'])))
         assert rows[0][6:] == ['Dlaczego wracasz?', 'Której funkcji?', 'Ocena', 'Kontakt', 'hidden: app_version',
                                'hidden: screen']

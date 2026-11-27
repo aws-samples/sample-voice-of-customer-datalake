@@ -1,7 +1,8 @@
 /**
  * @fileoverview New questions, endings and forms as the builder adds them (UX §3.3, §7): a new question's headline is
  * empty (the editor shows "New question" as its placeholder, so it is a problem until written); a choice starts with
- * two empty options; an ending starts with the given title.
+ * two empty options, a matrix with two empty rows and four empty columns (the builder fills in a scale in the form's
+ * language, questions/matrixOps.ts); an ending starts with the given title.
  *
  * `convertQuestion` is UX §4.7's type change: only the conversions that keep the content, and what each one loses.
  *
@@ -43,6 +44,12 @@ export function newQuestion(type: QuestionType, id: string): Question {
     case 'consent': return { ...base, type, required: false, label: {} }
     case 'contact_info':
       return { ...base, type, fields: { name: { show: true, required: false }, email: { show: true, required: true }, phone: NO_FIELD, company: NO_FIELD } }
+    case 'matrix':
+      return {
+        ...base, type, required: false, shuffle_rows: false, display: 'auto',
+        rows: [{ code: 'row', label: {} }, { code: 'row_2', label: {} }],
+        columns: ['column', 'column_2', 'column_3', 'column_4'].map((code) => ({ code, label: {} })),
+      }
   }
 }
 

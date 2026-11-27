@@ -50,6 +50,8 @@ import { parseFormResults, parseResponsesPage } from './feedbackFormsV2Results'
 import { adaptResponsesPage, adaptResults } from './feedbackFormsResultsAdapter'
 import type { FormResults, ResponsesPage } from './feedbackFormsV2Results'
 import { settleDraft } from './feedbackFormsDraftJob'
+import { FAMILIAR_CSV, dispositionFilename, csvParams } from './feedbackFormsCsv'
+import type { CsvChoice, CsvFile } from './feedbackFormsCsv'
 
 /** A refusal from a forms route, with what its body says beyond the message. */
 export class FormsApiError extends ApiError {
@@ -390,14 +392,14 @@ export const feedbackFormsV2Api = {
     return fetchApi<unknown>(`${formPath(formId)}/responses?${query.toString()}`).then((raw) => parseResponsesPage(adaptResponsesPage(raw)))
   },
 
-  /** The responses as CSV (one column per question, the hidden fields, language, ending, is_test, time). */
-  downloadResponsesCsv: async (formId: string, filters: ResultsFilters): Promise<Blob> => {
-    const url = `${getBaseUrl()}${formPath(formId)}/responses?${filterQuery(filters, { format: 'csv' })}`
+  /** The responses as CSV (api/feedbackFormsCsv.ts): the familiar layout unless `choice` says detailed, under the filters. */
+  downloadResponsesCsv: async (formId: string, filters: ResultsFilters, choice: CsvChoice = FAMILIAR_CSV): Promise<CsvFile> => {
+    const url = `${getBaseUrl()}${formPath(formId)}/responses?${filterQuery(filters, csvParams(choice))}`
     // (the address spelled out again in the call: the mock-coverage gate reads a request's address from its text)
-    const response = await fetch(`${getBaseUrl()}${formPath(formId)}/responses?${filterQuery(filters, { format: 'csv' })}`, { method: 'GET', headers: getAuthHeaders(url) })
+    const response = await fetch(`${getBaseUrl()}${formPath(formId)}/responses?${filterQuery(filters, csvParams(choice))}`, { method: 'GET', headers: getAuthHeaders(url) })
     if (response.status === 401) throw new AuthError()
     if (!response.ok) throw await formsErrorFor(response)
-    return response.blob()
+    return { blob: await response.blob(), filename: dispositionFilename(response.headers.get('Content-Disposition')) }
   },
 
   /**

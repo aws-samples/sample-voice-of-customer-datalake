@@ -53,7 +53,11 @@
       "other": "Outros"
     },
     "ending": "Final",
-    "welcome": "Cartão de boas-vindas"
+    "welcome": "Cartão de boas-vindas",
+    "matrix": {
+      "name": "Matriz",
+      "hint": "Avaliar vários itens numa mesma escala"
+    }
   },
   "problems": {
     "count_one": "{{count, number}} problema",
@@ -132,7 +136,22 @@
     "skippedOnRequired": "Esta pergunta é obrigatória, então nunca é pulada: esta regra nunca é aplicada.",
     "ruleNeverRuns": "Esta regra nunca é aplicada: a regra {{number}} já cobre todas as respostas que ela cobriria.",
     "whereAnyway": "Esta regra não tem efeito: todas as pessoas que chegam a ela vão para a pergunta {{number}} de qualquer forma.",
-    "whereAnywayEnding": "Esta regra não tem efeito: todas as pessoas que chegam a ela veem o final “{{title}}” de qualquer forma."
+    "whereAnywayEnding": "Esta regra não tem efeito: todas as pessoas que chegam a ela veem o final “{{title}}” de qualquer forma.",
+    "matrixNoRows": "Adicione pelo menos uma linha.",
+    "matrixTooManyRows": "Uma matriz tem no máximo {{max, number}} linhas.",
+    "matrixFewColumns": "Uma matriz precisa de pelo menos {{min, number}} colunas.",
+    "matrixTooManyColumns": "Uma matriz tem no máximo {{max, number}} colunas.",
+    "matrixRowEmpty": "A linha {{number}} não tem texto.",
+    "matrixColumnEmpty": "A coluna {{number}} não tem texto.",
+    "matrixCodeInvalid": "Um código usa minúsculas, algarismos e _, até 40 caracteres.",
+    "matrixCodeTwice": "Duas linhas ou colunas têm o código {{code}}.",
+    "matrixCodeReserved": "{{code}} é um nome reservado; escolha outro.",
+    "matrixScoreRange": "A pontuação da coluna {{number}} tem de ser um número inteiro de -{{max, number}} a {{max, number}}.",
+    "matrixMinRows": "As linhas a responder vão de 1 ao número de linhas ({{count, number}}).",
+    "recallUnknown": "{{placeholder}} não indica nenhum campo oculto nem nenhuma pergunta deste formulário ({{language}}).",
+    "recallNotBefore": "{{placeholder}} indica uma pergunta posterior: só se pode mostrar a resposta de uma pergunta anterior ({{language}}).",
+    "recallType": "{{placeholder}} indica uma pergunta cuja resposta nunca é mostrada: só se pode mostrar uma pontuação ou uma escolha única ({{language}}).",
+    "recallNotHere": "{{placeholder}} apareceria tal como está escrito: os valores só preenchem um título, uma pergunta, uma descrição ou um final. Retire-o para publicar ({{language}})."
   },
   "logic": {
     "ops": {
@@ -237,7 +256,9 @@
       "update": "Atualizar formulário ativo",
       "failed": "Não foi possível salvar: {{reason}}.",
       "failedGeneric": "Não foi possível salvar. Verifique sua conexão e tente novamente.",
-      "retry": "Tentar novamente"
+      "retry": "Tentar novamente",
+      "placeholderRefused": "Não foi possível guardar: um formulário ativo não pode mostrar um marcador {…} tal como está escrito. Corrija os textos indicados em Problemas ou guarde-o desativado.",
+      "recallRefused": "Não foi possível guardar: um texto mostra um valor que não pode mostrar nesse lugar. Corrija-o em Problemas."
     },
     "published": "Ativo. Os respondentes veem esta versão a partir de agora.",
     "firstSave": "Salvo. Este formulário está Desligado: o link mostra “Formulário de feedback indisponível.” até você publicá-lo.",
@@ -1229,7 +1250,11 @@
         "description": "Descrição",
         "button": "Botão",
         "enabled": "Exibido",
-        "logic": "Lógica"
+        "logic": "Lógica",
+        "rows": "Linhas",
+        "columns": "Colunas",
+        "shuffle_rows": "Baralhar as linhas",
+        "min_rows": "Linhas a responder"
       },
       "values": {
         "yes": "Sim",
@@ -1302,7 +1327,11 @@
         "smiley": "{{range}} carinhas"
       },
       "textOnly": "Só texto",
-      "linkButton": "Com botão de link"
+      "linkButton": "Com botão de link",
+      "rows_one": "{{count, number}} linha",
+      "rows_other": "{{count, number}} linhas",
+      "columns_one": "{{count, number}} coluna",
+      "columns_other": "{{count, number}} colunas"
     }
   },
   "question": {
@@ -1722,7 +1751,9 @@
       "welcomeButton": "Rótulo do botão",
       "endingTitle": "Título",
       "endingDescription": "Descrição",
-      "endingButton": "Rótulo do botão"
+      "endingButton": "Rótulo do botão",
+      "matrixRow": "Linha {{number}}",
+      "matrixColumn": "Coluna {{number}}"
     },
     "confirm": {
       "text": "Este formulário foi criado antes de os formulários terem idioma.",
@@ -1804,14 +1835,20 @@
     "saveFirstTitle": "Ainda não há links",
     "saveFirst": "Salve o formulário para obter os links.",
     "showProblems": "Ver problemas",
-    "save": "Salvar"
+    "save": "Salvar",
+    "toHiddenFields": "Abrir Campos ocultos",
+    "values": {
+      "title": "Valores neste link",
+      "hint": "Opcional: cada valor entra no link, no iframe e no script incorporado.",
+      "warnings": "Campos ocultos que este link deixa vazios",
+      "leavesEmpty": "Este link deixa {{id}} vazio: os respondentes veem o texto sem ele."
+    }
   },
   "results": {
     "summary": "Resumo",
     "responsesView": "Respostas",
     "view": "Visualização dos resultados",
     "loading": "Carregando resultados…",
-    "csv": "Exportar CSV",
     "csvFailed": "Não foi possível exportar as respostas.",
     "includeTest": "Incluir respostas de teste",
     "including_one": "Incluindo {{formatted}} resposta de teste. Estes números não são seus resultados reais.",
@@ -1949,7 +1986,32 @@
       "next": "Próxima"
     },
     "contactLeft_one": "{{count, number}} pessoa deixou dados de contato",
-    "contactLeft_other": "{{count, number}} pessoas deixaram dados de contato"
+    "contactLeft_other": "{{count, number}} pessoas deixaram dados de contato",
+    "download": "Baixar",
+    "downloadOptions": "Mais opções de download",
+    "downloadDetailed": "CSV detalhado (para scripts)",
+    "downloadWithIds": "CSV com uma linha de identificadores",
+    "matrix": {
+      "rowsLabel": "Respostas por linha",
+      "columnsLabel": "Respostas para {{row}}",
+      "rated_one": "Avaliado por {{formatted}}",
+      "rated_other": "Avaliado por {{formatted}}",
+      "average": "média {{average}} (notas de {{low}} a {{high}})",
+      "removedLabel": "Respostas a linhas e colunas removidas",
+      "removedRow_one": "Linha {{code}} (removida): {{formatted}} resposta",
+      "removedRow_other": "Linha {{code}} (removida): {{formatted}} respostas",
+      "removedColumn_one": "Coluna {{code}} (removida): {{formatted}} resposta",
+      "removedColumn_other": "Coluna {{code}} (removida): {{formatted}} respostas"
+    },
+    "linkHealth": {
+      "title": "Verifique os seus links",
+      "never_filled": "{{filled, number}} de {{total, number}} respostas tinham {{id}}: verifique o seu link.",
+      "mostly_missing": "Só {{filled, number}} de {{total, number}} respostas tinham {{id}}: verifique o seu link.",
+      "hint": "Um link preenche-o com {{param}}.",
+      "from": "Falta em: {{channels}}.",
+      "channel": "{{channel}} {{missing}}",
+      "unknown": "Desconhecido"
+    }
   },
   "theme": {
     "presets": {
@@ -2087,5 +2149,62 @@
       "failed": "Não foi possível excluir o formulário. Tente novamente em instantes.",
       "unnamed": "este formulário"
     }
+  },
+  "matrix": {
+    "rows": "Linhas",
+    "columns": "Colunas (a escala)",
+    "rowN": "Linha {{number}}",
+    "columnN": "Coluna {{number}}",
+    "codeOf": {
+      "row": "Código da linha {{number}}",
+      "column": "Código da coluna {{number}}"
+    },
+    "codeLocked": "As respostas são guardadas com este código, por isso ele não pode mudar depois de haver respostas. Altere o rótulo.",
+    "score": "Pontuação",
+    "scoreOf": "Pontuação da coluna {{number}}",
+    "scoreHint": "As pontuações são números inteiros opcionais de -100 a 100: os Resultados fazem a média por linha.",
+    "menu": {
+      "row": "Mais ações para a linha {{number}}",
+      "column": "Mais ações para a coluna {{number}}"
+    },
+    "last": {
+      "rows": "Uma matriz precisa de pelo menos uma linha.",
+      "columns": "Uma matriz precisa de pelo menos duas colunas."
+    },
+    "add": {
+      "rows": "Adicionar linha",
+      "columns": "Adicionar coluna"
+    },
+    "shuffleRows": "Baralhar as linhas",
+    "shuffleRowsHint": "Cada pessoa vê as linhas na sua própria ordem.",
+    "display": {
+      "auto": "Automático",
+      "grid": "Grelha",
+      "stacked": "Empilhado"
+    },
+    "displayHint": {
+      "auto": "Uma grelha em ecrãs largos (até 7 colunas) e cada linha à parte no telemóvel.",
+      "grid": "Sempre uma grelha de linhas e colunas.",
+      "stacked": "Sempre cada linha à parte, com as opções por baixo."
+    },
+    "minRows": "Linhas a responder, no mínimo",
+    "minRowsHint": "Assim que alguma linha tiver resposta. Em branco: qualquer número.",
+    "requiredHint": "Todas as linhas têm de ter resposta.",
+    "scale": {
+      "poor": "Fraco",
+      "fair": "Razoável",
+      "good": "Bom",
+      "excellent": "Excelente"
+    }
+  },
+  "recall": {
+    "insert": "Inserir um valor",
+    "hiddenItem": "Campo oculto · {{name}}",
+    "questionItem": "P{{number}} · {{headline}}",
+    "nothing": "Nada para inserir aqui",
+    "nothingHint": "Adicione um campo oculto, ou uma pergunta de pontuação ou de escolha única antes deste texto.",
+    "preview": "As pessoas veem: {{text}}",
+    "previewMissing": "Sem valor: {{text}}",
+    "previewEmpty": "(nada)"
   }
 }

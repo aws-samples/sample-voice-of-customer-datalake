@@ -1,5 +1,5 @@
 /**
- * @fileoverview The type picker (UX §3.3): "+ Add question" opens a menu of the ten types in three groups (Ask,
+ * @fileoverview The type picker (UX §3.3): "+ Add question" opens a menu of the eleven types in three groups (Ask,
  * Measure, Other), each with its hint. A menu button (APG): the arrows, Home/End and type-ahead (typing a type's first
  * letters moves to it) move between the types, Escape goes back to the trigger, Tab on to the control after it.
  * Contact info is offered once per form: a second is `aria-disabled` "Already in this form".
@@ -23,7 +23,7 @@ import { useFixedMenu } from '../ui/useFixedMenu'
 
 const GROUPS: readonly { readonly key: 'ask' | 'measure' | 'other'; readonly types: readonly QuestionType[] }[] = [
   { key: 'ask', types: ['single_select', 'multi_select', 'open_text'] },
-  { key: 'measure', types: ['rating', 'nps', 'csat', 'ces'] },
+  { key: 'measure', types: ['rating', 'nps', 'csat', 'ces', 'matrix'] },
   { key: 'other', types: ['statement', 'consent', 'contact_info'] },
 ]
 

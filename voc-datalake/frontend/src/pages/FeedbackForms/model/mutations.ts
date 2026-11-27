@@ -6,8 +6,8 @@
  *
  * @module pages/FeedbackForms/model/mutations
  */
-import type { ChoiceQuestion, Ending, FormLanguage, FormV2, I18nText, Question, Rule } from './formsV2'
-import { isChoice } from './formsV2'
+import type { ChoiceQuestion, Ending, FormLanguage, FormV2, I18nText, MatrixQuestion, Question, Rule } from './formsV2'
+import { isChoice, isMatrix, isScale } from './formsV2'
 import { duplicateId } from './codes'
 import { keepLanguages } from './i18nText'
 import { splitOtherwise, valueCodes, withLogic } from './rules'
@@ -30,6 +30,10 @@ export function updateQuestion(form: FormV2, id: string, fn: (question: Question
 
 export function updateChoice(form: FormV2, id: string, fn: (question: ChoiceQuestion) => ChoiceQuestion): FormV2 {
   return updateQuestion(form, id, (q) => (isChoice(q) ? fn(q) : q))
+}
+
+export function updateMatrix(form: FormV2, id: string, fn: (question: MatrixQuestion) => MatrixQuestion): FormV2 {
+  return updateQuestion(form, id, (q) => (isMatrix(q) ? fn(q) : q))
 }
 
 export function insertQuestion(form: FormV2, question: Question, at: number): FormV2 {
@@ -148,19 +152,22 @@ type TextMap = (text: I18nText) => I18nText
 function mapTexts(question: Question, fn: TextMap): Question {
   const t = (text: I18nText | undefined) => (text === undefined ? undefined : fn(text))
   const base = { ...question, headline: fn(question.headline), subheader: t(question.subheader), button_label: t(question.button_label) }
+  if (isChoice(base)) {
+    return {
+      ...base,
+      options: base.options.map((o) => ({ ...o, label: fn(o.label) })),
+      other: { ...base.other, label: t(base.other.label), placeholder: t(base.other.placeholder) },
+      none: { ...base.none, label: t(base.none.label) },
+    }
+  }
+  if (isScale(base)) return { ...base, lower_label: t(base.lower_label), upper_label: t(base.upper_label) }
   switch (base.type) {
-    case 'single_select': case 'multi_select':
-      return {
-        ...base,
-        options: base.options.map((o) => ({ ...o, label: fn(o.label) })),
-        other: { ...base.other, label: t(base.other.label), placeholder: t(base.other.placeholder) },
-        none: { ...base.none, label: t(base.none.label) },
-      }
     case 'open_text': return { ...base, placeholder: t(base.placeholder) }
-    case 'rating': case 'nps': case 'csat': case 'ces': return { ...base, lower_label: t(base.lower_label), upper_label: t(base.upper_label) }
     case 'consent': return { ...base, label: fn(base.label) }
     case 'statement': return { ...base, cta: base.cta === undefined ? undefined : { ...base.cta, label: fn(base.cta.label) } }
     case 'contact_info': return base
+    case 'matrix':
+      return { ...base, rows: base.rows.map((r) => ({ ...r, label: fn(r.label) })), columns: base.columns.map((c) => ({ ...c, label: fn(c.label) })) }
   }
 }
 

@@ -32,7 +32,7 @@ export default function TextEditor({ question, onChange }: Readonly<{ question: 
         <SelectField label={t('text.answerType')} value={question.input_type} onChange={(inputType: InputType) => onChange({ ...question, input_type: inputType })}
           options={INPUT_TYPES.map((value) => ({ value, label: t(`text.inputTypes.${value}`) }))} />
       )}
-      <TextField label={t('text.placeholder')} value={textIn(question.placeholder, lng)} hint={t('text.placeholderHint')}
+      <TextField label={t('text.placeholder')} value={textIn(question.placeholder, lng)} hint={t('text.placeholderHint')} problems={fieldProblems(problems, 'placeholder')}
         onChange={(value) => onChange({ ...question, placeholder: withText(question.placeholder, lng, value) })} />
       <TextField label={t('text.limit')} type="number" value={question.max_chars === undefined ? '' : String(question.max_chars)}
         placeholder={String(LIMITS.maxChars)} hint={t('text.limitHint')} problems={fieldProblems(problems, 'max_chars')}
