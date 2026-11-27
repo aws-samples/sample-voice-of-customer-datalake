@@ -2087,6 +2087,8 @@ ERASURE_VIEW_FIELDS = (
     # 7.48.00 (3g-d): whether the deployment's erasure by email without a source walked the deployment's own projects,
     # and how it found their rows (`registry` or `scan`; jobs/retention/runs.py `deployment_fields`), on its row only.
     'deployment_projects_walked', 'deployment_rows_found',
+    # 7.98.00 (3g-pin): whether that walk began under 7.98.00 and so reached every prototype pin (`pins_walked`).
+    'pins_walked',
     # 7.72.00 (3g2): whether an erasure by email without a source (the deployment's or a workspace's own) looked the
     # address up in voc-participants and erased whom it found (jobs/retention/runs.py `participant_fields`); the people
     # it erased are the optional counter `participants_erased`; `participants_complete`: walked, nobody refused

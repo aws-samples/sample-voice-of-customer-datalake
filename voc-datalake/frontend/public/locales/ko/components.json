@@ -791,6 +791,7 @@
       "participantsNotErased": "삭제되지 않은 참여자: {{n, number}}",
       "exportObjects": "삭제된 내보내기 객체: {{n, number}}",
       "projectRows": "비식별화된 프로젝트 행: {{n, number}}",
+      "pinReplies": "답글을 비식별화한 프로토타입 핀: {{n, number}}",
       "formTestResponses": "삭제된 양식 테스트 응답: {{n, number}}",
       "agentMemoryErased": "에이전트 메모리에서 삭제된 사람: {{n, number}}",
       "agentMemoryRefused": "에이전트 메모리가 더 이상 보관하지 않을 사람: {{n, number}}",

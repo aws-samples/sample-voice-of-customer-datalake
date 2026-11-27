@@ -39,7 +39,10 @@
  *     is filed under the one source its upload named, shared/retention.py);
  *   - aggregates: GetItem / PutItem / UpdateItem / Query (source profiles, the
  *     erasure job row, the AUDIT#retention rows, one PutItem per tombstone: no BatchWriteItem, which
- *     would also allow deletes) and BatchGetItem (the lineage pass's tombstone lookups); DeleteItem in the test
+ *     would also allow deletes; since 7.98.00, projects 3g-pin, an erasure by email's Queries of the pin forms and the
+ *     pins, `FEEDBACK_FORM` and `PINS#*` and one workspace's `WS#{ws}#…` copies, and the UpdateItem of a pin's
+ *     `replies`, lambda/jobs/retention/pins.py: no new grant, these actions were the table's already) and BatchGetItem
+ *     (the lineage pass's tombstone lookups); DeleteItem in the test
  *     responses' partitions only (`dynamodb:LeadingKeys` `FEEDBACK_FORM_TEST` and one workspace id's
  *     `WS#{ws}#FEEDBACK_FORM_TEST`): the forms' TEST responses (never feedback items) that the feedback_form source's
  *     retention window or an erasure reaches (lambda/jobs/retention/form_tests.py). They have those partitions to

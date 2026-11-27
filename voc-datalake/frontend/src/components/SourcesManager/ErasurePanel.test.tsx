@@ -22,7 +22,7 @@ const done = {
   job_id: 'er_00000000abcd', status: 'completed', field: 'email', value_hash: 'f'.repeat(64),
   deleted_items: 3, deleted_objects: 5, deleted_workspace_items: 2, started_by: 'admin', created_at: '2026-01-01',
   finished_at: '2026-01-01T00:10:00Z',
-  deployment_projects_walked: true, participants_walked: true, participants_complete: true,
+  deployment_projects_walked: true, pins_walked: true, participants_walked: true, participants_complete: true,
 }
 /** The deployment's erasure by email that did not walk its own projects (7.48.00's rerun rule). */
 const rerun = { ...done, job_id: 'er_00000000beef', value_hash: 'a'.repeat(64), participants_walked: true,
@@ -89,7 +89,7 @@ describe('ErasurePanel', () => {
 
   it('reads an older rerun as done once a later erasure of the same address completed (3g-ui)', async () => {
     const later = { ...rerun, job_id: 'er_00000000cafe', created_at: '2026-02-01', finished_at: '2026-02-01T00:10:00Z',
-      deployment_projects_walked: true }
+      deployment_projects_walked: true, pins_walked: true }
     routeFetchApi({ 'GET /settings/erasure': () => ({ jobs: [later, rerun], sources: [] }) })
     renderWithQueryClient(<ErasurePanel profiles={PROFILES} />)
     const region = await panel()

@@ -102,6 +102,7 @@ const COUNTER_KEYS: Record<ErasureOutcomeCounter, string | null> = {
   participants_not_erased: 'counters.participantsNotErased',
   deleted_export_objects: 'counters.exportObjects',
   project_rows_deidentified: 'counters.projectRows',
+  pin_replies_deidentified: 'counters.pinReplies',
   form_test_responses_deleted: 'counters.formTestResponses',
   product_docs_not_checked: null,
   agent_memory_people_erased: 'counters.agentMemoryErased',

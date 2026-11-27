@@ -118,6 +118,12 @@ item whose title, file name, source, tags or ``created_by`` / ``updated_by`` nam
 before 7.63.00 could name its uploader by address), or whose extracted text (``library/{item}/extracted``)
 does, is listed in ``files_needing_review`` by its original's key (and closes the workspace's exports); one not
 extracted yet, or whose text cannot be read, in ``files_not_checked``. Never changed: the file is the team's.
+
+The prototype pins' replies (7.98.00, projects 3g-pin; pins.py): after each project's personas, its prototypes'
+(``PROTOTYPE#`` rows, a page of keys, then each prototype's pins in voc-aggregates), and after each scope's Documents
+Library, the pins of every pin form its forms partition keeps (a deleted project's or prototype's too): a reply whose
+name is the address becomes ``TEAM_MEMBER_NAME``, recorded as the other rows are (``kind`` ``pin``) and counted in
+``pin_replies_deidentified``. A workspace's pins go through the workspace layer, ``WS#{ws}#PINS#…`` only.
 """
 from __future__ import annotations
 
@@ -128,19 +134,21 @@ from typing import Any, Final
 
 from botocore.exceptions import ClientError
 
-from jobs.retention import exports, workspaces
+from jobs.retention import exports, pins, workspaces
 from jobs.retention.copies import tombstone_record
+from jobs.retention.deidentify import MAX_TRIES, RowKeptChanging, id_page, same_name
 from jobs.retention.members import MEMBER_PERSON_FIELDS, STORE_MEMBERS
 from jobs.retention.runs import (
     DEPLOYMENT_FOUND,
     DEPLOYMENT_WALKED,
+    PINS_WALKED,
     email_without_source,
     note_review_file,
     note_unchecked_file,
 )
 from shared.aws import is_conditional_check_failure
 from shared.digests import sha256_hex
-from shared.document_comments import AUTHOR_REVIEWER, COMMENT_SK_PREFIX, MAX_NAME_CHARS, TEAM_MEMBER_NAME
+from shared.document_comments import AUTHOR_REVIEWER, COMMENT_SK_PREFIX, TEAM_MEMBER_NAME
 from shared.ingest_tables import DeploymentTable, table_view
 from shared.library_keys import ITEM_SK_PREFIX as LIBRARY_ITEM_SK_PREFIX
 from shared.library_keys import extracted_key as library_extracted_key
@@ -199,8 +207,6 @@ DEPLOYMENT_DONE: Final = workspaces.DEPLOYMENT_DONE
 FOUND_REGISTRY: Final = 'registry'
 #: Set in the ``deployment`` part of a cursor carried from 7.43.00 (its listing already under way, kept as it is).
 _CARRIED: Final = 'carried'
-#: A row that changed meanwhile is read again and rewritten at most this many times, then the job fails.
-MAX_TRIES: Final = 3
 #: A product document's text read to look for the address, at most (a larger file is listed for review unread).
 MAX_TEXT_BYTES: Final = 16 * 1024 * 1024
 #: What a revoked-by-erasure link names as its revoker.
@@ -237,13 +243,10 @@ _TEXT_SUFFIXES: Final = ('.md', '.txt')
 _EXTRACTED: Final = 'ready'
 #: A rewrite that removes the attribute.
 _REMOVE: Final = object()
-#: The parts of one project, in order.
-_META, _DOCS, _PERSONAS, _SERIES = 'meta', 'docs', 'personas', 'series'
-
-
-class RowKeptChanging(RuntimeError):
-    """A row changed under every one of ``MAX_TRIES`` writes and still holds the address: the job fails and says
-    so (an admin reruns it), never leaving the address silently."""
+#: The parts of one project, in order (its prototypes' pins since 7.98.00, pins.py).
+_META, _DOCS, _PERSONAS, _PINS, _SERIES = 'meta', 'docs', 'personas', 'pins', 'series'
+#: The cursor's mark of a deployment walk begun under 7.98.00 (its end sets ``PINS_WALKED``).
+_PINS_FROM_START: Final = 'pins_from_start'
 
 
 def applies(run: Mapping[str, Any], tables: Mapping[str, Any]) -> bool:
@@ -261,15 +264,6 @@ def decoded_text(data: bytes) -> str | None:
         return data.decode('utf-16') if utf16 else data.decode('utf-8-sig')
     except UnicodeDecodeError:
         return None
-
-
-def _same(value: object, wanted: str) -> bool:
-    """Whether ``value`` is the address (``casefold``), or its first ``MAX_NAME_CHARS`` characters: before 7.43.00 a
-    name that fell back to a long address was stored cut to that length."""
-    if not isinstance(value, str):
-        return False
-    held = value.strip().casefold()
-    return held == wanted or (len(wanted) > MAX_NAME_CHARS and held == wanted[:MAX_NAME_CHARS])
 
 
 def _is_series_id(value: str) -> bool:
@@ -293,6 +287,9 @@ class ProjectPeopleEraser:
         self._time_left = time_left
         # The wall clock: when the walk of the listing began, and each re-walk pass (workspaces.py).
         self._clock = clock
+        # The prototype pins' replies (7.98.00, 3g-pin): their steps are parts of this walk, recorded as its rows are.
+        self._pins = pins.PinReplyEraser(run, self._aggregates, value, time_left=time_left,
+                                         record=lambda scope, key, action: self._record(scope, pins.KIND, key, action))
 
     # ── The walk ──────────────────────────────────────────────────────────────────────────────────────────────
 
@@ -306,6 +303,9 @@ class ProjectPeopleEraser:
         if only is None and DEPLOYMENT not in here and here.get(DEPLOYMENT_DONE) is not True:
             # A carried 7.43.00 cursor keeps its listing state as it is; a fresh one takes it again at the end.
             here[DEPLOYMENT] = {_CARRIED: True} if cursor else {}
+            if not cursor:
+                # A walk begun under 7.98.00 reaches each project's prototype pins (``PINS_WALKED`` at its end).
+                here[_PINS_FROM_START] = True
         if DEPLOYMENT in here:
             return self._deployment_step(here, only)
         page = workspaces.checked_page(self._run, here)
@@ -342,6 +342,10 @@ class ProjectPeopleEraser:
         if moved is not None:
             return {**here, DEPLOYMENT: moved}
         self._run[DEPLOYMENT_WALKED] = True
+        if here.get(_PINS_FROM_START) is True:
+            # Begun under 7.98.00: every project's prototypes and the pin forms were walked (one carried across the
+            # upgrade walked some projects without their pins, so it never says so).
+            self._run[PINS_WALKED] = True
         rest = {name: value for name, value in here.items() if name != DEPLOYMENT}
         if carried.get(_CARRIED) is not True:
             rest.update(workspaces.listing_start(self._clock()))
@@ -361,8 +365,10 @@ class ProjectPeopleEraser:
         """The steps both scopes share: a link, a series' threads, one project's parts, the persona library and the
         end (the next page of projects is each scope's own state: ``registry``, ``projects``)."""
         return {'link': self._link_step, 'threads': self._threads_step, _META: self._meta_step,
-                _DOCS: self._docs_step, _PERSONAS: self._personas_step, 'project_done': self._project_done_step,
+                _DOCS: self._docs_step, _PERSONAS: self._personas_step, 'prototypes': self._prototypes_step,
+                'prototype_pins': self._prototype_pins_step, 'project_done': self._project_done_step,
                 'library': self._library_step, 'documents_library': self._documents_library_step,
+                'pin_form_pages': self._pin_form_pages_step, 'pin_forms': self._pin_forms_step,
                 'done': self._done_step}
 
     @staticmethod
@@ -394,22 +400,35 @@ class ProjectPeopleEraser:
 
     @staticmethod
     def _project_state(at: Mapping[str, Any], *, workspace: bool) -> str:
-        """The projects' part of a cursor: a project's parts in order (its series too in a workspace), the next page
-        of projects (a workspace's ``registry``, the deployment's ``projects``), the persona library, ``done``."""
+        """The projects' part of a cursor: a project's parts in order (its prototypes' pins, 7.98.00; its series too in
+        a workspace), the next page of projects (a workspace's ``registry``, the deployment's ``projects``), the persona
+        library, the Documents Library, the scope's pin forms (7.98.00: a deleted project's pins), ``done``."""
         if at.get('ids'):
             part = at.get('part') or _META
             if part == _SERIES:
                 if not workspace:
                     return 'project_done'
                 return 'threads' if at.get('series') else ('project_done' if at.get('series_listed') else 'series')
+            if part == _PINS:
+                return 'prototype_pins' if at.get('prototypes') else 'prototypes'
             if part not in (_META, _DOCS, _PERSONAS):
                 raise ValueError('a carried project part is not one')
             return part
         if not at.get('registry_done' if workspace else 'projects_done'):
             return 'registry' if workspace else 'projects'
+        return ProjectPeopleEraser._scope_state(at)
+
+    @staticmethod
+    def _scope_state(at: Mapping[str, Any]) -> str:
+        """Once a scope's projects are walked: its persona library, its Documents Library, its pin forms' pins
+        (7.98.00), ``done``."""
         if not at.get('library'):
             return 'library'
-        return 'done' if at.get('documents_library_done') else 'documents_library'
+        if not at.get('documents_library_done'):
+            return 'documents_library'
+        if at.get('pin_forms'):
+            return 'pin_forms'
+        return 'done' if at.get('pin_forms_done') else 'pin_form_pages'
 
     def _cut(self, rows: list[dict[str, Any]], n: int) -> dict[str, Any] | None:
         """The key to resume after row ``n`` of a page when the time ran low and rows remain, else None."""
@@ -489,7 +508,7 @@ class ProjectPeopleEraser:
 
     def _personas_step(self, scope: WorkspaceScope | None, at: dict[str, Any]) -> dict[str, Any]:
         """One page of the project's personas (their research notes' authors); cut after a row when the time runs
-        low. Then the project's series in a workspace (the deployment's were walked through its series registry)."""
+        low. Then the project's prototypes' pins (7.98.00, pins.py)."""
         project_id = self._project(at)
         rows, following = query_page(self._view(scope), project_pk(project_id, workspace=scope),
                                      checked_key(at.get('personas_from')), Limit=ID_PAGE, ConsistentRead=True,
@@ -499,7 +518,29 @@ class ProjectPeopleEraser:
             if (cut := self._cut(rows, n)) is not None:
                 return {**at, 'personas_from': cut}
         return ({**at, 'personas_from': following} if following
-                else {**at, 'part': _SERIES, 'personas_from': None})
+                else {**at, 'part': _PINS, 'personas_from': None, **_PINS_START})
+
+    def _prototypes_step(self, scope: WorkspaceScope | None, at: dict[str, Any]) -> dict[str, Any]:
+        """The next page of the project's prototypes, their pin forms to walk (pins.py ``prototype_page``); once every
+        page is listed and walked, the project's series in a workspace (the deployment's were walked through its series
+        registry)."""
+        if at.get('prototypes_listed'):
+            return _after_pins(at)
+        moved = self._pins.prototype_page(self._view(scope), scope, self._project(at), at)
+        return _after_pins(moved) if moved['prototypes_listed'] and not moved['prototypes'] else moved
+
+    def _prototype_pins_step(self, scope: WorkspaceScope | None, at: dict[str, Any]) -> dict[str, Any]:
+        """One page of the pins of the project's first listed prototype (pins.py ``pins_step``)."""
+        moved = self._pins.pins_step(scope, at, 'prototypes', 'prototype_pins_from')
+        return _after_pins(moved) if not moved['prototypes'] and moved.get('prototypes_listed') else moved
+
+    def _pin_form_pages_step(self, scope: WorkspaceScope | None, at: dict[str, Any]) -> dict[str, Any]:
+        """The next page of the scope's pin forms (pins.py ``form_page``), after its projects and libraries."""
+        return self._pins.form_page(scope, at)
+
+    def _pin_forms_step(self, scope: WorkspaceScope | None, at: dict[str, Any]) -> dict[str, Any]:
+        """One page of the pins of the first listed pin form (pins.py ``pins_step``)."""
+        return self._pins.pins_step(scope, at, 'pin_forms', 'pins_from')
 
     def _library_step(self, scope: WorkspaceScope | None, at: dict[str, Any]) -> dict[str, Any]:
         """The scope's company persona library (workspaces.py ``library_step``), walked as a project last."""
@@ -544,13 +585,8 @@ class ProjectPeopleEraser:
 
     def _series_step(self, scope: WorkspaceScope, at: dict[str, Any]) -> dict[str, Any]:
         project_id = self._project(at)
-        rows, following = query_page(self._view(scope), project_pk(project_id, workspace=scope),
-                                     checked_key(at.get('series_from')), Limit=ID_PAGE, ConsistentRead=True,
-                                     **merged(sort_key(SK_BEGINS, {':sk': COMMENT_SERIES_PREFIX}),
-                                              {'ProjectionExpression': '#sk'}))
-        listed = [str(row.get('sk', '')).removeprefix(COMMENT_SERIES_PREFIX) for row in rows]
-        series = [each for each in listed if _is_series_id(each)]
-        workspaces.count(self._run, MALFORMED_ID_COUNTER, len(listed) - len(series))
+        series, following = id_page(self._view(scope), project_pk(project_id, workspace=scope), at.get('series_from'),
+                                    COMMENT_SERIES_PREFIX, _is_series_id, self._run)
         return {**at, 'series': series, 'series_from': following, 'series_listed': following is None, 'start': None}
 
     def _threads_step(self, scope: WorkspaceScope | None, at: dict[str, Any]) -> dict[str, Any]:
@@ -685,7 +721,7 @@ class ProjectPeopleEraser:
     def _author(self, author: object) -> object:
         if not isinstance(author, Mapping):
             return None
-        by_email, by_name = _same(author.get('email'), self._wanted), _same(author.get('name'), self._wanted)
+        by_email, by_name = same_name(author.get('email'), self._wanted), same_name(author.get('name'), self._wanted)
         if not (by_email or by_name):
             return None
         out = {name: field for name, field in author.items()
@@ -707,14 +743,14 @@ class ProjectPeopleEraser:
         return replies if changed else None
 
     def _label(self, value: object) -> object:
-        return TEAM_MEMBER_NAME if _same(value, self._wanted) else None
+        return TEAM_MEMBER_NAME if same_name(value, self._wanted) else None
 
     def _owner(self, value: object) -> object:
-        return _REMOVE if _same(value, self._wanted) else None
+        return _REMOVE if same_name(value, self._wanted) else None
 
     def _member(self, entry: object) -> object:
         """A members entry without its email and name when either is the address, else None."""
-        if not isinstance(entry, Mapping) or not any(_same(entry.get(name), self._wanted)
+        if not isinstance(entry, Mapping) or not any(same_name(entry.get(name), self._wanted)
                                                      for name in MEMBER_PERSON_FIELDS):
             return None
         return {name: field for name, field in entry.items() if name not in MEMBER_PERSON_FIELDS}
@@ -749,7 +785,7 @@ class ProjectPeopleEraser:
     def _audience(self, value: object) -> object:
         if not isinstance(value, Mapping) or not isinstance(value.get('emails'), list):
             return None
-        kept = [email for email in value['emails'] if not _same(email, self._wanted)]
+        kept = [email for email in value['emails'] if not same_name(email, self._wanted)]
         return {**value, 'emails': kept} if len(kept) != len(value['emails']) else None
 
     def changes(self, kind: str, row: Mapping[str, Any]) -> dict[str, object]:
@@ -880,11 +916,19 @@ _LIBRARY_PROJECTION: Final = {
                                  '#file': 'filename', '#source': 'source', '#tags': 'tags', '#cb': 'created_by',
                                  '#ub': 'updated_by'},
 }
+#: The per-project part of a cursor for the project's prototypes' pins (7.98.00, pins.py), as they start.
+_PINS_START: Final = {'prototypes': [], 'prototypes_from': None, 'prototypes_listed': False,
+                      'prototype_pins_from': None}
 #: The per-project part of a workspace's cursor, as a project starts.
 _PROJECT_START: Final = {'part': _META, 'docs_from': None, 'personas_from': None, 'series': [], 'series_from': None,
-                         'series_listed': False, 'start': None}
+                         'series_listed': False, 'start': None, **_PINS_START}
 #: The same of the deployment's: its series are walked through its series registry, not per project.
-_DEPLOYMENT_PROJECT_START: Final = {'part': _META, 'docs_from': None, 'personas_from': None}
+_DEPLOYMENT_PROJECT_START: Final = {'part': _META, 'docs_from': None, 'personas_from': None, **_PINS_START}
+
+
+def _after_pins(at: Mapping[str, Any]) -> dict[str, Any]:
+    """The cursor once a project's prototypes' pins are done: its series part next."""
+    return {**at, 'part': _SERIES, **_PINS_START}
 #: The sort-key start of the backfill's own rows in the link registry (its marker and its progress row): never a link.
 _MIGRATION_PREFIX: Final = REVIEW_REGISTRIES_MARKER_SK.split('#', 1)[0] + '#'
 

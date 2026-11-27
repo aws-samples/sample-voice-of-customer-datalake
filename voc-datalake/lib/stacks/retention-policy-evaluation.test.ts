@@ -161,6 +161,8 @@ export function evaluate(statements: Statement[], request: Request): { allowedBy
 const allowed = (answer: ReturnType<typeof evaluate>): boolean => answer.allowedBy > 0 && answer.deniedBy.length === 0;
 
 const TOMBSTONE = ['pk', 'sk', 'legal_basis', 'actor', 'deleted_at'];
+/** A prototype's pin form id (lambda/shared/prototype_pins.py `pin_form_id`: `pf_` and 16 hex). */
+const PIN_FORM = 'pf_0123456789abcdef';
 const DELETE_RECORD = ['pk', 'sk', 'kind', 'target', 'actor', 'reason', 'deleted_at'];
 const NONE = { 'dynamodb:ReturnValues': 'NONE' };
 const SPECIFIC = { 'dynamodb:Select': 'SPECIFIC_ATTRIBUTES' };
@@ -223,6 +225,25 @@ const EVERY_BUILD: readonly Request[] = [
   { what: 'a hit read again from the table', action: 'dynamodb:GetItem', table: 'Feedback', key: `WS#${WS}#SOURCE#web` },
   { what: 'a workspace\'s created_at', action: 'dynamodb:GetItem', table: 'Workspaces', key: `WS#${WS}`,
     attributes: ['pk', 'sk', 'created_at'], context: SPECIFIC },
+  // 7.98.00 (3g-pin): an erasure by email's walk of the prototype pins (lambda/jobs/retention/pins.py): a project's
+  // prototypes by Query (keys only), the scope's pin forms and each form's pins by Query, a pin's replies rewritten,
+  // and its change recorded before and after (the projects walk's own records).
+  { what: 'a deployment project\'s prototypes', action: 'dynamodb:Query', table: 'Projects', key: 'PROJECT#p1',
+    attributes: ['pk', 'sk'], context: SPECIFIC },
+  { what: 'a workspace project\'s prototypes', action: 'dynamodb:Query', table: 'Projects', key: `WS#${WS}#PROJECT#p1`,
+    attributes: ['pk', 'sk'], context: SPECIFIC },
+  ...['FEEDBACK_FORM', `WS#${WS}#FEEDBACK_FORM`].map((key): Request => ({
+    what: `the pin forms of ${key}`, action: 'dynamodb:Query', table: 'Aggregates', key, attributes: ['pk', 'sk'],
+    context: SPECIFIC })),
+  ...[`PINS#${PIN_FORM}`, `WS#${WS}#PINS#${PIN_FORM}`].flatMap((key): Request[] => [
+    { what: `the pins of ${key}`, action: 'dynamodb:Query', table: 'Aggregates', key,
+      attributes: ['pk', 'sk', 'replies'], context: SPECIFIC },
+    { what: `a pin's replies in ${key}`, action: 'dynamodb:UpdateItem', table: 'Aggregates', key,
+      attributes: ['pk', 'sk', 'replies'], context: NONE },
+  ]),
+  ...['AUDIT#tombstone#deployment_projects', 'AUDIT#tombstone#workspace_projects'].map((key): Request => ({
+    what: `a pin's record in ${key}`, action: 'dynamodb:PutItem', table: 'Aggregates', key,
+    attributes: [...TOMBSTONE, 'source', 'store', 'mode', 'run_id', 'job_id', 'kind', 'action'] })),
   // Raw objects, each with both delete actions.
   ...['raw/web/2026/01/01/f1/0123456789abcdef.json', 'silver/web/f1/20260101T000000000000Z-0a.json',
     `ws/${WS}/raw/web/2026/01/01/f1/0a.json`, `ws/${WS}/silver/web/f1/20260101T000000000000Z-0a.json`,
@@ -278,6 +299,16 @@ const PROJECTS_REFUSED: readonly Request[] = [
     key: 'PROJECT_IDS', attributes: ['pk', 'sk', 'created_at'] },
   { what: 'whole registry rows in a batch', action: 'dynamodb:BatchGetItem', table: 'Projects', key: 'PROJECT_IDS',
     attributes: [], context: { 'dynamodb:Select': 'ALL_ATTRIBUTES' } },
+];
+
+/** What the worker may not do to the pins on any build (7.98.00, 3g-pin): find them by a Scan, or delete one (an erasure
+ *  de-identifies a reply, never removes the pin). */
+const PINS_REFUSED: readonly Request[] = [
+  { what: 'a Scan of voc-aggregates for the pins', action: 'dynamodb:Scan', table: 'Aggregates' },
+  { what: 'a pin\'s delete', action: 'dynamodb:DeleteItem', table: 'Aggregates', key: `PINS#${PIN_FORM}` },
+  { what: 'a workspace pin\'s delete', action: 'dynamodb:DeleteItem', table: 'Aggregates',
+    key: `WS#${WS}#PINS#${PIN_FORM}` },
+  { what: 'a pin form\'s delete', action: 'dynamodb:DeleteItem', table: 'Aggregates', key: 'FEEDBACK_FORM' },
 ];
 
 /** What the worker may not read of voc-feedback's indexes or a workspace's META on any build (7.96.00): a workspace's
@@ -355,7 +386,7 @@ describe.each([
     expect(answer.allowedBy).toBeGreaterThan(0);
   });
 
-  it.each([...PROJECTS_REFUSED, ...FEEDBACK_INDEXES_REFUSED].map((request) => [request.what, request]))('refuses %s', (_what, request) => {
+  it.each([...PROJECTS_REFUSED, ...FEEDBACK_INDEXES_REFUSED, ...PINS_REFUSED].map((request) => [request.what, request]))('refuses %s', (_what, request) => {
     expect(allowed(evaluate(statements, request))).toBe(false);
   });
 

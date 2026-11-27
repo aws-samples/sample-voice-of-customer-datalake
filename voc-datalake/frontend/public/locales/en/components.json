@@ -791,6 +791,7 @@
       "participantsNotErased": "Participants not erased: {{n, number}}",
       "exportObjects": "Export objects deleted: {{n, number}}",
       "projectRows": "Project rows de-identified: {{n, number}}",
+      "pinReplies": "Prototype pins whose replies were de-identified: {{n, number}}",
       "formTestResponses": "Form test responses deleted: {{n, number}}",
       "agentMemoryErased": "People erased from the agents' memory: {{n, number}}",
       "agentMemoryRefused": "People the agents' memory will no longer keep: {{n, number}}",

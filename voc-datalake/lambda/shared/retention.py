@@ -176,9 +176,12 @@ AGENT_MEMORY_NOT_ERASED_COUNTER: Final = 'agent_memory_accounts_not_erased'
 # (7.96.00) A workspace's erasure that fell back to a Scan of voc-feedback because its workspace's META names no
 # created_at, so its day walk has no first day (jobs/retention/item_walk.py): 1 on such a job's rows.
 WORKSPACE_SCAN_COUNTER: Final = 'workspace_item_scans'
+# (7.98.00, projects 3g-pin) The prototype pins whose replies an erasure by email de-identified: a reply's name that was
+# the address, written before 7.48.00, now "Team member" (jobs/retention/pins.py).
+PIN_COUNTER: Final = 'pin_replies_deidentified'
 # The counters on the job and audit rows only once above 0 (a run that touched none reads as before).
 ERASURE_OPTIONAL_COUNTERS: Final = (BOARD_COUNTER, MEMBER_COUNTER, WORKSPACE_ITEM_COUNTER, UNSCOPED_ROW_COUNTER,
-                                    EXPORT_OBJECT_COUNTER, PROJECT_COUNTER, MALFORMED_ID_COUNTER,
+                                    EXPORT_OBJECT_COUNTER, PROJECT_COUNTER, PIN_COUNTER, MALFORMED_ID_COUNTER,
                                     DOCS_NOT_CHECKED_COUNTER, FORM_TEST_COUNTER, PARTICIPANT_COUNTER,
                                     NOT_ERASED_COUNTER, GUARD_MALFORMED_COUNTER, INDEX_KEPT_COUNTER,
                                     ENGINEERING_MARK_COUNTER, AGENT_MEMORY_COUNTER, AGENT_MEMORY_REFUSED_COUNTER,

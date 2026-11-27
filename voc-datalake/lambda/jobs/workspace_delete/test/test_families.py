@@ -47,6 +47,7 @@ from shared.project_keys import (
     review_link_registry_key,
     version_partition_key,
 )
+from shared.prototype_pins import pin_forms_pk, pins_pk
 from shared.radar_keys import owned_row, radar_settings_key, scan_key
 from shared.scoped_keys import scoped_pk
 from shared.web_review_methods import methods_partition
@@ -114,6 +115,16 @@ def _item(world: World, n: str, partition: str = 'webscraper', **index: str) -> 
 
 def _aggregate(world: World, pk: str, sk: str = 'fam', **fields: Any) -> Probe:
     return _put(world, 'aggregates', {'pk': pk, 'sk': sk, **fields})
+
+
+#: A pin form's id (prototype_pins.py ``pin_form_id``'s shape).
+PIN_FORM = 'pf_' + 'f' * 16
+
+
+def _pin(world: World) -> Probe:
+    """A pin of a workspace pin form: the sweep finds its partition through the form's row, seeded beside it."""
+    _aggregate(world, pin_forms_pk(workspace=SCOPE), f'FORM#{PIN_FORM}', form_id=PIN_FORM)
+    return _aggregate(world, pins_pk(PIN_FORM, workspace=SCOPE), 'PIN#pin_fam', replies=[])
 
 
 def _memory(world: World, pk: str, sk: str, **fields: Any) -> Probe:
@@ -320,6 +331,9 @@ SEEDS: dict[str, Callable[[World], Probe] | None] = {
         **plugin_config_history_key(SCOPE, 'webscraper', '2026-09-01T00:00:00', 'b2'), 'configs': '[]'}),
     FEEDBACK_FORM_PK: lambda w: _aggregate(w, SCOPE.key(FEEDBACK_FORM_PK), 'FORM#ff_fam', form_id='ff_fam'),
     TEST_RESPONSES_PK: lambda w: _aggregate(w, SCOPE.key(TEST_RESPONSES_PK), 'ff_fam#t#r1', form_id='ff_fam'),
+    # A pin form (in the forms partition) and a pin of it, in the pin form's own partition (7.98.00, 3g-pin).
+    'pin_forms_pk': lambda w: _aggregate(w, pin_forms_pk(workspace=SCOPE), f'FORM#{PIN_FORM}', form_id=PIN_FORM),
+    'pins_pk': _pin,
     LIST_PK: lambda w: _aggregate(w, SCOPE.key(LIST_PK), '2026-11-02T00:00:00+00:00#runfam', run_id='runfam'),
     'watermark_key': _watermark,
     'watermark_directory_key': lambda w: _put(w, 'aggregates', watermark_directory_key(SCOPE, 'app_reviews_ios', 'fam')),

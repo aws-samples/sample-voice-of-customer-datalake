@@ -91,10 +91,11 @@ describe('ErasureJobDetails', () => {
     render(<Details job={jobWith({
       participants_erased: 4, participants_not_erased: 1, deleted_export_objects: 2, project_rows_deidentified: 5,
       form_test_responses_deleted: 6, agent_memory_people_erased: 7, agent_memory_people_refused: 8,
-      agent_memory_accounts_not_erased: 9, engineering_rows_marked: 10,
+      agent_memory_accounts_not_erased: 9, engineering_rows_marked: 10, pin_replies_deidentified: 11,
     })} />)
     for (const text of ['Participants erased: 4', 'Participants not erased: 1', 'Export objects deleted: 2',
-      'Project rows de-identified: 5', 'Form test responses deleted: 6', "People erased from the agents' memory: 7",
+      'Project rows de-identified: 5', 'Prototype pins whose replies were de-identified: 11',
+      'Form test responses deleted: 6', "People erased from the agents' memory: 7",
       "People the agents' memory will no longer keep: 8", 'Engineering run rows updated: 10']) {
       expect(screen.getByText(text)).toBeInTheDocument()
     }
@@ -103,7 +104,7 @@ describe('ErasureJobDetails', () => {
   })
 
   it('says what to do when a completed erasure by email must run again, by scope', () => {
-    const { unmount } = render(<Details job={jobWith({ participants_complete: false, deployment_projects_walked: true,
+    const { unmount } = render(<Details job={jobWith({ participants_complete: false, deployment_projects_walked: true, pins_walked: true,
       participant_index_rows_kept: 2 })} />)
     const steps = screen.getByRole('list', { name: 'This erasure needs a follow-up' })
     expect(within(steps).getByText(/^Not every participant record that holds this address was erased\./)).toHaveTextContent(
@@ -129,7 +130,7 @@ describe('ErasureJobDetails', () => {
 
   it("asks for an erasure by each account's verified address, and says what an address cannot reach", () => {
     render(<Details job={jobWith({
-      participants_complete: true, deployment_projects_walked: true, agent_memory_walked: true, agent_memory_complete: false,
+      participants_complete: true, deployment_projects_walked: true, pins_walked: true, agent_memory_walked: true, agent_memory_complete: false,
       agent_memory_accounts_not_erased: 2,
     })} />)
     expect(screen.getByText(/^2 accounts hold this address unverified/)).toHaveTextContent(
@@ -145,7 +146,7 @@ describe('ErasureJobDetails', () => {
 
   it('says lineage is owed in words from its code, and falls back to the English reason of an older row', () => {
     const { unmount } = render(<Details job={jobWith({
-      participants_complete: true, deployment_projects_walked: true, review_registries: 'not_backfilled',
+      participants_complete: true, deployment_projects_walked: true, pins_walked: true, review_registries: 'not_backfilled',
       lineage_owed: true, incomplete_reason: 'english words', lineage_owed_reason: 'not_backfilled', lineage_owed_mode: 'erase',
     })} />)
     expect(screen.getByText(/^The personas and documents that cite the erased reviews are not marked yet/)).toHaveTextContent(
@@ -204,7 +205,7 @@ describe('ErasureStatusBadge', () => {
       [{ field: 'email', participants_complete: false }, 'Completed: run again'],
       [{ field: 'author', lineage_owed: true, incomplete_reason: 'r', review_registries: 'complete' }, 'Completed: lineage owed'],
       [{ field: 'email', participants_complete: false, participant_guards_malformed: 1 }, 'Completed: needs the operator'],
-      [{ field: 'email', participants_complete: true, deployment_projects_walked: true, agent_memory_walked: true,
+      [{ field: 'email', participants_complete: true, deployment_projects_walked: true, pins_walked: true, agent_memory_walked: true,
         agent_memory_complete: false, agent_memory_accounts_not_erased: 1 }, 'Completed: check the account in Users'],
       [{ field: 'author', files_not_checked: { count: 0, keys: [], more: true } }, 'Completed: files to review'],
       [{ field: 'author', status: 'failed', lineage_owed: true, incomplete_reason: 'r' }, 'Failed'],

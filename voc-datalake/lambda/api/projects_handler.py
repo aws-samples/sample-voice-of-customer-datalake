@@ -161,7 +161,7 @@ from shared.prioritization_keys import (
 )
 from shared.prioritization_row_batch import batch_project_ids, ensure_rows_batch
 from shared.project_access import Caller, ProjectAccess
-from shared.project_keys import PROJECT_PREFIX, project_pk
+from shared.project_keys import PROJECT_PREFIX, PROTOTYPE_SK_PREFIX, project_pk
 from shared.project_writes import (
     PROJECT_DELETION_ATTRIBUTE,
     is_project_tombstone,
@@ -2762,7 +2762,6 @@ def _scorable_documents(documents: list[dict]) -> Iterable[tuple[str, str, dict]
         document_id = item.get('document_id')
         if isinstance(document_id, str) and document_id:
             yield prefix, document_id, item
-PROTOTYPE_SK_PREFIX = 'PROTOTYPE#'
 
 
 def _default_row_composition(documents: list[dict]) -> tuple[list[str], str]:

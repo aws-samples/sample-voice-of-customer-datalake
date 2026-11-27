@@ -847,6 +847,7 @@
       "participantsNotErased": "Nieusunięci uczestnicy: {{n, number}}",
       "exportObjects": "Usunięte obiekty eksportu: {{n, number}}",
       "projectRows": "Zanonimizowane wiersze projektów: {{n, number}}",
+      "pinReplies": "Pinezki prototypów z zanonimizowanymi odpowiedziami: {{n, number}}",
       "formTestResponses": "Usunięte testowe odpowiedzi formularzy: {{n, number}}",
       "agentMemoryErased": "Osoby usunięte z pamięci agentów: {{n, number}}",
       "agentMemoryRefused": "Osoby, których pamięć agentów już nie zachowa: {{n, number}}",

@@ -88,7 +88,7 @@ def _stopped_partway(world: World, name: str) -> None:
 def test_the_entries_run_in_the_designs_order():
     assert [sweep.name for sweep in SWEEPS] == [
         'credentials', 'feedback', 'counters', 'source_runs', 'failures', 'circuits', 'logs', 'scraper_runs',
-        'plugin_configs', 'feedback_forms', 'import_runs', 'erasure_jobs', 'reprocess_jobs', 'web_review_methods',
+        'plugin_configs', 'prototype_pins', 'feedback_forms', 'import_runs', 'erasure_jobs', 'reprocess_jobs', 'web_review_methods',
         'watermarks', 'memory', 'exports', 'objects', 'import_objects', 'radar', 'settings', 'user_contexts', 'docshares', 'projects',
         'participants', 'library', 'agents', 'conversations', 'control_rows']
 

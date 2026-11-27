@@ -791,6 +791,7 @@
       "participantsNotErased": "消去されなかった参加者: {{n, number}}",
       "exportObjects": "削除したエクスポートオブジェクト: {{n, number}}",
       "projectRows": "匿名化したプロジェクト行: {{n, number}}",
+      "pinReplies": "返信を匿名化したプロトタイプのピン: {{n, number}}",
       "formTestResponses": "削除したフォームのテスト回答: {{n, number}}",
       "agentMemoryErased": "エージェントのメモリから消去した人: {{n, number}}",
       "agentMemoryRefused": "エージェントのメモリが今後保持しない人: {{n, number}}",

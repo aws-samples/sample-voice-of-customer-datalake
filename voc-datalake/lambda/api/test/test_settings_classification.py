@@ -237,6 +237,12 @@ class TestErasure:
         assert 'board_items_deidentified' not in bare
         assert 'member_rows_deidentified' not in bare
 
+    def test_the_job_view_carries_the_deidentified_pin_replies_once_there_are_some(self):
+        """7.98.00 (3g-pin): the pins whose replies named the address, on the job row once above 0."""
+        view = settings_handler.erasure_job_view({'job_id': 'er_000000000001', 'pin_replies_deidentified': 4})
+        assert view['pin_replies_deidentified'] == 4
+        assert 'pin_replies_deidentified' not in settings_handler.erasure_job_view({'job_id': 'er_000000000002'})
+
     def test_the_job_view_says_how_many_deleted_items_were_a_workspaces(self):
         view = settings_handler.erasure_job_view({
             'job_id': 'er_000000000001', 'deleted_items': 3, 'deleted_workspace_items': 2})
@@ -246,8 +252,9 @@ class TestErasure:
     def test_the_job_view_says_whether_the_deployments_projects_were_walked(self):
         """7.48.00 (3g-d): an admin finds the jobs to submit again from the job's API view (and, since 7.97.00, the panel)."""
         view = settings_handler.erasure_job_view({
-            'job_id': 'er_000000000001', 'deployment_projects_walked': False, 'deployment_rows_found': 'scan'})
-        assert (view['deployment_projects_walked'], view['deployment_rows_found']) == (False, 'scan')
+            'job_id': 'er_000000000001', 'deployment_projects_walked': False, 'deployment_rows_found': 'scan',
+            'pins_walked': False})
+        assert (view['deployment_projects_walked'], view['deployment_rows_found'], view['pins_walked']) == (False, 'scan', False)
         bare = settings_handler.erasure_job_view({'job_id': 'er_000000000002'})
         assert [name for name in bare if name.startswith('deployment_')] == []
 

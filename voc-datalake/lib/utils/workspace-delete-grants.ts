@@ -74,6 +74,7 @@ export const WORKSPACE_DELETE_GRANTS: Readonly<Record<string, readonly DeleteGra
   logs: ['aggregates'],
   scraper_runs: ['aggregates'],
   plugin_configs: ['aggregates'],
+  prototype_pins: ['aggregates'],
   feedback_forms: ['aggregates'],
   import_runs: ['aggregates'],
   erasure_jobs: ['aggregates'],
@@ -104,7 +105,7 @@ export const WORKSPACE_DELETE_GRANTS: Readonly<Record<string, readonly DeleteGra
  */
 export const REQUIRED_DELETE_SWEEPS: readonly string[] = [
   'credentials', 'feedback', 'counters', 'source_runs', 'failures', 'circuits', 'logs', 'scraper_runs',
-  'plugin_configs', 'feedback_forms', 'import_runs', 'erasure_jobs', 'reprocess_jobs', 'web_review_methods',
+  'plugin_configs', 'prototype_pins', 'feedback_forms', 'import_runs', 'erasure_jobs', 'reprocess_jobs', 'web_review_methods',
   'watermarks', 'memory', 'exports', 'objects', 'import_objects', 'radar', 'settings', 'user_contexts', 'docshares',
   'projects', 'participants', 'library', 'agents', 'conversations', 'control_rows',
 ];

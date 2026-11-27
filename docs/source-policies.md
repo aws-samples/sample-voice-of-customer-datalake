@@ -467,11 +467,23 @@ How it works:
   again every erasure by email without a source created before the 7.48.00 deploy finished, or whose row does not say `deployment_projects_walked: true`. Not reached:
   a project bundle's files an operator exported (they copy reviewer addresses: delete a bundle once imported, and
   import bundles only from a 7.48.00 or later checkout, whose importer lists the project and its series; 3g-bundle); a
-  prototype pin's reply written before 7.48.00 that names a member by address (3g-pin; a reply since names the
-  username, else "Team member"); an id cited inside a document's `derivation` (3g-lin1) and a persona job's
+  prototype pin whose prototype row and pin form were both deleted (3g-pin2); an id cited inside a document's `derivation` (3g-lin1) and a persona job's
   `result` in voc-jobs (lineage ids, until the job row's 7-day `ttl`; 3g-lin2); a deleted project's product
   documents folder is listed as not checked (an object its delete could not remove outlives its record); and a deleted project's threads and links stay
   until an erasure or the planned delete sweep (multi-workspace.md, 3g-p).
+- **Prototype pins' replies** (since 7.98.00; [multi-workspace.md](multi-workspace.md#the-project-plan-phase-3),
+  3g-pin). Until 7.48.00 a member's reply to a tester's pin named them by their username, else their address. The same
+  erasure by email without a source (the deployment's, and a workspace's own in its own scope) walks, as part of the
+  projects walk, the pins of each walked project's prototypes (its `PROTOTYPE#` rows) and of every pin form the
+  scope's forms partition keeps (`FORM#pf_…`, which a project's or a prototype's delete leaves, so a deleted project's
+  pins are reached too), by Query, never a Scan: a reply whose `name` is the address (case-insensitive, or its first
+  120 characters) becomes "Team member", its text and writer id kept, each change recorded before and after in the
+  projects walk's audit partition (`kind` `pin`) and counted in `pin_replies_deidentified`. A workspace's pins
+  (`WS#<ws>#PINS#…`, which nothing writes before the switch) are reached through the workspace layer only. Not
+  reached: a pin whose prototype row and pin form were both deleted (3g-pin2); a reply's text that names the person
+  (never searched); a project bundle that copied pin replies, names included, onto an operator's machine (3g-bundle).
+  The deployment's job says `pins_walked: true` once a walk begun under 7.98.00 has reached every pin it can: submit
+  again an erasure by email without a source whose row does not say so, if the person replied to pins before 7.48.00.
 - **Participants** (since 7.72.00; [multi-workspace.md](multi-workspace.md#the-project-plan-phase-3), 3g2). An `email`
   erasure without a source also reaches `voc-participants`, after the boards and the projects (phase
   `participants`): the address, trimmed and lower-cased as the participants' address guard holds it, is looked up in
@@ -696,7 +708,7 @@ inline policy):
 | Feature requests table | `Scan`, `GetItem`, `Query`, `UpdateItem` (de-identifies board rows, recounts totals; the table only, no index, since 7.84.00); `PutItem` / `DeleteItem` under `FR#*` only (re-keys an erased +1) |
 | Workspaces table | `Scan` (finds the membership rows that hold an erased email); `Query` of the `WORKSPACES` listing only (since 7.43.00: the workspaces an erasure by email walks); `GetItem` of a `META`'s status, and (since 7.96.00, in `RetentionReadsPolicy`) of its `created_at` only (`pk`, `sk`, `created_at`, a projection required: where a workspace erasure's day walk starts); `UpdateItem` pinned to `WS#*` and the attributes `email` and `name` (de-identifies a `MEMBER#` row). No put, no delete; the audit-row guard denies it any `AUDIT#` row |
 | Raw bucket | `GetObject` of a workspace's `ws/ws_<26 ?>/projects/*/product_docs/raw/*.md`, `…/raw/*.txt` and `…/extracted/*` (since 7.43.00: an erasure by email reads its text documents for the address) and of the deployment's `projects/*/product_docs/extracted/*` (since 7.48.00) only; `DeleteObject` and `DeleteObjectVersion` on `raw/*`, `silver/*` and each workspace's `ws/ws_<26 ?>/raw/*` and `ws/ws_<26 ?>/silver/*` (one workspace id per pattern: IAM's `*` also matches `/`), plus `ListBucketVersions` with those prefixes. The whole-file uploads are under `raw/`: the code deletes one only for a whole-source erasure of its own source. The workspace prefixes are reached by an erasure by email and a retention window (D5, legal obligations), never by any other erasure (in code). An explicit Deny refuses deletes under `ws/ws_<26 ?>/raw/s3_import/*`: a workspace's S3 import originals are listed for review, never deleted |
-| Aggregates table | `GetItem`, `PutItem` (also each tombstone), `UpdateItem`, `Query`, `BatchGetItem` (the lineage pass's tombstone lookups); `DeleteItem` in the test responses' partitions only (`dynamodb:LeadingKeys` `FEEDBACK_FORM_TEST` and one workspace id's `WS#<ws>#FEEDBACK_FORM_TEST`: the forms' test responses, which those partitions hold alone), no other delete: never a form's definition, revision or funnel row (`FEEDBACK_FORM`) |
+| Aggregates table | `GetItem`, `PutItem` (also each tombstone), `UpdateItem`, `Query`, `BatchGetItem` (the lineage pass's tombstone lookups); since 7.98.00 (3g-pin) the same `Query` reads the pin forms (`FEEDBACK_FORM`, keys only) and each form's pins (`PINS#*`, a workspace's `WS#<ws>#…` copies), and the same `UpdateItem` rewrites a pin's `replies`: no new grant, and no Scan or delete of a pin (`retention-policy-evaluation.test.ts`); `DeleteItem` in the test responses' partitions only (`dynamodb:LeadingKeys` `FEEDBACK_FORM_TEST` and one workspace id's `WS#<ws>#FEEDBACK_FORM_TEST`: the forms' test responses, which those partitions hold alone), no other delete: never a form's definition, revision or funnel row (`FEEDBACK_FORM`) |
 | Agents and engineering tables, user pool (since 7.84.00, with `-c engineeringAgents=true` only; the reads and updates in the managed policy `RetentionEngineeringPolicy`, attached to this role alone, the puts and the delete in its inline policy) | voc-agents: `Query` and `UpdateItem` of `ISSUE_RUN#default`, of `pk`, `sk`, `feedback_id`, `engineering_run_id`, `erased_evidence` only. voc-engineering: `Query` of `WS#default#RUNLIST#*` and `WS#default#RUN#*`, `UpdateItem` of `WS#default#RUN#*`, of `pk`, `sk`, `feedback`, `erased_evidence` only; `Query`, `UpdateItem` (of the attributes that name a person), `PutItem` (of a confirmation row's attributes) and `DeleteItem` in `WS#default#AMEM#*`; `PutItem` of `AUDIT#tombstone#agent_memory_person` and `AUDIT#delete` (voc-engineering under the audit-row guard). `cognito-idp:AdminGetUser` on the user pool |
 | KMS | Encrypt/decrypt |
 | Lambda | Invoke itself |

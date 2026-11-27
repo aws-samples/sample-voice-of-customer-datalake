@@ -79,7 +79,7 @@ const PROOF: Record<ResolvableKind, (later: ErasureJob) => boolean> = {
   malformedRows: participantsDone,
   indexRowsKeptAgain: participantsDone,
   participants: participantsDone,
-  deploymentProjects: (later) => later.deployment_projects_walked === true,
+  deploymentProjects: (later) => later.deployment_projects_walked === true && later.pins_walked === true,
   agentMemory: (later) => later.agent_memory_complete === true,
   agentMemoryAccounts: (later) => later.agent_memory_complete === true,
 }
@@ -135,7 +135,9 @@ function agentMemorySteps(job: ErasureJob): FollowUp[] {
 
 function emailSteps(job: ErasureJob, jobs: readonly ErasureJob[]): FollowUp[] {
   if (!emailWithoutSource(job)) return []
-  const projects: FollowUp[] = job.workspace_id === undefined && job.deployment_projects_walked !== true
+  // 7.98.00: a walk that did not reach every prototype pin (`pins_walked`) left the deployment's projects unfinished.
+  const projects: FollowUp[] = job.workspace_id === undefined
+    && (job.deployment_projects_walked !== true || job.pins_walked !== true)
     ? [{ kind: 'deploymentProjects' }] : []
   return [...participantSteps(job, jobs), ...projects, ...agentMemorySteps(job)]
 }

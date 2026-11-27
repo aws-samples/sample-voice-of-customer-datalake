@@ -17,7 +17,7 @@ const WS = 'ws_01JC3Q8ZK6V7W9X2Y4A5B6C7D8'
 const CLEAN = {
   job_id: 'er_1', status: 'completed', field: 'email', value_hash: 'abc', created_at: '2026-11-01T10:00:00Z',
   finished_at: '2026-11-01T10:05:00Z',
-  deployment_projects_walked: true, participants_walked: true, participants_complete: true, review_registries: 'complete',
+  deployment_projects_walked: true, pins_walked: true, participants_walked: true, participants_complete: true, review_registries: 'complete',
 }
 
 function jobWith(extra: Record<string, unknown>) {
@@ -70,6 +70,17 @@ describe('followUps', () => {
     expect(kinds(jobWith({ deployment_projects_walked: false }))).toStrictEqual(['deploymentProjects'])
     expect(kinds(jobWith({ deployment_projects_walked: undefined }))).toStrictEqual(['deploymentProjects'])
     expect(kinds(jobWith({ deployment_projects_walked: undefined, workspace_id: WS }))).toStrictEqual([])
+  })
+
+  it("asks for a rerun when the deployment's walk did not reach every prototype pin (7.98.00, pins_walked)", () => {
+    expect(kinds(jobWith({ pins_walked: undefined }))).toStrictEqual(['deploymentProjects'])
+    expect(kinds(jobWith({ pins_walked: false }))).toStrictEqual(['deploymentProjects'])
+    expect(kinds(jobWith({ pins_walked: undefined, workspace_id: WS }))).toStrictEqual([])
+    const old = jobWith({ pins_walked: undefined })
+    const later = (extra: Record<string, unknown>) =>
+      jobWith({ job_id: 'er_again', created_at: '2026-11-02T10:00:00Z', finished_at: '2026-11-02T10:05:00Z', ...extra })
+    expect(kinds(old, [later({ pins_walked: undefined }), old])).toStrictEqual(['deploymentProjects'])
+    expect(kinds(old, [later({}), old])).toStrictEqual([])
   })
 
   it("asks for a rerun when the agents' memory was not walked, and nothing when it was not due or is complete", () => {

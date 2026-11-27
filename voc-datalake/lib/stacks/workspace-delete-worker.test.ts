@@ -199,7 +199,7 @@ describe('the voc-workspace-delete job', () => {
   it('every sweep names its grants, and the job holds exactly their union', () => {
     expect(Object.keys(WORKSPACE_DELETE_GRANTS)).toStrictEqual([
       'credentials', 'feedback', 'counters', 'source_runs', 'failures', 'circuits', 'logs', 'scraper_runs',
-      'plugin_configs', 'feedback_forms', 'import_runs', 'erasure_jobs', 'reprocess_jobs', 'web_review_methods',
+      'plugin_configs', 'prototype_pins', 'feedback_forms', 'import_runs', 'erasure_jobs', 'reprocess_jobs', 'web_review_methods',
       'watermarks', 'memory', 'exports', 'objects', 'import_objects', 'radar', 'settings', 'user_contexts', 'docshares',
       'projects', 'participants', 'library', 'agents', 'conversations', 'control_rows']);
     expect([...deleteGrants()].sort(byCodeUnit)).toStrictEqual(['agents', 'aggregates', 'controlRows', 'conversations',

@@ -76,6 +76,10 @@ _CARRIED_WORKSPACE_LISTS: Final = (ERASED_WORKSPACES, LINEAGE_WORKSPACES, UNCHEC
 #: data which jobs to submit again (one that did not walk them never reached them).
 DEPLOYMENT_FOUND: Final = 'deployment_rows_found'
 DEPLOYMENT_WALKED: Final = 'deployment_projects_walked'
+#: (7.98.00, 3g-pin) Whether that walk also reached every prototype pin of the deployment: true only for a walk that
+#: began under 7.98.00 or later and ended (one carried across the upgrade walked some projects without their pins).
+#: The rerun rule reads it beside ``DEPLOYMENT_WALKED``.
+PINS_WALKED: Final = 'pins_walked'
 #: Whether an erasure by email without a source looked the address up in voc-participants and erased whom it found
 #: (7.72.00, projects 3g2; participants.py): on the job and audit rows of every such job, the deployment's and a
 #: workspace's own (``participant_fields``), so an admin can tell which jobs to submit again.
@@ -93,8 +97,8 @@ PARTICIPANTS_COMPLETE: Final = 'participants_complete'
 AGENT_MEMORY_DUE: Final = 'agent_memory_due'
 AGENT_MEMORY_WALKED: Final = 'agent_memory_walked'
 AGENT_MEMORY_COMPLETE: Final = 'agent_memory_complete'
-_CARRIED_FLAGS: Final = (LINEAGE_ALL, _UNCHECKED_MORE, DEPLOYMENT_WALKED, PARTICIPANTS_WALKED, AGENT_MEMORY_DUE,
-                         AGENT_MEMORY_WALKED)
+_CARRIED_FLAGS: Final = (LINEAGE_ALL, _UNCHECKED_MORE, DEPLOYMENT_WALKED, PINS_WALKED, PARTICIPANTS_WALKED,
+                         AGENT_MEMORY_DUE, AGENT_MEMORY_WALKED)
 #: The field of an erasure by email (boards.py ``ERASE_FIELD``; that module imports this one).
 _EMAIL_FIELD: Final = 'email'
 # ``workspace_id``: the one workspace a job named (its row's, checked by the handler's ``_named_workspace``).
@@ -176,7 +180,7 @@ def deployment_fields(run: Mapping[str, Any]) -> dict[str, Any]:
     if not email_without_source(run) or run.get(WORKSPACE_FIELD):
         return {}
     found = {DEPLOYMENT_FOUND: run[DEPLOYMENT_FOUND]} if run.get(DEPLOYMENT_FOUND) else {}
-    return {DEPLOYMENT_WALKED: run.get(DEPLOYMENT_WALKED) is True, **found}
+    return {DEPLOYMENT_WALKED: run.get(DEPLOYMENT_WALKED) is True, PINS_WALKED: run.get(PINS_WALKED) is True, **found}
 
 
 def email_without_source(run: Mapping[str, Any]) -> bool:

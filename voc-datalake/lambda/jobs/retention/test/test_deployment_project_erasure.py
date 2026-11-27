@@ -411,7 +411,7 @@ class TestTheDeploymentsWalkHandsOver:
         ({'links_done': True, 'pairs_done': True, 'projects_done': True,
           'library': True}, 'documents_library'),
         ({'links_done': True, 'pairs_done': True, 'projects_done': True,
-          'library': True, 'documents_library_done': True}, 'done'),
+          'library': True, 'documents_library_done': True, 'pin_forms_done': True}, 'done'),
     ])
     def test_each_hand_made_cursor_names_its_step(self, at, state):
         assert project_people.ProjectPeopleEraser.deployment_state(at) == state
@@ -536,7 +536,7 @@ class TestRound1:
     def test_a_deployment_job_handed_over_past_the_phase_says_it_did_not_walk(self):
         """A 7.43.00 job handed over past its ``workspace_projects`` phase during the deploy finishes with false."""
         run = {**runs.new_run({}, 'erase'), 'field': 'email', 'job_id': JOB_ID}
-        assert runs.deployment_fields(run) == {runs.DEPLOYMENT_WALKED: False}
+        assert runs.deployment_fields(run) == {runs.DEPLOYMENT_WALKED: False, runs.PINS_WALKED: False}
         assert runs.deployment_fields({**run, 'source': 'web'}) == {}
         assert runs.deployment_fields({**run, 'workspace_id': WS}) == {}
 

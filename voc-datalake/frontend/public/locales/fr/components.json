@@ -819,6 +819,7 @@
       "participantsNotErased": "Participants non effacés : {{n, number}}",
       "exportObjects": "Objets d'export supprimés : {{n, number}}",
       "projectRows": "Lignes de projets désidentifiées : {{n, number}}",
+      "pinReplies": "Épingles de prototypes aux réponses désidentifiées : {{n, number}}",
       "formTestResponses": "Réponses de test de formulaires supprimées : {{n, number}}",
       "agentMemoryErased": "Personnes effacées de la mémoire des agents : {{n, number}}",
       "agentMemoryRefused": "Personnes que la mémoire des agents ne gardera plus : {{n, number}}",

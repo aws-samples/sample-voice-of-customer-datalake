@@ -140,6 +140,8 @@ const OutcomeCountersSchema = z.object({
   participants_not_erased: count,
   deleted_export_objects: count,
   project_rows_deidentified: count,
+  /** 7.98.00 (3g-pin): the prototype pins whose replies named the address, now "Team member". */
+  pin_replies_deidentified: count,
   form_test_responses_deleted: count,
   product_docs_not_checked: count,
   agent_memory_people_erased: count,
@@ -181,6 +183,8 @@ const ErasureJobSchema = z.object({
   files_not_checked: KeptKeysSchema,
   /** An erasure by email without a source, the deployment's (7.48.00): whether it walked the deployment's projects. */
   deployment_projects_walked: optionalFlag,
+  /** The same walk begun under 7.98.00, so it reached every prototype pin's replies (3g-pin). */
+  pins_walked: optionalFlag,
   /** An erasure by email without a source (7.72.00): whether it looked in voc-participants, and erased everyone there
    *  (nobody refused, no index row kept, no malformed row skipped). */
   participants_walked: optionalFlag,

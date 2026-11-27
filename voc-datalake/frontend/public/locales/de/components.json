@@ -791,6 +791,7 @@
       "participantsNotErased": "Nicht gelöschte Teilnehmer: {{n, number}}",
       "exportObjects": "Gelöschte Exportobjekte: {{n, number}}",
       "projectRows": "De-identifizierte Projektzeilen: {{n, number}}",
+      "pinReplies": "Prototyp-Pins mit de-identifizierten Antworten: {{n, number}}",
       "formTestResponses": "Gelöschte Testantworten von Formularen: {{n, number}}",
       "agentMemoryErased": "Aus dem Gedächtnis der Agenten gelöschte Personen: {{n, number}}",
       "agentMemoryRefused": "Personen, die das Gedächtnis der Agenten nicht mehr speichert: {{n, number}}",

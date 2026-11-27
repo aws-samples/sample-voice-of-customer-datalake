@@ -17,6 +17,91 @@ the platform package version.
 
 ## [Unreleased]
 
+## [7.98.00] - 2026-11-27
+
+An erasure by email reaches the prototype pins' replies (slice 3g-pin of docs/multi-workspace.md's project plan;
+TENETS.md D5). Until 7.48.00 a member's reply to a tester's pin named them by their username, else by their address;
+no erasure reached those replies. Now the deployment's erasure by email without a source, and a workspace's own
+erasure by email, replace such a name with "Team member" in every pin it walks.
+
+### Added
+
+- The retention worker's projects walk (`lambda/jobs/retention/project_people.py`, phase `workspace_projects`) walks
+  the pins too (`lambda/jobs/retention/pins.py`), found through keys only, never a Scan:
+  - after each walked project's personas, its prototypes (the `PROTOTYPE#` rows of its partition, one Query page of
+    keys a step), each prototype's pin form (`pin_form_id`), then that form's pins (`PINS#{form}` in voc-aggregates,
+    25 a page, each pin's key and `replies` only, strongly consistent);
+  - after each scope's Documents Library, the pins of every pin form its forms partition keeps (`FORM#pf_…` of
+    `FEEDBACK_FORM`, keys only): a project's or a prototype's delete leaves its pin form and its pins, so a deleted
+    project's pins are reached too. A live prototype's form is reached both ways and its pins are read twice, the
+    second walk changing nothing: one strongly consistent Query page of up to 25 pins (a pin up to about 100 KB, some
+    25 read units) more per live prototype per erasure by email (follow-up 3g-pin-once: walk a prototype's pins only
+    when its form is gone).
+  - Every loop is bounded by its page (the prototypes and forms by `ID_PAGE`, the pins by `PIN_PAGE`), a page is cut
+    after a pin when the time runs low, and the walk hands over with its cursor like the other steps
+    (`prototypes`, `prototypes_from`, `prototypes_listed`, `prototype_pins_from`; `pin_forms`, `pin_forms_from`,
+    `pin_forms_done`, `pins_from`). A cursor carried from 7.97.00 walks the pins of the projects it has still to walk
+    and then the scope's pin forms; a project it walked before the upgrade has its pins reached through its pin forms
+    only (a prototype whose form was deleted is then missed), so such a job never says `pins_walked` (below).
+- `pins_walked` on the job and audit rows of the deployment's erasure by email without a source (and in
+  `GET /settings/erasure`): true only for a walk of the deployment's projects that began under 7.98.00 and ended, so
+  every pin it could reach was walked (a prototype id of another shape is counted in `project_ids_malformed` and a
+  form id that only starts like a pin form's is skipped, as before). The erasure panel reads it beside `deployment_projects_walked`: a job without
+  it is asked to be submitted again.
+- What a pin's de-identification does: each reply whose `name` is the address (case-insensitive, or its first 120
+  characters, the length a name was stored at) gets `Team member`; its text, writer id (`by`, a sub) and time stay, and
+  so does every other reply and the pin itself. Recorded before and after like the projects walk's other rows
+  (`AUDIT#tombstone#deployment_projects` or `…#workspace_projects`, `kind` `pin`, the form and pin ids: never the
+  address), one UpdateItem of `replies` conditioned on `replies` as read; a pin that changed meanwhile is read again,
+  at most three times, then the job fails (`RowKeptChanging`) and an admin runs it again. A workspace's record key
+  names the workspace first, as a thread's does (the workspaces share one record partition). The match, the retry
+  rule and the page of ids are one copy shared with the threads' walk (`lambda/jobs/retention/deidentify.py`).
+- A new counter, `pin_replies_deidentified` (the pins changed), on the job and audit rows once above 0, in
+  `GET /settings/erasure` and in Administration's erasure panel ("Prototype pins whose replies were de-identified"),
+  in the nine languages.
+
+### Changed
+
+- `lambda/shared/prototype_pins.py`: `pins_pk` takes the scope (`WS#{ws}#PINS#{form}` in a workspace), and
+  `pin_forms_pk` names the scope's forms partition (`shared/onboarding.py` `FEEDBACK_FORM_PK`). Nothing writes a
+  workspace's pins before the switch (3h). `PROTOTYPE_SK_PREFIX` moved to `shared/project_keys.py`.
+
+- A workspace's hard delete sweeps its pins (`lambda/jobs/workspace_delete/sweeps.py` `prototype_pins`, before
+  `feedback_forms`): every `WS#{ws}#PINS#{form}` partition of a pin form its forms partition keeps, found by one
+  keys-only Query of that partition (no route writes a workspace's pins before the switch, 3h; the key family
+  registry, `test/families.py`, now names both pin key builders). Its grants are the forms sweep's, `aggregates`
+  (`lib/utils/workspace-delete-grants.ts`), already held to one workspace's `WS#{ws}#…` keys.
+
+### Security
+
+- The workspace boundary: a workspace's own erasure reads and writes its own `WS#{ws}#PINS#…` and
+  `WS#{ws}#FEEDBACK_FORM` partitions only, through the workspace layer (`shared/ws_repo.py` `ws_table`), and its
+  projects' prototypes through it too; the deployment's walk refuses to write a workspace's pin. Tests:
+  `lambda/jobs/retention/test/test_pin_erasure.py` (another workspace's and the deployment's pins untouched).
+- No IAM change: voc-retention's role already held `Query` and `UpdateItem` on voc-aggregates (the table, no
+  condition: only the code keeps the calls to the pins and forms partitions) and the deployment's projects Query of
+  `pk` and `sk`. `lib/stacks/retention-policy-evaluation.test.ts`
+  now evaluates each new request (the prototypes' Queries, the pin forms' and the pins' Queries, a pin's update, a
+  pin's records) and refuses a Scan of voc-aggregates and a delete of a pin or a pin form. The managed policies'
+  sizes are unchanged (`RetentionWalksPolicy` 5,503 and `RetentionReadsPolicy` 4,129 of 6,144); the CDK baseline's
+  template hashes change with the Lambda code assets only.
+
+### Docs
+
+- docs/multi-workspace.md: the 7.98.00 status row, 3g-pin done, 3h no longer blocked by it, and 3g-pin2 (a pin
+  whose prototype row and pin form were both deleted). TENETS.md D5: the pin gap replaced by 3g-pin2, and what is
+  not reached: a pin reply's text that names the person (never searched), and a project bundle
+  (`scripts/project_bundle/exporter.py`) that copied pin replies, names included, onto an operator's machine (3g-bundle).
+  docs/source-policies.md: what an erasure by email reaches and the aggregates grant.
+
+### Upgrade notes
+
+- The deployment's erasure by email without a source whose row does not say `pins_walked: true` (every one created
+  before the 7.98.00 deploy finished, one carried across it included) did not reach every pin reply: submit it again
+  from the deployment (the job keeps only the address's hash) if the person replied to a prototype's pins before
+  7.48.00. The erasure panel asks for it. A workspace's own erasure never carries the field and needs no rerun for
+  it: no workspace held a pin before 7.98.00.
+
 ## [7.97.00] - 2026-11-27
 
 Administration's erasure panels show what an erasure left for an admin to do (slice 3g-ui of

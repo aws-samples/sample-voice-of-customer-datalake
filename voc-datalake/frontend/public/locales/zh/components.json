@@ -791,6 +791,7 @@
       "participantsNotErased": "未删除的参与者：{{n, number}}",
       "exportObjects": "已删除的导出对象：{{n, number}}",
       "projectRows": "已去标识化的项目行：{{n, number}}",
+      "pinReplies": "回复已去标识化的原型图钉：{{n, number}}",
       "formTestResponses": "已删除的表单测试回复：{{n, number}}",
       "agentMemoryErased": "已从智能体记忆中删除的人员：{{n, number}}",
       "agentMemoryRefused": "智能体记忆今后不再保留的人员：{{n, number}}",

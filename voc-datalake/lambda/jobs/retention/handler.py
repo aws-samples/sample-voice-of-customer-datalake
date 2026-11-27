@@ -50,7 +50,8 @@ A run walks its PHASES in order, each paged and time-budgeted:
    rows are removed (``members.py``); then ``workspace_projects`` — an erasure by email without a source, when
    ``PROJECTS_TABLE`` is set (the deployment's job walks the deployment's own projects first, since 7.48.00, then,
    with ``WORKSPACES_TABLE``, every listed workspace's; a job that names a workspace walks its own): the address is
-   removed from each walked scope's reviewer comment threads, review link audiences and project ``META`` rows, and
+   removed from each walked scope's reviewer comment threads, review link audiences and project ``META`` rows (since
+   7.98.00 also from its prototype pins' replies, ``pins.py``), and
    the product documents that hold it are listed for review (``project_people.py``, since 7.43.00); then
    ``participants`` — the same erasures, when ``PARTICIPANTS_TABLE`` is set (since 7.72.00): the address is looked up
    in the deployment's participant guard and each listed workspace's (a workspace's own job: its own guard), and each

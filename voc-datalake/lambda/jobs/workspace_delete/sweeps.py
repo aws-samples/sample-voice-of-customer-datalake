@@ -92,6 +92,7 @@ from shared.project_keys import (
     review_link_registry_pk,
 )
 from shared.project_tables import iter_registered_project_ids
+from shared.prototype_pins import PIN_FORM_SK_PREFIX, is_pin_form_id, pin_forms_pk, pins_pk
 from shared.radar_keys import radar_owned_pk, radar_settings_key, scan_key
 from shared.radar_store import SENTIMENT_LABELS
 from shared.retention import STORE_FEEDBACK, UNKNOWN_SOURCE, item_feedback_id, item_source
@@ -721,6 +722,17 @@ def _scraper_runs(ctx: Context) -> list[str]:
     return [scraper_run_pk(ctx.scope, scraper_id) for scraper_id in sorted(ids)]
 
 
+def _pin_partitions(ctx: Context) -> list[str]:
+    """``PINS#{form}`` of every pin form the workspace's forms partition keeps (7.98.00, 3g-pin: a pin form's pins live
+    in a partition of their own, which no other row names; no route writes a workspace's before the switch, 3h), before
+    the forms partition itself goes (``feedback_forms``, after this family)."""
+    forms = (str(row.get('sk') or '').removeprefix('FORM#')
+             for row in ctx.aggregates.iter_query('pk', pin_forms_pk(workspace=ctx.scope), **KEYS_ONLY)
+             if str(row.get('sk') or '').startswith(PIN_FORM_SK_PREFIX))
+    # Only a pin form's id (the erasure's rule, jobs/retention/pins.py): a hand-made form id is no pin form.
+    return [pins_pk(form, workspace=ctx.scope) for form in sorted(set(forms)) if is_pin_form_id(form)]
+
+
 def _import_run_list(scope: WorkspaceScope) -> str:
     """The import runs' summary partition: one row per run (shared/import_runs.py)."""
     return scope.key(LIST_PK)
@@ -1229,6 +1241,8 @@ PARTITION_FAMILIES: Final[dict[str, Callable[[Context], Iterable[str]]]] = {
     'logs': _logs,
     'scraper_runs': _scraper_runs,
     'plugin_configs': lambda ctx: [plugin_config_pk(ctx.scope), plugin_config_history_pk(ctx.scope)],
+    # The prototype pins of each pin form (7.98.00, 3g-pin), found through the forms partition, so before it goes.
+    'prototype_pins': _pin_partitions,
     # The forms partition and, beside it, the forms' test responses (7.55.00's AI review: their own partition, so
     # voc-retention's delete names it alone, shared/form_test_responses.py).
     'feedback_forms': lambda ctx: [ctx.scope.key(FEEDBACK_FORM_PK), ctx.scope.key(TEST_RESPONSES_PK)],
@@ -1262,7 +1276,7 @@ SWEEPS: Final = (
     Sweep('counters', 'aggregates', _counter_pages, delete_keys(lambda ctx: ctx.aggregates),
           grants=('aggregates', 'metricTypeIndex')),
     *(_family(name) for name in ('source_runs', 'failures', 'circuits', 'logs', 'scraper_runs', 'plugin_configs',
-                                 'feedback_forms')),
+                                 'prototype_pins', 'feedback_forms')),
     owner_list_sweep('import_runs', OWNER_LISTS['import_runs']),
     _family('erasure_jobs'),
     _family('reprocess_jobs'),

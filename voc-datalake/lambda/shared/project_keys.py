@@ -51,7 +51,7 @@ __all__ = ['AGENT_RUNS_STORE', 'ASSIST_JOB_PREFIX', 'COMMENT_PARTITION_PREFIX', 
            'DEPLOYMENT_LINK_REGISTRY_PK', 'DEPLOYMENT_PROJECT_REGISTRY_PK', 'DEPLOYMENT_SERIES_REGISTRY_PK',
            'PRODUCT_CONTEXT_SK',
            'PRODUCT_DOC_SK_PREFIX', 'PROJECT_GATE_STORE', 'PROJECT_JOB_WORK_STORE',
-           'PROJECT_PREFIX', 'PROJECT_TYPE_PK', 'PROTOTYPE_BUILDER_STORE', 'REVIEWER_ROUTES_STORE',
+           'PROJECT_PREFIX', 'PROJECT_TYPE_PK', 'PROTOTYPE_BUILDER_STORE', 'PROTOTYPE_SK_PREFIX', 'REVIEWER_ROUTES_STORE',
            'REVIEW_REGISTRIES_MARKER_SK', 'REVISE_FROM_COMMENTS_STORE', 'SERIES_ID_RE', 'NotPerWorkspaceError',
            'ProjectPartition', 'comment_partition_ids', 'comment_series_item', 'comments_pk',
            'deployment_link_registry_key', 'deployment_project_item', 'deployment_series_item',
@@ -132,6 +132,8 @@ DEPLOYMENT_PROJECT_REGISTRY_PK: Final = _PROJECT_REGISTRY
 #: (api/product_context.py, which names them ``CONTEXT_SK`` and ``DOC_SK_PREFIX``; the workspace export reads them).
 PRODUCT_CONTEXT_SK: Final = 'PRODUCT_CONTEXT'
 PRODUCT_DOC_SK_PREFIX: Final = 'PRODUCT_DOC#'
+#: A prototype document's row in its project's partition (api/projects_handler.py; the erasure's pins walk, 7.98.00).
+PROTOTYPE_SK_PREFIX: Final = 'PROTOTYPE#'
 #: A series id's shape (shared/document_series.py ``series_id``: ``ser_`` + 24 hex), which a reader of a project's
 #: ``COMMENT_SERIES#`` rows checks before it names a comment partition (the hard delete, the workspace export).
 SERIES_ID_RE: Final = re.compile(r'ser_[0-9a-f]{24}')

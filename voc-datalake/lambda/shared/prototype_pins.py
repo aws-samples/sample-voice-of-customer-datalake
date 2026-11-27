@@ -34,7 +34,7 @@ from decimal import Decimal
 from functools import lru_cache
 from itertools import islice
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from boto3.dynamodb.conditions import Key
 from botocore.exceptions import ClientError
@@ -43,8 +43,13 @@ from shared.aws import is_conditional_check_failure
 from shared.dynamo_paging import iter_query
 from shared.dynamo_values import plain
 from shared.exceptions import ValidationError
+from shared.onboarding import FEEDBACK_FORM_PK
 from shared.prompt_safety import data_block, injection_findings
+from shared.scoped_keys import scoped_pk
 from shared.timestamps import now_iso
+
+if TYPE_CHECKING:
+    from shared.ws_repo import WorkspaceScope
 
 FORM_TYPE_PROTOTYPE_PIN = 'prototype_pin'
 
@@ -123,8 +128,20 @@ def new_pin_id(now: datetime | None = None) -> str:
     return f"pin_{moment.strftime('%Y%m%d%H%M%S%f')}{secrets.token_hex(3)}"
 
 
-def pins_pk(form_id: str) -> str:
-    return f'PINS#{form_id}'
+def pins_pk(form_id: str, *, workspace: WorkspaceScope | None = None) -> str:
+    """The pins' partition of a pin form: ``PINS#{form_id}``, a workspace's ``WS#{ws}#PINS#{form_id}`` (no route writes
+    one before the switch, 3h; the retention worker's erasure reads it, jobs/retention/pins.py)."""
+    return scoped_pk(workspace, f'PINS#{form_id}')
+
+
+#: The sort-key start of a pin form's row in the forms partition (onboarding.py ``FEEDBACK_FORM_PK``, ``pin_form_item``).
+PIN_FORM_SK_PREFIX = 'FORM#pf_'
+
+
+def pin_forms_pk(*, workspace: WorkspaceScope | None = None) -> str:
+    """The scope's forms partition (``FEEDBACK_FORM``, a workspace's ``WS#{ws}#FEEDBACK_FORM``), which keeps a pin form
+    after its project or prototype is deleted (nothing deletes one but the forms page's delete)."""
+    return scoped_pk(workspace, FEEDBACK_FORM_PK)
 
 
 def pin_key(form_id: str, pin_id: str) -> dict[str, str]:
@@ -144,7 +161,7 @@ def pin_form_item(project_id: str, document_id: str, title: str, now: str) -> di
     """
     form_id = pin_form_id(document_id)
     return {
-        'pk': 'FEEDBACK_FORM', 'sk': f'FORM#{form_id}', 'form_id': form_id,
+        'pk': FEEDBACK_FORM_PK, 'sk': f'FORM#{form_id}', 'form_id': form_id,
         'form_type': FORM_TYPE_PROTOTYPE_PIN,
         'name': f'Pins: {title}'[:120],
         'enabled': True,
