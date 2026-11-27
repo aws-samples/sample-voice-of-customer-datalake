@@ -1022,8 +1022,10 @@ Each question's `headline` is its primary-language text with any placeholder sho
 **Link checks** (`link_health`): whether the links that bring respondents fill the form's hidden fields.
 `{responses, hidden: {id: {filled, missing}}, by_channel: {link | iframe | script | unknown: {responses, hidden}},
 warnings: [{id, kind, filled, total}]}` over the view's responses (its filters, and test responses only with
-`include_test=true`), per declared hidden field. A warning is `never_filled` once at least 5 responses came in and none
-had the field, and `mostly_missing` once at least 10 came in and 80 % or more lacked it ("0 of 26 responses had
+`include_test=true`), per declared hidden field. A response counts towards a field only when the revision it answered
+declared it (its `FORMREV#` snapshot), so a field added later is never "missing" from the responses sent before it;
+`total` is those responses. A warning is `never_filled` once at least 5 of them came in and none had the field, and
+`mostly_missing` once at least 10 came in and 80 % or more lacked it ("0 of 26 responses had
 `customer`: check your link"). Results and the Share tab show them with the link's `hf_<id>=` parameter; the Share
 tab's link builder also warns about a hidden field the form recalls that the copied link leaves empty. A hidden value
 is never part of the funnel's beacons.
