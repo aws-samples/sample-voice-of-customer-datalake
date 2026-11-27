@@ -9,7 +9,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { FormV2, QuestionType } from '../model/formsV2'
-import { LIMITS, isChoice } from '../model/formsV2'
+import { LIMITS, isChoice, isMatrix } from '../model/formsV2'
 import { newEnding, newQuestion } from '../model/defaults'
 import { newEndingId, newQuestionId } from '../model/codes'
 import { textIn } from '../model/i18nText'
@@ -21,6 +21,7 @@ import { useDraft } from '../builder/formDraftContext'
 import { useBuilderUi } from '../builder/builderUi'
 import { useAnnounce } from './statusLineContext'
 import { requestFocus } from './focusRequest'
+import { matrixFreshKey, withDefaultScale } from './matrixOps'
 
 /** A delete that asks first: what goes, and why the dialog says what it says. */
 export interface PendingDelete {
@@ -61,9 +62,12 @@ export function useListActions() {
   const addQuestion = (type: QuestionType, at: number = form.questions.length) => {
     if (form.questions.length >= LIMITS.questions) return
     const id = newQuestionId(type, new Set([...questionIds(form), ...draft.retiredIds]))
-    const question = newQuestion(type, id)
+    const created = newQuestion(type, id)
+    // (a new matrix gets a scale in the form's language; its rows are the author's)
+    const question = isMatrix(created) ? withDefaultScale(created, form.language) : created
     draft.update((current) => insertQuestion(current, question, at))
     if (isChoice(question)) draft.setFreshCodes((keys) => new Set([...keys, ...question.options.map((o) => `${id}:${o.code}`)]))
+    if (isMatrix(question)) draft.setFreshCodes((keys) => new Set([...keys, ...question.rows.map((row) => matrixFreshKey(id, 'rows', row.code))]))
     requestFocus(id)
     go('questions', [id])
   }

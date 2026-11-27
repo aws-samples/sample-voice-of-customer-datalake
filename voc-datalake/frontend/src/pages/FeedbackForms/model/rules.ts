@@ -23,7 +23,7 @@ const VALUE_OPS: Readonly<Record<Question['type'], readonly RuleOp[]>> = {
   multi_select: ['includes_any', 'includes_all'],
   rating: SCALE_OPS, nps: SCALE_OPS, csat: SCALE_OPS, ces: SCALE_OPS,
   // (a consent's accepted / not accepted are its `submitted` / `skipped`; a required one is only ever accepted)
-  consent: [], open_text: [], contact_info: [], statement: [],
+  consent: [], open_text: [], contact_info: [], statement: [], matrix: [],
 }
 
 /** The operators a question's type offers (UX §5.1), in the order the Logic section lists them. */

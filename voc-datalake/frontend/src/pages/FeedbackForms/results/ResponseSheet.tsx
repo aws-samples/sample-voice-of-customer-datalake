@@ -1,7 +1,8 @@
 /**
  * @fileoverview One response in a dialog (UX §10.4): every answer in form order with its question
  * (a skipped question and one the respondent's path never showed are listed as such), the hidden values, the
- * language, the ending, the time and the form revision it was answered on, and Open in Feedback. Previous and Next
+ * language, the ending, the time and the form revision it was answered on, and Open in Feedback. A matrix answer is
+ * a line per row ("Row: Column"); a headline that recalls a value shows its placeholder as `[id]`. Previous and Next
  * walk the list it was opened from. The Test tab opens its test responses in the same sheet.
  *
  * @module pages/FeedbackForms/results/ResponseSheet
@@ -10,11 +11,25 @@ import { useTranslation } from 'react-i18next'
 import { ChevronLeft, ChevronRight, ExternalLink, FlaskConical, MessageSquareText } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import FormDialog from '../ui/FormDialog'
-import type { FormResponse } from '../../../api/feedbackFormsV2Results'
+import type { AnswerValue, FormResponse } from '../../../api/feedbackFormsV2Results'
 import { formatDateTime } from '../../../utils/dateUtils'
-import type { FormV2 } from '../model/formsV2'
+import type { FormV2, Question } from '../model/formsV2'
 import { textIn } from '../model/i18nText'
-import { answerText, endingTitle, hiddenValues } from './answers'
+import { shownAsIds } from '../model/recall'
+import { answerText, endingTitle, hiddenValues, matrixLines } from './answers'
+
+/** One answer: a matrix's rows each on a line, any other answer as one text. */
+function AnswerValueText({ form, question, value }: Readonly<{ form: FormV2; question: Question; value: AnswerValue }>) {
+  const { t } = useTranslation('feedbackForms')
+  if (typeof value === 'object' && 'rows' in value) {
+    return (
+      <ul className="space-y-0.5 text-sm text-text-strong">
+        {matrixLines(form, question, value.rows).map((line) => <li key={line} className="break-words">{line}</li>)}
+      </ul>
+    )
+  }
+  return <p className="text-sm text-text-strong break-words">{answerText(t, form, question, value)}</p>
+}
 
 function AnswerList({ form, response }: Readonly<{ form: FormV2; response: FormResponse }>) {
   const { t } = useTranslation('feedbackForms')
@@ -24,10 +39,10 @@ function AnswerList({ form, response }: Readonly<{ form: FormV2; response: FormR
         const value = response.answers[question.id]
         return (
           <li key={question.id} className="space-y-0.5">
-            <p className="text-[12px] text-muted">{t('results.sheet.question', { number: index + 1, headline: textIn(question.headline, form.language) })}</p>
+            <p className="text-[12px] text-muted">{t('results.sheet.question', { number: index + 1, headline: shownAsIds(textIn(question.headline, form.language)) })}</p>
             {value === undefined
               ? <p className="text-sm italic text-muted">{t('results.sheet.notAnswered')}</p>
-              : <p className="text-sm text-text-strong break-words">{answerText(t, form, question, value)}</p>}
+              : <AnswerValueText form={form} question={question} value={value} />}
           </li>
         )
       })}

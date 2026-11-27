@@ -53,7 +53,11 @@
       "other": "その他"
     },
     "ending": "終了画面",
-    "welcome": "ウェルカムカード"
+    "welcome": "ウェルカムカード",
+    "matrix": {
+      "name": "マトリックス",
+      "hint": "複数の項目を同じ尺度で評価"
+    }
   },
   "problems": {
     "count_one": "{{count, number}}件の問題",
@@ -132,7 +136,22 @@
     "skippedOnRequired": "この質問は必須のためスキップされることはなく、このルールは実行されません。",
     "ruleNeverRuns": "このルールは実行されません。このルールが一致する回答には、すべてルール{{number}}が先に一致します。",
     "whereAnyway": "このルールには効果がありません。ここに来た回答者は、ルールがなくても質問{{number}}に進みます。",
-    "whereAnywayEnding": "このルールには効果がありません。ここに来た回答者には、ルールがなくても終了画面「{{title}}」が表示されます。"
+    "whereAnywayEnding": "このルールには効果がありません。ここに来た回答者には、ルールがなくても終了画面「{{title}}」が表示されます。",
+    "matrixNoRows": "行を 1 つ以上追加してください。",
+    "matrixTooManyRows": "マトリックスの行は最大 {{max, number}} 行です。",
+    "matrixFewColumns": "マトリックスには少なくとも {{min, number}} 列が必要です。",
+    "matrixTooManyColumns": "マトリックスの列は最大 {{max, number}} 列です。",
+    "matrixRowEmpty": "行 {{number}} にテキストがありません。",
+    "matrixColumnEmpty": "列 {{number}} にテキストがありません。",
+    "matrixCodeInvalid": "コードには小文字、数字、_ を 40 文字以内で使います。",
+    "matrixCodeTwice": "2 つの行または列のコードが {{code}} で重複しています。",
+    "matrixCodeReserved": "{{code}} は予約名です。別の名前を選んでください。",
+    "matrixScoreRange": "列 {{number}} のスコアは -{{max, number}}〜{{max, number}} の整数にしてください。",
+    "matrixMinRows": "回答する行の数は 1 から行数（{{count, number}}）までにしてください。",
+    "recallUnknown": "{{placeholder}} はこのフォームの非表示フィールドにも質問にも該当しません（{{language}}）。",
+    "recallNotBefore": "{{placeholder}} は後に来る質問を指しています。前の質問の回答だけを表示できます（{{language}}）。",
+    "recallType": "{{placeholder}} は回答を表示しない質問を指しています。表示できるのはスコアか単一選択だけです（{{language}}）。",
+    "recallNotHere": "{{placeholder}} は書かれたまま表示されます。値が入るのはタイトル、質問、説明、終了画面だけです。公開するには削除してください（{{language}}）。"
   },
   "logic": {
     "ops": {
@@ -237,7 +256,9 @@
       "update": "公開中のフォームを更新",
       "failed": "保存できませんでした：{{reason}}。",
       "failedGeneric": "保存できませんでした。接続を確認して、もう一度お試しください。",
-      "retry": "再試行"
+      "retry": "再試行",
+      "placeholderRefused": "保存できません: 公開中のフォームでは {…} のプレースホルダーを書かれたまま表示できません。「問題」に挙がっているテキストを直すか、オフで保存してください。",
+      "recallRefused": "保存できません: その位置では表示できない値を呼び出しているテキストがあります。「問題」で直してください。"
     },
     "published": "公開しました。今後、回答者にはこのバージョンが表示されます。",
     "firstSave": "保存しました。このフォームはオフです。公開するまで、リンクには「フィードバックフォームは利用できません。」と表示されます。",
@@ -1229,7 +1250,11 @@
         "description": "説明",
         "button": "ボタン",
         "enabled": "表示",
-        "logic": "ロジック"
+        "logic": "ロジック",
+        "rows": "行",
+        "columns": "列",
+        "shuffle_rows": "行をシャッフル",
+        "min_rows": "回答する行の最小数"
       },
       "values": {
         "yes": "はい",
@@ -1302,7 +1327,11 @@
         "smiley": "顔 {{range}}"
       },
       "textOnly": "テキストのみ",
-      "linkButton": "リンクボタン付き"
+      "linkButton": "リンクボタン付き",
+      "rows_one": "{{count, number}} 行",
+      "rows_other": "{{count, number}} 行",
+      "columns_one": "{{count, number}} 列",
+      "columns_other": "{{count, number}} 列"
     }
   },
   "question": {
@@ -1722,7 +1751,9 @@
       "welcomeButton": "ボタンのラベル",
       "endingTitle": "タイトル",
       "endingDescription": "説明",
-      "endingButton": "ボタンのラベル"
+      "endingButton": "ボタンのラベル",
+      "matrixRow": "行 {{number}}",
+      "matrixColumn": "列 {{number}}"
     },
     "confirm": {
       "text": "このフォームは、フォームに言語を設定できるようになる前に作成されました。",
@@ -1804,14 +1835,20 @@
     "saveFirstTitle": "まだリンクはありません",
     "saveFirst": "リンクを取得するには、フォームを保存してください。",
     "showProblems": "問題を表示",
-    "save": "保存"
+    "save": "保存",
+    "toHiddenFields": "非表示フィールドを開く",
+    "values": {
+      "title": "このリンクの値",
+      "hint": "任意: 各値はリンク、iframe、スクリプト埋め込みに入ります。",
+      "warnings": "このリンクで空になる非表示フィールド",
+      "leavesEmpty": "このリンクでは {{id}} が空になります。回答者にはその値なしのテキストが表示されます。"
+    }
   },
   "results": {
     "summary": "概要",
     "responsesView": "回答",
     "view": "結果の表示",
     "loading": "結果を読み込み中…",
-    "csv": "CSVをエクスポート",
     "csvFailed": "回答をエクスポートできませんでした。",
     "includeTest": "テスト回答を含める",
     "including_one": "テスト回答{{formatted}}件を含みます。これらの数値は実際の結果ではありません。",
@@ -1949,7 +1986,32 @@
       "next": "次へ"
     },
     "contactLeft_one": "{{count, number}}人が連絡先を入力しました",
-    "contactLeft_other": "{{count, number}}人が連絡先を入力しました"
+    "contactLeft_other": "{{count, number}}人が連絡先を入力しました",
+    "download": "ダウンロード",
+    "downloadOptions": "その他のダウンロードオプション",
+    "downloadDetailed": "詳細 CSV（スクリプト用）",
+    "downloadWithIds": "ID の行付き CSV",
+    "matrix": {
+      "rowsLabel": "行ごとの回答",
+      "columnsLabel": "{{row}} の回答",
+      "rated_one": "{{formatted}} 人が評価",
+      "rated_other": "{{formatted}} 人が評価",
+      "average": "平均 {{average}}（スコア {{low}}〜{{high}}）",
+      "removedLabel": "削除された行と列への回答",
+      "removedRow_one": "行 {{code}}（削除済み）: {{formatted}} 件の回答",
+      "removedRow_other": "行 {{code}}（削除済み）: {{formatted}} 件の回答",
+      "removedColumn_one": "列 {{code}}（削除済み）: {{formatted}} 件の回答",
+      "removedColumn_other": "列 {{code}}（削除済み）: {{formatted}} 件の回答"
+    },
+    "linkHealth": {
+      "title": "リンクを確認してください",
+      "never_filled": "{{total, number}} 件中 {{filled, number}} 件の回答に {{id}} がありました。リンクを確認してください。",
+      "mostly_missing": "{{total, number}} 件中 {{filled, number}} 件の回答にしか {{id}} がありませんでした。リンクを確認してください。",
+      "hint": "リンクでは {{param}} で値を渡します。",
+      "from": "値がない回答: {{channels}}。",
+      "channel": "{{channel}} {{missing}}",
+      "unknown": "不明"
+    }
   },
   "theme": {
     "presets": {
@@ -2087,5 +2149,62 @@
       "failed": "フォームを削除できませんでした。しばらくしてから、もう一度お試しください。",
       "unnamed": "このフォーム"
     }
+  },
+  "matrix": {
+    "rows": "行",
+    "columns": "列（尺度）",
+    "rowN": "行 {{number}}",
+    "columnN": "列 {{number}}",
+    "codeOf": {
+      "row": "行 {{number}} のコード",
+      "column": "列 {{number}} のコード"
+    },
+    "codeLocked": "回答はこのコードで保存されるため、回答があると変更できません。代わりにラベルを変更してください。",
+    "score": "スコア",
+    "scoreOf": "列 {{number}} のスコア",
+    "scoreHint": "スコアは -100〜100 の任意の整数です。結果では行ごとに平均されます。",
+    "menu": {
+      "row": "行 {{number}} のその他の操作",
+      "column": "列 {{number}} のその他の操作"
+    },
+    "last": {
+      "rows": "マトリックスには少なくとも 1 行が必要です。",
+      "columns": "マトリックスには少なくとも 2 列が必要です。"
+    },
+    "add": {
+      "rows": "行を追加",
+      "columns": "列を追加"
+    },
+    "shuffleRows": "行をシャッフル",
+    "shuffleRowsHint": "回答者ごとに行の順序が変わります。",
+    "display": {
+      "auto": "自動",
+      "grid": "グリッド",
+      "stacked": "縦並び"
+    },
+    "displayHint": {
+      "auto": "広い画面ではグリッド（最大 7 列）、スマートフォンでは 1 行ずつ表示します。",
+      "grid": "常に行と列のグリッドで表示します。",
+      "stacked": "常に 1 行ずつ、その下に選択肢を表示します。"
+    },
+    "minRows": "回答する行の最小数",
+    "minRowsHint": "いずれかの行に回答した場合に適用されます。空欄: 制限なし。",
+    "requiredHint": "すべての行に回答が必要です。",
+    "scale": {
+      "poor": "悪い",
+      "fair": "普通",
+      "good": "良い",
+      "excellent": "とても良い"
+    }
+  },
+  "recall": {
+    "insert": "値を挿入",
+    "hiddenItem": "非表示フィールド · {{name}}",
+    "questionItem": "Q{{number}} · {{headline}}",
+    "nothing": "ここに挿入できる値はありません",
+    "nothingHint": "非表示フィールドを追加するか、このテキストより前にスコアまたは単一選択の質問を置いてください。",
+    "preview": "回答者に表示: {{text}}",
+    "previewMissing": "値がない場合: {{text}}",
+    "previewEmpty": "（なし）"
   }
 }

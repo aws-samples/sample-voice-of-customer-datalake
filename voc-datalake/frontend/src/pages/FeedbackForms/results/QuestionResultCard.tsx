@@ -2,7 +2,8 @@
  * @fileoverview One question's card on Results › Summary (UX §10.2): its number, type and headline, the reach line
  * every card carries ("Answered 140 · Skipped 12 · Not shown 460 (logic)": not shown means the respondent's path
  * jumped past it, so a follow-up's small count reads right), a provenance badge when its options changed while live,
- * and the type's own figures.
+ * and the type's own figures (a matrix's: one chart per row). A headline that recalls a value shows its
+ * placeholder as `[id]`, as the server's results and CSV do.
  *
  * @module pages/FeedbackForms/results/QuestionResultCard
  */
@@ -15,8 +16,10 @@ import { formatDate } from '../../../utils/dateUtils'
 import type { FormV2, Question } from '../model/formsV2'
 import { isChoice, isScale } from '../model/formsV2'
 import { textIn } from '../model/i18nText'
+import { shownAsIds } from '../model/recall'
 import TypeChip from '../ui/TypeChip'
 import ChoiceResult from './ChoiceResult'
+import MatrixResult from './MatrixResult'
 import ScaleResult from './ScaleResult'
 import { ConsentResult, ContactResult, OpenTextResult } from './OpenTextResult'
 
@@ -43,6 +46,7 @@ function Figures({ form, question, aggregate, removed, funnel, onShowAll }: Read
   if (question.type === 'open_text') return <OpenTextResult aggregate={aggregate} onShowAll={onShowAll} />
   if (question.type === 'consent') return <ConsentResult aggregate={aggregate} />
   if (question.type === 'contact_info') return <ContactResult aggregate={aggregate} />
+  if (question.type === 'matrix') return <MatrixResult question={question} aggregate={aggregate} language={form.language} />
   return <StatementResult question={question} funnel={funnel} />
 }
 
@@ -62,7 +66,7 @@ export default function QuestionResultCard({ form, question, number, aggregate, 
     <section className="card space-y-3" aria-labelledby={`result-${question.id}`}>
       <div className="flex flex-wrap items-start justify-between gap-2">
         <h3 id={`result-${question.id}`} className="min-w-0 flex-1 text-sm font-semibold tracking-tight text-text-strong">
-          {number} · {textIn(question.headline, form.language)}
+          {number} · {shownAsIds(textIn(question.headline, form.language))}
         </h3>
         <TypeChip question={question} />
       </div>

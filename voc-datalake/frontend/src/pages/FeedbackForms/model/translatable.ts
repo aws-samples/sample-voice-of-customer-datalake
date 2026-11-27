@@ -8,14 +8,14 @@
  *
  * @module pages/FeedbackForms/model/translatable
  */
-import type { ChoiceQuestion, Ending, FormLanguage, FormV2, I18nText, Question, Welcome } from './formsV2'
-import { isChoice, isScale } from './formsV2'
+import type { ChoiceQuestion, Ending, FormLanguage, FormV2, I18nText, MatrixQuestion, Question, Welcome } from './formsV2'
+import { isChoice, isMatrix, isScale } from './formsV2'
 import { hasText, withText } from './i18nText'
 
 /** The field a text is, as the translation table names it (`languages.fields.<field>`). */
 type TextField =
   | 'headline' | 'subheader' | 'placeholder' | 'buttonLabel' | 'option' | 'otherLabel' | 'otherPlaceholder'
-  | 'noneLabel' | 'lowerLabel' | 'upperLabel' | 'consentLabel' | 'ctaLabel'
+  | 'noneLabel' | 'lowerLabel' | 'upperLabel' | 'consentLabel' | 'ctaLabel' | 'matrixRow' | 'matrixColumn'
   | 'welcomeTitle' | 'welcomeDescription' | 'welcomeButton' | 'endingTitle' | 'endingDescription' | 'endingButton'
 
 export interface TranslatableText {
@@ -66,22 +66,34 @@ function choiceTexts(question: ChoiceQuestion): TranslatableText[] {
   return [...options, ...other, ...none]
 }
 
+/** A matrix's row and column labels (each required), numbered from 1 within its list. */
+function matrixTexts(question: MatrixQuestion): TranslatableText[] {
+  const list = (key: 'rows' | 'columns', field: TextField) => question[key].map((item, index) => questionText(question, field, item.label, true,
+    (q, language, value) => (isMatrix(q)
+      ? { ...q, [key]: q[key].map((other) => (other.code === item.code ? { ...other, label: withText(other.label, language, value) } : other)) }
+      : q), index + 1))
+  return [...list('rows', 'matrixRow'), ...list('columns', 'matrixColumn')]
+}
+
 function ownTexts(question: Question): TranslatableText[] {
-  switch (question.type) {
-    case 'single_select': case 'multi_select': return choiceTexts(question)
-    case 'open_text': return [questionText(question, 'placeholder', question.placeholder, false,
-      (q, language, value) => (q.type === 'open_text' ? { ...q, placeholder: withText(q.placeholder, language, value) } : q))]
-    case 'rating': case 'nps': case 'csat': case 'ces': return [
+  if (isChoice(question)) return choiceTexts(question)
+  if (isScale(question)) {
+    return [
       questionText(question, 'lowerLabel', question.lower_label, false,
         (q, language, value) => (isScale(q) ? { ...q, lower_label: withText(q.lower_label, language, value) } : q)),
       questionText(question, 'upperLabel', question.upper_label, false,
         (q, language, value) => (isScale(q) ? { ...q, upper_label: withText(q.upper_label, language, value) } : q)),
     ]
+  }
+  switch (question.type) {
+    case 'open_text': return [questionText(question, 'placeholder', question.placeholder, false,
+      (q, language, value) => (q.type === 'open_text' ? { ...q, placeholder: withText(q.placeholder, language, value) } : q))]
     case 'consent': return [questionText(question, 'consentLabel', question.label, true,
       (q, language, value) => (q.type === 'consent' ? { ...q, label: withText(q.label, language, value) } : q))]
     case 'statement': return question.cta === undefined ? [] : [questionText(question, 'ctaLabel', question.cta.label, false,
       (q, language, value) => (q.type === 'statement' && q.cta !== undefined ? { ...q, cta: { ...q.cta, label: withText(q.cta.label, language, value) } } : q))]
     case 'contact_info': return []
+    case 'matrix': return matrixTexts(question)
   }
 }
 

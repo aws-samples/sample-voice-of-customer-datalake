@@ -8,12 +8,14 @@
  * @module pages/FeedbackForms/model/formsV2Schema
  */
 import { z } from 'zod'
+import { eachOf } from '../../../api/lenientFields'
 import type {
-  ChoiceQuestion, Ending, FormLanguage, FormV2, HiddenField, I18nText, OpenTextQuestion, Question, Rule, StatementQuestion,
-  Welcome,
+  ChoiceQuestion, Ending, FormLanguage, FormV2, HiddenField, I18nText, MatrixQuestion, OpenTextQuestion, Question, Rule,
+  StatementQuestion, Welcome,
 } from './formsV2'
 import {
-  DISPLAYS, FORM_LANGUAGES, INPUT_TYPES, RATING_RANGES, RATING_SCALES, RULE_OPS, SHUFFLES, TEST_RECORDS, isFormLanguage,
+  DISPLAYS, FORM_LANGUAGES, INPUT_TYPES, MATRIX_DISPLAYS, RATING_RANGES, RATING_SCALES, RULE_OPS, SHUFFLES,
+  TEST_RECORDS, isFormLanguage,
 } from './formsV2'
 import { KEPT_FIELDS } from './keptFields'
 import { withCurrentRules } from './rules'
@@ -30,11 +32,7 @@ const rule = z.object({
   then: z.object({ jump_to: z.string().min(1) }),
 })
 /** Each rule on its own: one malformed rule is dropped, not the question's whole logic. */
-const logic = z.array(z.unknown()).catch([]).transform((items): Rule[] =>
-  items.flatMap((item) => {
-    const parsed = rule.safeParse(item)
-    return parsed.success ? [parsed.data] : []
-  }))
+const logic = eachOf(rule).transform((items): Rule[] => items)
 
 const base = {
   id: z.string().min(1),
@@ -47,10 +45,7 @@ const base = {
 
 const category = z.object({ category: z.string().min(1), subcategory: z.string().optional().catch(undefined) })
 const option = z.object({ code: z.string().min(1), label: text, category: category.optional().catch(undefined) })
-const options = z.array(z.unknown()).catch([]).transform((items) => items.flatMap((item) => {
-  const parsed = option.safeParse(item)
-  return parsed.success ? [parsed.data] : []
-}))
+const options = eachOf(option)
 const count = z.number().int().nonnegative().optional().catch(undefined)
 
 const choice = z.object({
@@ -96,7 +91,17 @@ const contact = z.object({
     .catch({ name: HIDDEN_FIELD, email: HIDDEN_FIELD, phone: HIDDEN_FIELD, company: HIDDEN_FIELD }),
 })
 
-const question = z.discriminatedUnion('type', [choice, openText, rating, score, statement, consent, contact])
+const matrix = z.object({
+  ...base,
+  type: z.literal('matrix'),
+  rows: eachOf(z.object({ code: z.string().min(1), label: text })),
+  columns: eachOf(z.object({ code: z.string().min(1), label: text, score: z.number().int().optional().catch(undefined) })),
+  shuffle_rows: bool(false),
+  display: z.enum(MATRIX_DISPLAYS).catch('auto'),
+  min_rows: z.number().int().positive().optional().catch(undefined),
+})
+
+const question = z.discriminatedUnion('type', [choice, openText, rating, score, statement, consent, contact, matrix])
 
 /** Each question the editor knows; a consent's rule written earlier (`equals true / false`, which the server
  * refuses) read as the `submitted` / `skipped` it meant, so a draft made then (a new form's, kept with its history
@@ -114,15 +119,9 @@ const ending = z.object({
   description: optionalText,
   button: z.object({ label: text, url: z.string() }).optional().catch(undefined),
 })
-const endings = z.array(z.unknown()).catch([]).transform((items) => items.flatMap((item) => {
-  const parsed = ending.safeParse(item)
-  return parsed.success ? [parsed.data] : []
-}))
+const endings = eachOf(ending)
 const hiddenField = z.object({ id: z.string().min(1), label: z.string().optional().catch(undefined) })
-const hiddenFields = z.array(z.unknown()).catch([]).transform((items) => items.flatMap((item) => {
-  const parsed = hiddenField.safeParse(item)
-  return parsed.success ? [parsed.data] : []
-}))
+const hiddenFields = eachOf(hiddenField)
 
 const language = z.enum(FORM_LANGUAGES)
 const languages = z.array(z.unknown()).catch([]).transform((items) => items.filter(isFormLanguage))
@@ -181,6 +180,15 @@ const wireOpenText = (q: OpenTextQuestion) => ({
 
 const wireStatement = (q: StatementQuestion) => ({ cta: q.cta === undefined ? undefined : { label: requiredText(q.cta.label), url: q.cta.url } })
 
+/** A required matrix asks for every row: `min_rows` only goes with an optional one (the server refuses both). */
+const wireMatrix = (q: MatrixQuestion) => ({
+  rows: q.rows.map((row) => ({ code: row.code, label: requiredText(row.label) })),
+  columns: q.columns.map((column) => ({ code: column.code, label: requiredText(column.label), score: column.score })),
+  shuffle_rows: q.shuffle_rows,
+  display: q.display,
+  min_rows: q.required ? undefined : q.min_rows,
+})
+
 function wireOwnFields(q: Question): Record<string, unknown> {
   switch (q.type) {
     case 'single_select': case 'multi_select': return wireChoice(q)
@@ -190,6 +198,7 @@ function wireOwnFields(q: Question): Record<string, unknown> {
     case 'statement': return wireStatement(q)
     case 'consent': return { label: requiredText(q.label) }
     case 'contact_info': return { fields: q.fields }
+    case 'matrix': return wireMatrix(q)
   }
 }
 

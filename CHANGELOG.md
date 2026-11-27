@@ -17,6 +17,79 @@ the platform package version.
 
 ## [Unreleased]
 
+## [7.06.00] - 2026-11-27
+
+**Forms data quality**: a matrix question that rates several rows on one scale, hidden fields and earlier answers
+recalled into a form's texts (`{{id}}`, `{{id|fallback}}`), link checks that say when a link leaves a hidden field
+empty, a publish guard for a placeholder respondents would see as written, and a CSV that opens in Excel with its accents and one header row
+([feedback-forms.md](docs/feedback-forms.md#matrix)). No new route or resource: the existing forms routes carry it.
+Ported from the `voc-multiplayer` branch's 7.61.00 onto main's single-tenant API, without workspaces, as #568
+was.
+
+### Added
+
+- **The matrix question** (`type: matrix`): 1 to 20 rows rated on 2 to 10 columns, one choice per row, each column
+  with an optional whole-number score (-100 to 100) for the rows' averages; `shuffle_rows`, `display` (`auto`: a
+  grid from 600 px wide with at most 7 columns, else stacked rows; `grid`; `stacked`), `required` (every row) or
+  `min_rows` on an optional matrix, and logic on `submitted` / `skipped`. Its answer is `{rows: {row: column}}` (a
+  column that is a list or an object is a `400` `answer_invalid` on the public submit), its
+  row and column codes lock like option codes once the form is answered (`removes.rows`, `removes.columns`, and a
+  `409` `answers_locked` naming them), and a reserved name (`__proto__`, `constructor`, `prototype`) is never a code
+  ([Matrix](docs/feedback-forms.md#matrix)).
+  - The widget draws each row as its own radio group, labelled by the row, each radio named "Row: Column", the arrow
+    keys moving within a row; a grid on a wide form, stacked rows on a phone (no sideways scroll at 375 px), drawn in
+    its shadow root like every other control, with "Answer every row" / "Answer at least N rows" in nine languages.
+  - Results count each row per column with its average score (`rows`, `scored`, and `removed_rows` /
+    `removed_columns` for codes the revision no longer has); the item's text has one `Headline — Row: Column` line
+    per answered row.
+  - The builder edits it (rows and columns with their codes and scores, a default four-point scale in the form's
+    language, shuffle, display, every row or at least N), its Problems list checks it as the server does, and the AI
+    draft knows it (its codes made like option codes).
+- **Recall** in the welcome, headlines, subheaders (statements included) and endings: `{{id}}` shows a declared hidden
+  field's value or an earlier score or single choice on the respondent's path, `{{id|fallback}}` a fallback when
+  there is none, and a missing value leaves the text tidy ("How was {{event}}?" reads "How was?"; gaps side by side
+  or split only by a separator are one: "Thanks {{name}}, {{company}}!" reads "Thanks!"; the iframe page's title is
+  "Feedback Form" until the widget sets it). Never an open text,
+  a contact, a multiple choice, a consent or a matrix answer, never in an option label, a button or an address, and
+  always as text. One grammar in the server, the builder and the widget, pinned by `schemas/form-recall-cases.json`
+  (the tidy rules are the widget's alone, and the builder's preview is the widget's own;
+  [Recall](docs/feedback-forms.md#recall)). The builder's "Insert a value" menu lists what a text may recall and
+  previews it with the value; the AI draft writes and re-points placeholders.
+- **Link checks** (`link_health` in `GET /feedback-forms/{id}/results`): per hidden field how many of the view's
+  responses carried it, overall and per channel (link, iframe, script; a response counts towards a field only when
+  the revision it answered declared it), with a warning when it was never filled
+  after 5 responses or missing from 80 % of at least 10 ("0 of 26 responses had `customer`: check your link"), shown
+  on Results and on the Share tab with the `hf_<id>=` parameter and the channels it is missing from. The Share tab's
+  link builder now takes a value for each hidden field (into the link, the iframe snippet and the script embed's
+  `hidden`) and warns about a recalled hidden field the copied link leaves empty.
+- **A Download button on Results** (its menu: the detailed CSV, or one with a row of ids), and the CSV's **familiar**
+  layout (`layout=familiar`, the new default, which the web app's Download asks for): a UTF-8
+  BOM, one header row (`Submission ID`, `Submitted On` in ISO 8601 UTC, `Locale`, `Tags`, the hidden fields, one
+  column per question by its headline, a matrix one per row, a contact question one per field), choices joined with
+  `;` and `Other: …` in the form's language, `ids=true` for a second row of ids, and the file named
+  `<form-name>-responses-<yyyy-mm-dd>.csv`. Every cell, headers included, keeps the formula guard.
+
+### Changed
+
+- **A live form never shows a placeholder as written**: a `POST` or `PUT` that leaves a form live answers `409`
+  `unresolved_placeholder` (`texts: [{where, placeholder}]`) while any text holds a `{{…}}` recall cannot fill there
+  (a placeholder that names no hidden field, a later question or an answer never recalled; a welcome, an Other or a
+  None row that is off is never shown, so it blocks nothing), the one rule: a draft saves with it, and the builder's
+  recall problems block only Publish and Update live form. Turning a form Off always works; the builder lists the same
+  problems, and Publish waits for them.
+- **Results and exports show a headline's placeholders as `[id]`**, never a respondent's value: each question's
+  `headline` in Results, the CSV's headers, and the text the processor reads.
+- **`format=csv` answers the familiar layout by default**; 7.04.00's file is `layout=detailed`, unchanged (a matrix
+  answer there is `Row: Column` pairs).
+
+### Upgrade notes
+
+- **Scripts that read the responses CSV**: `GET …/responses?format=csv` now answers the familiar layout (a BOM and
+  other columns). A script that reads 7.04.00's layout passes `layout=detailed` to keep its file exactly as before.
+- **A live form saved before 7.06.00 whose text happens to hold `{{…}}`** keeps serving (the widget now shows an
+  unknown placeholder as nothing, or its fallback), but cannot be saved live or re-enabled until the text is fixed.
+  Turning it Off always works.
+- No new AWS resource, route, permission or flag; the API's resource count is unchanged.
 ## [7.05.01] - 2026-11-27
 
 Python dependency updates from Dependabot (#571, #565, #564), landed together with their release bump.

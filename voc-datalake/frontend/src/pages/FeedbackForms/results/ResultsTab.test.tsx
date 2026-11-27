@@ -1,13 +1,14 @@
 /**
  * Results › Summary (UX §10): a card per question with its figures, the drop-off (a funnel with the beacon, Reach
- * without), test responses left out unless asked for (and then said loudly), and CSV under the filters.
+ * without), test responses left out unless asked for (and then said loudly), the link checks, and Download under the
+ * filters.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 
 const getResults = vi.fn<(...args: unknown[]) => Promise<unknown>>()
-const downloadResponsesCsv = vi.fn<(...args: unknown[]) => Promise<Blob>>()
+const downloadResponsesCsv = vi.fn<(...args: unknown[]) => Promise<{ blob: Blob; filename: string | null }>>()
 
 vi.mock('../../../api/feedbackFormsV2Api', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../../api/feedbackFormsV2Api')>()
@@ -23,7 +24,7 @@ vi.mock('../../../api/feedbackFormsV2Api', async (importOriginal) => {
 })
 
 import { renderWithDraft } from '../test/draftHarness'
-import { RESULTS, RESULTS_FORM } from './results-fixtures'
+import { LINK_HEALTH, RESULTS, RESULTS_FORM } from './results-fixtures'
 import ResultsTab from './ResultsTab'
 
 const DEFAULT_FILTERS = { days: 30, language: '', ending: '', hidden: {}, includeTest: false }
@@ -37,7 +38,7 @@ describe('ResultsTab summary', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     getResults.mockResolvedValue(RESULTS)
-    downloadResponsesCsv.mockResolvedValue(new Blob(['a,b']))
+    downloadResponsesCsv.mockResolvedValue({ blob: new Blob(['a,b']), filename: null })
     Object.defineProperty(URL, 'createObjectURL', { value: vi.fn(() => 'blob:csv'), configurable: true })
     Object.defineProperty(URL, 'revokeObjectURL', { value: vi.fn(), configurable: true })
   })
@@ -187,13 +188,22 @@ describe('ResultsTab summary', () => {
     expect(harness.go).toHaveBeenCalledWith('share')
   })
 
-  it('exports the responses as CSV under the filters', async () => {
+  it('downloads the familiar CSV under the filters', async () => {
     const user = userEvent.setup()
     // (jsdom cannot follow a download link)
     vi.spyOn(HTMLAnchorElement.prototype, 'click').mockReturnValue(undefined)
     renderWithDraft(<ResultsTab />, RESULTS_FORM)
-    await user.click(screen.getByRole('button', { name: 'Export CSV' }))
-    await waitFor(() => expect(downloadResponsesCsv).toHaveBeenCalledWith('f_test', DEFAULT_FILTERS))
+    await user.click(screen.getByRole('button', { name: 'Download' }))
+    await waitFor(() => expect(downloadResponsesCsv).toHaveBeenCalledWith('f_test', DEFAULT_FILTERS, { layout: 'familiar', ids: false }))
+  })
+
+  it('says above the summary when a link never filled a hidden field, with the way to Share', async () => {
+    const user = userEvent.setup()
+    getResults.mockResolvedValue({ ...RESULTS, link_health: LINK_HEALTH })
+    const harness = renderWithDraft(<ResultsTab />, RESULTS_FORM)
+    expect(await screen.findByRole('note')).toHaveTextContent('0 of 26 responses had customer: check your link.')
+    await user.click(screen.getByRole('button', { name: 'Open Share' }))
+    expect(harness.go).toHaveBeenCalledWith('share')
   })
 
   it('asks a new form to be saved first', () => {

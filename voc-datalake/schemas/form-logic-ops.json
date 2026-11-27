@@ -10,6 +10,7 @@
     "ces": ["equals", "gt", "gte", "lt", "lte", "not_equals", "skipped", "submitted"],
     "statement": ["submitted"],
     "consent": ["skipped", "submitted"],
-    "contact_info": ["skipped", "submitted"]
+    "contact_info": ["skipped", "submitted"],
+    "matrix": ["skipped", "submitted"]
   }
 }

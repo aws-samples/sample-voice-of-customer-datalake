@@ -92,7 +92,7 @@ is a version 1 body: its fields (`title`, `question`, `rating_enabled`…) are m
 | `custom_fields` | Kept as before |
 | `expected_revision` | Optional on a `PUT`: the `revision` the editor loaded. Another one answers `409` (`code: revision_conflict`, with the current `revision`, `write_count`, `updated_by` and `updated_at`) |
 | `expected_write_count` | Optional on a `PUT`: the `write_count` the editor loaded. Another one (any save in between, whatever it changed) answers the same `409` ([Revisions](#revisions)) |
-| `removes` | Optional on a `PUT` of an answered form: `{questions?: [ids], options?: {question_id: [codes]}}`, every question and option code the save removes on purpose ([The lock of an answered form](#the-lock-of-an-answered-form)) |
+| `removes` | Optional on a `PUT` of an answered form: `{questions?: [ids], options?: {question_id: [codes]}, rows?: {question_id: [codes]}, columns?: {question_id: [codes]}}`, every question, option code and matrix row or column code the save removes on purpose ([The lock of an answered form](#the-lock-of-an-answered-form)) |
 
 A text is an **I18nText**, `{"<locale>": "text"}`: the primary language's text is required, the others fall back
 to it, and a blank translation is dropped. Its limits: a headline or title 500 characters, a description,
@@ -131,7 +131,9 @@ builder:
 - A `PUT` whose definition drops a question id the stored form has, or drops an option code from a question it keeps
   (a rename is a drop plus an add, and so is a question that stops being a choice), must name each one in
   `removes`. Otherwise it answers `409` `answers_locked` with what it would drop (`questions`, `options:
-  {question_id: [codes]}`) and writes nothing.
+  {question_id: [codes]}`) and writes nothing. A matrix's row and column codes lock the same way: a dropped
+  row is named in `removes.rows`, a dropped column in `removes.columns` (`{question_id: [codes]}` each), else the `409`
+  names them as `rows` and `columns`.
 - A `PUT` that keeps a question with another type or range (a CSAT or a 5-star rating made an NPS, a rating's points
   changed) is that `409` `answers_locked` too, with `changed: [question ids]`, whatever `removes` names: its old
   answers would be read on the new scale. To ask it another way, remove the question and add a new one.
@@ -167,6 +169,7 @@ attach to a new question.
 | `statement` | `cta?: {label, url?}` | none (it is never required) |
 | `consent` | `label` | `true` (an unticked box is no answer; a required consent must be ticked) |
 | `contact_info` | `fields: {name, email, phone, company}: {show, required}` (at least one shown) | `{name?, email?, phone?, company?}` |
+| `matrix` | `rows`, `columns`, `shuffle_rows`, `display`, `min_rows?` ([below](#matrix)) | `{rows: {<row code>: <column code>}}` |
 
 A choice question's `options` are 1 to 50 `{code, label, category?}`: `code` matches `^[a-z0-9_]{1,40}$`, and
 `category` is `{category, subcategory?}`, the routing the option files a response under (never served
@@ -177,6 +180,26 @@ them: they name the Other and None rows, and a None answer is `{codes: ["none"]}
 
 Every address (a statement's button, an ending's button) must be `https://` with a host, no user name or
 password and no spaces or control characters. A whole definition is at most 300 KB.
+
+#### Matrix
+
+Several rows rated on one scale (each workshop phase: Needs improvement, Satisfactory, Very effective, Exceptional),
+one choice per row:
+
+- `rows`: 1 to 20 `{code, label}` (what is rated), `columns`: 2 to 10 `{code, label, score?}` (the scale). A code
+  matches `^[a-z0-9_]{1,40}$`, is unique among the rows (or the columns), and is never `__proto__`, `constructor` or
+  `prototype` (an answer is an object keyed by row code). `score` is an optional whole number from -100 to 100: Results
+  average it per row over the answers whose column has one.
+- `shuffle_rows` (`false` by default): the rows in a random order per respondent (the preview's seeded order).
+- `display`: `auto` (a grid where the form is at least 600 px wide and has at most 7 columns, else stacked rows),
+  `grid` or `stacked`. The widget draws each row as its own radio group (labelled by the row, the arrow keys move
+  within it), with the row and the column in each radio's name; stacked on a phone.
+- `required` asks for every row. An optional matrix may set `min_rows` (1 to the number of rows): once any row is
+  answered, at least that many are (`400` when a required matrix sets it). An answer naming a row or a column the
+  question does not have is refused (`answer_invalid`); a required matrix with a row left out is `answer_required`,
+  too few rows `selection_count`, each with its `question_id`.
+- Logic: `submitted` and `skipped`. A matrix is never recalled ([Recall](#recall)).
+- The item's text, for a response without free text: one line per answered row, `Headline — Row: Column`.
 
 ### Logic
 
@@ -191,7 +214,7 @@ question or an ending, so no logic can loop, and it must exist.
 | `multi_select` | `includes_any`, `includes_all` (codes), `submitted`, `skipped` |
 | `rating`, `nps`, `csat`, `ces` | `equals`, `not_equals`, `lt`, `lte`, `gt`, `gte` (a number in the range), `submitted`, `skipped` |
 | `consent` | `submitted` (accepted: the box ticked), `skipped` (not accepted: an unticked box is no answer, to the server and the widget alike; a required consent, which must be ticked, is never skipped). A consent compares no value: `equals` is refused |
-| `contact_info` | `submitted`, `skipped` |
+| `contact_info`, `matrix` | `submitted`, `skipped` |
 | `statement` | `submitted` (always true once shown: an unconditional jump) |
 
 At most 20 rules per question. "Otherwise go to" is written as trailing `submitted` and `skipped` rules. An op
@@ -219,6 +242,45 @@ No hidden field is `__proto__`, `constructor` or `prototype`: the widget never f
 and the API refuse them ("‹id› is a reserved name; choose another", a 400), and an AI draft renames one
 (`constructor_field`). A stored form that has one still opens and is served as it is; the next save that changes
 its definition asks for another name.
+
+### Recall
+
+A text can show a hidden field's value, or an earlier answer, where it stands: **`{{id}}`**, or
+**`{{id|fallback}}`** to show `fallback` when there is no value ("How was {{event|the event}}?"). A placeholder is
+`{{` and `}}` around a text with no brace in it; the text before its first `|` is the id, the rest the fallback (both
+trimmed). One grammar, three implementations pinned by `schemas/form-recall-cases.json`:
+`lambda/shared/forms_recall.py` (the server's checks), `frontend/src/pages/FeedbackForms/model/recall.ts` (the builder)
+and the widget.
+
+- **Where.** The welcome's title and description, every question's headline and subheader (a statement's included),
+  and every ending's title and description. Never an option, row or column label, a button, a placeholder, an end
+  label or an address: there a placeholder is shown as it is written (so a live form cannot hold one, below).
+- **What.** `id` names a declared hidden field (looked up first), or a question placed **before** the text whose
+  answer is a score (a `rating`, `nps`, `csat` or `ces`: its number) or a `single_select` (the chosen option's label in
+  the respondent's language; an "Other" text is never shown). Never an open text, a contact, a multiple choice, a
+  consent or a matrix: what a respondent typed is never echoed. The welcome has no question before it; an ending has
+  them all. An answer counts only when its question is on the respondent's path.
+- **A missing value** (no hidden value from the link, a question skipped or not shown) renders the fallback, or
+  nothing: the widget then tidies the text around the gap (no doubled space, no space or comma left before `?`, `!`,
+  `.`, no empty brackets, no separator at either end), so "How was {{event}}?" reads "How was?" and "Thanks,
+  {{name}}!" reads "Thanks!".
+- **Safe.** Values go in as text, never as markup, and an id is looked up only among the form's own fields (`{{constructor}}`
+  is an unknown id: nothing). `__proto__`, `constructor` and `prototype` stay reserved for hidden fields.
+- **A save refuses** (`400`, with `where`, `placeholder` and `id`) a recall text whose placeholder names no hidden
+  field and no question (`recall_unknown`), a question at or after the text (`recall_not_before`), or a question whose
+  answer is never recalled (`recall_type`). A form saved before 7.06.00 whose text happens to hold `{{…}}` still reads
+  and is served (the widget shows an unknown placeholder as nothing); its next save that changes its definition asks
+  for a fix, the 7.04.00 reserved-name precedent.
+- **Publishing.** A write that leaves a form live (a `PUT` or `POST` with `enabled: true`, or any save of a live form)
+  answers **`409` `unresolved_placeholder`** `{texts: [{where, placeholder}]}` (at most 20) when any text respondents
+  can be shown holds a `{{…}}` they would see as written: one recall cannot fill there, or any placeholder where recall
+  never works. Turning a form Off always works. So a live form saved before 7.06.00 with such a text keeps serving
+  but cannot be re-enabled, or saved live, until it is fixed. The builder's Problems list shows the same texts and
+  Publish waits for them.
+- **Results and exports** show a text with placeholders as `[id]` (a CSV header, a question's headline in Results,
+  the item's text for the processor), never a respondent's value.
+- **The builder** offers "Insert a value" in each recall text (the hidden fields, then the earlier questions it may
+  recall) and previews the text with and without the value.
 
 ### Languages
 
@@ -724,7 +786,7 @@ button per language.
 | GET | `/feedback-forms/{id}/submissions` | The form's submitted feedback items (the assistant's `get_feedback_form_submissions`) |
 | GET | `/feedback-forms/{id}/stats` | The form's stats: submissions, average rating, headline figure, `last_response_at`, `channels` |
 | GET | `/feedback-forms/{id}/results` | Per-question results ([Results](#results-and-responses)); category and source access applied |
-| GET | `/feedback-forms/{id}/responses` | The responses, paged, or as CSV; category and source access applied |
+| GET | `/feedback-forms/{id}/responses` | The responses, paged, or as CSV (`format=csv`, `layout=familiar\|detailed`, `ids=true`; [below](#results-and-responses)); category and source access applied |
 | DELETE | `/feedback-forms/{id}/responses?test=true` | Delete the form's test responses (an admin or the form's creator); recorded first as an `AUDIT#delete` row |
 | POST | `/feedback-forms/{id}/test-link` | Issue or rotate the test link (admins) |
 | POST | `/feedback-forms/draft` | Start an AI draft of a form ([AI drafts](#ai-drafts)); served by the settings API |
@@ -821,7 +883,10 @@ The `source_channel` field identifies which form the feedback came from (e.g., `
 
 - `text`: each free-text answer (an open text, or a choice's "Other") under its question's headline in the
   primary language, in the order of the logic path. A response without free text gets its structured answers as
-  `headline: answer` lines (choices by their primary-language labels, scores as `n/max`); contact details never.
+  `headline: answer` lines (choices by their primary-language labels, scores as `n/max`, a matrix one `headline —
+  row: column` line per answered row); contact details never. A headline's recall placeholders read `[id]`, never the
+  respondent's value (since 7.06.00).
+- The processor's ingest schema takes a matrix answer (`{rows: {row: column}}`) in `form_answers` since 7.06.00.
 - `metadata.form_answers`: the answers by question id, as checked; `form_hidden`, `form_path` (the questions its
   logic showed), `form_revision`, `form_language`, `form_ending_id`, `form_session` and `form_channel` (when the
   widget sent them), and `form_version: '3.0'`. `form_version`
@@ -936,7 +1001,7 @@ only, never an answer. Both take `from` and `to` (ISO dates or times), `language
 `hidden.<id>=<value>`.
 
 **Results** (`include_test=false` by default): `{responses, test_responses, last_response_at, questions, endings:
-{id: n}, hidden: {id: n}, removed_questions: [{id, answered}], funnel}`. `test_responses` counts the test responses
+{id: n}, hidden: {id: n}, removed_questions: [{id, answered}], funnel, link_health}`. `test_responses` counts the test responses
 the view admits (its filters and the caller's access) whether or not they are included, so the page can say "3 test
 responses are hidden"; `responses` adds them only with `include_test=true`. Each question of the current revision has
 `shown` (the responses whose path showed it), `answered`, `skipped`, `not_shown` (the logic jumped past it),
@@ -950,6 +1015,20 @@ question had another type or range, counted nowhere else), and by type:
 | `open_text` | `count` and `latest`: the ten newest `{value, response_id, created_at, is_test, sentiment?}` |
 | `consent` | `accepted` |
 | `contact_info` | `contacts` (never the values) |
+| `matrix` | `rows: [{code, answered, counts: {column: n}, average}]` in the question's row order (`average`: the mean `score` of the row's answers whose column has one, `null` without), `scored` (whether any column has a score), and, when there are any, `removed_rows: {code: n}` and `removed_columns: {code: n}` (answers naming a row or a column the revision no longer has) |
+
+Each question's `headline` is its primary-language text with any placeholder shown as `[id]` ([Recall](#recall)).
+
+**Link checks** (`link_health`): whether the links that bring respondents fill the form's hidden fields.
+`{responses, hidden: {id: {filled, missing}}, by_channel: {link | iframe | script | unknown: {responses, hidden}},
+warnings: [{id, kind, filled, total}]}` over the view's responses (its filters, and test responses only with
+`include_test=true`), per declared hidden field. A response counts towards a field only when the revision it answered
+declared it (its `FORMREV#` snapshot), so a field added later is never "missing" from the responses sent before it;
+`total` is those responses. A warning is `never_filled` once at least 5 of them came in and none had the field, and
+`mostly_missing` once at least 10 came in and 80 % or more lacked it ("0 of 26 responses had
+`customer`: check your link"). Results and the Share tab show them with the link's `hf_<id>=` parameter; the Share
+tab's link builder also warns about a hidden field the form recalls that the copied link leaves empty. A hidden value
+is never part of the funnel's beacons.
 
 A question id is stable across revisions, so a response to an older revision counts towards the same question, scored
 against the question as its own revision had it (the form's `FORMREV#` snapshots, read once per view): a rating of 5
@@ -968,9 +1047,33 @@ scale_max}`, `null` without one), read on the current question only (the list re
 **Responses**, newest first: `{total, responses: [{response_id, feedback_id?, is_test, created_at, revision,
 language, ending_id, answers, hidden, path, sentiment?}], next_cursor}`, 50 per page (`limit` up to 100) from
 `cursor`; `include_test` is `false`, `true` or `only` (the Test tab's list). `format=csv` answers the matching
-responses (the newest 10,000) as a CSV file: the time, ids, `is_test`, revision, language and ending, one column
-per question (headlines in the first header row, ids in the second; choices by their labels) and one per hidden
-field. A cell that would start a spreadsheet formula is prefixed with `'`. Contact details are in Responses (as the
+responses (the newest 10,000) as a CSV file, the Results tab's **Download**, in one of two layouts
+(`layout=familiar|detailed`):
+
+- **`familiar`** (the default): the file Excel and Sheets open as it is where the list separator is a comma (where
+  it is `;`, open it through Excel's Data → From Text/CSV). It starts with a UTF-8 BOM (accents intact) and has one
+  header row: `Submission ID`, `Submitted On` (ISO 8601, UTC: `2026-11-20T09:30:00Z`),
+  `Locale`, `Tags` (the form's tags, and `test` for a test response, joined with `;`), one column per hidden field
+  (its label, else its id), then one per question by its primary-language headline (a placeholder shown as `[id]`):
+  a matrix one per row (`Headline - Row`), a contact question one per field it shows (`Headline - Name`, `- Email`,
+  `- Phone`, `- Company`), and none for a statement. Choices are their labels in the primary language joined with
+  `;`, an "Other" text as `Other: …` (the question's Other label, else the localized "Other"); a matrix row's cell is
+  its column's label, a consent `Yes`, a score its number. `ids=true` adds a second header row of ids
+  (`submission_id`, `submitted_on`, `locale`, `tags`, `hidden.<id>`, `<question id>`, `<question id>.<row code>`,
+  `<question id>.<field>`). The file is named `<form-name-slug>-responses-<yyyy-mm-dd>.csv` (the date in UTC; the
+  form id when the name gives no slug).
+- **`detailed`**: the layout Forms v2 shipped with, unchanged for the scripts that read it (no BOM): the time, ids, `is_test`,
+  revision, language and ending, one column per question (headlines in the first header row, ids in the second;
+  choices by their labels; a matrix as `row: column` pairs) and one per hidden field, named `<form id>-responses.csv`.
+  A script that read `format=csv` before this release asks for `layout=detailed`.
+
+The Results tab's **Download** takes the familiar file with the view's filters; its menu also offers "Detailed CSV
+(for scripts)" and "CSV with a row of ids". A browser cannot read the answer's `Content-Disposition` across origins
+(the API exposes only `Content-Type` and `ETag`), so the app names the file itself by the same rule
+(`frontend/src/api/feedbackFormsCsv.ts`), a detailed one `<form-name-slug>-responses-<yyyy-mm-dd>-detailed.csv`.
+
+In both, a cell that would start a spreadsheet formula, a header included, is prefixed with `'`. Any other `layout`,
+or an `ids` that is not `true` or `false`, is a `400`. Contact details are in Responses and the CSV (as the
 submissions route shows text), never in Results.
 
 ### The funnel
@@ -1060,10 +1163,12 @@ The job's result is one of:
 
 **It never saves.** The model is the deployment's configured one on the `utility` surface (shared/converse.py:
 the same client, model fallback and Bedrock usage metering as every AI feature). Its
-prompt carries the schema's types, ops and limits and the twelve templates' flows as examples; the person's text
+prompt carries the schema's types (the matrix among them), ops, limits and recall, and the twelve
+templates' flows as examples; the person's text
 travels in a `form_brief` DATA block and their form in a `current_form` one, never as instructions. Its answer
 goes through the same validator as a save, after the server has made the ids and option codes itself (slugged,
-accents folded, de-duplicated, `other` / `none` renamed, the rules re-pointed at them) and dropped every address
+accents folded, de-duplicated, `other` / `none` renamed; since 7.06.00 a matrix's row and column codes too; the rules,
+and every recall placeholder, re-pointed at them) and dropped every address
 that is not https (each one a warning: the person adds an address only after checking it).
 
 The assistant's `draft_feedback_form` (the `forms` pack, any caller) proposes a whole version 2 form, shown on an

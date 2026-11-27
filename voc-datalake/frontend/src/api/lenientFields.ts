@@ -35,6 +35,9 @@ export function parseEach<T>(schema: z.ZodType<T>, value: unknown): T[] {
   })
 }
 
+/** A list field whose entries are each parsed by `schema` (their defaults applied); a bad one costs itself. */
+export const eachOf = <T>(schema: z.ZodType<T>) => z.unknown().optional().transform((value) => parseEach(schema, value))
+
 /**
  * `schema` that reads anything it cannot parse as its own defaults (`schema.parse({})`), so an
  * unreadable object field or response becomes an empty one instead of failing the whole read.

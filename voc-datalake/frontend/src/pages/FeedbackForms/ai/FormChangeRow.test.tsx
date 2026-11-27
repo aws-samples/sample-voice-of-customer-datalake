@@ -57,6 +57,18 @@ describe('FormChangeRow', () => {
     })
   })
 
+  it('words a matrix\'s rows and columns by their labels, and its own settings by name', () => {
+    const matrix: Question = {
+      id: 'q_phases', type: 'matrix', headline: { en: 'How was each phase?' }, required: false, shuffle_rows: false, display: 'auto',
+      rows: [{ code: 'intro', label: { en: 'Intro' } }], columns: [{ code: 'poor', label: { en: 'Poor' } }, { code: 'good', label: { en: 'Good' } }],
+    }
+    const after: Question = { ...matrix, shuffle_rows: true, min_rows: 1, rows: [...matrix.rows, { code: 'lab', label: { en: 'Lab' } }] }
+    renderChange(withQuestions(matrix), withQuestions(after), 'question:q_phases')
+    expect(shownFields()).toStrictEqual({
+      Rows: ['Before: Intro', 'After: Intro · Lab'], 'Shuffle rows': ['Before: No', 'After: Yes'], 'Rows to answer': ['Before: —', 'After: 1'],
+    })
+  })
+
   it('words a rule the change takes away', () => {
     const routed: ChoiceQuestion = { ...reason, options: [...reason.options, { code: 'bugs', label: { en: 'Bugs' } }], logic: [toBugs] }
     renderChange(withQuestions(routed), withQuestions({ ...routed, logic: undefined }), 'question:q_reason')

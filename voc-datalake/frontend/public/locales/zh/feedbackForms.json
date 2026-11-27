@@ -53,7 +53,11 @@
       "other": "其他"
     },
     "ending": "结束页",
-    "welcome": "欢迎卡片"
+    "welcome": "欢迎卡片",
+    "matrix": {
+      "name": "矩阵",
+      "hint": "用同一量表为多个项目评分"
+    }
   },
   "problems": {
     "count_one": "{{count, number}} 个错误",
@@ -132,7 +136,22 @@
     "skippedOnRequired": "此问题为必填，永远不会被跳过：此规则永远不会执行。",
     "ruleNeverRuns": "此规则永远不会执行：规则 {{number}} 已匹配它会匹配的所有回答。",
     "whereAnyway": "此规则不起作用：到达此规则的所有人本来就会前往问题 {{number}}。",
-    "whereAnywayEnding": "此规则不起作用：到达此规则的所有人本来就会看到结束页“{{title}}”。"
+    "whereAnywayEnding": "此规则不起作用：到达此规则的所有人本来就会看到结束页“{{title}}”。",
+    "matrixNoRows": "请至少添加一行。",
+    "matrixTooManyRows": "矩阵最多 {{max, number}} 行。",
+    "matrixFewColumns": "矩阵至少需要 {{min, number}} 列。",
+    "matrixTooManyColumns": "矩阵最多 {{max, number}} 列。",
+    "matrixRowEmpty": "第 {{number}} 行没有文本。",
+    "matrixColumnEmpty": "第 {{number}} 列没有文本。",
+    "matrixCodeInvalid": "代码只能使用小写字母、数字和 _，最多 40 个字符。",
+    "matrixCodeTwice": "两个行或列使用了相同的代码 {{code}}。",
+    "matrixCodeReserved": "{{code}} 是保留名称，请另选一个。",
+    "matrixScoreRange": "第 {{number}} 列的分值必须是 -{{max, number}} 到 {{max, number}} 之间的整数。",
+    "matrixMinRows": "需回答的行数必须在 1 到行数（{{count, number}}）之间。",
+    "recallUnknown": "{{placeholder}} 不对应此表单的任何隐藏字段或问题（{{language}}）。",
+    "recallNotBefore": "{{placeholder}} 指向后面的问题：只能引用前面问题的答案（{{language}}）。",
+    "recallType": "{{placeholder}} 指向的问题答案从不显示：只能引用评分或单选（{{language}}）。",
+    "recallNotHere": "{{placeholder}} 会按原样显示：值只能填入标题、问题、说明或结束页。删除它才能发布（{{language}}）。"
   },
   "logic": {
     "ops": {
@@ -237,7 +256,9 @@
       "update": "更新已上线的表单",
       "failed": "无法保存：{{reason}}。",
       "failedGeneric": "无法保存。请检查网络连接后重试。",
-      "retry": "重试"
+      "retry": "重试",
+      "placeholderRefused": "无法保存：已上线的表单不能按原样显示 {…} 占位符。请修正“问题”中列出的文本，或关闭后保存。",
+      "recallRefused": "无法保存：某个文本引用了在该位置无法显示的值。请在“问题”中修正。"
     },
     "published": "已上线。从现在起，受访者将看到此版本。",
     "firstSave": "已保存。此表单处于关闭状态：在您发布之前，其链接会显示“反馈表单不可用。”",
@@ -1229,7 +1250,11 @@
         "description": "描述",
         "button": "按钮",
         "enabled": "显示",
-        "logic": "逻辑"
+        "logic": "逻辑",
+        "rows": "行",
+        "columns": "列",
+        "shuffle_rows": "随机排列行",
+        "min_rows": "至少回答的行数"
       },
       "values": {
         "yes": "是",
@@ -1302,7 +1327,11 @@
         "smiley": "{{range}} 表情"
       },
       "textOnly": "仅文本",
-      "linkButton": "带链接按钮"
+      "linkButton": "带链接按钮",
+      "rows_one": "{{count, number}} 行",
+      "rows_other": "{{count, number}} 行",
+      "columns_one": "{{count, number}} 列",
+      "columns_other": "{{count, number}} 列"
     }
   },
   "question": {
@@ -1722,7 +1751,9 @@
       "welcomeButton": "按钮文字",
       "endingTitle": "标题",
       "endingDescription": "描述",
-      "endingButton": "按钮文字"
+      "endingButton": "按钮文字",
+      "matrixRow": "第 {{number}} 行",
+      "matrixColumn": "第 {{number}} 列"
     },
     "confirm": {
       "text": "此表单创建于表单支持语言设置之前。",
@@ -1804,14 +1835,20 @@
     "saveFirstTitle": "还没有链接",
     "saveFirst": "保存表单即可获取其链接。",
     "showProblems": "查看问题",
-    "save": "保存"
+    "save": "保存",
+    "toHiddenFields": "打开隐藏字段",
+    "values": {
+      "title": "此链接中的值",
+      "hint": "可选：每个值都会放入链接、iframe 和脚本嵌入。",
+      "warnings": "此链接留空的隐藏字段",
+      "leavesEmpty": "此链接让 {{id}} 留空：受访者看到的文本中不会有它。"
+    }
   },
   "results": {
     "summary": "摘要",
     "responsesView": "回复",
     "view": "结果视图",
     "loading": "正在加载结果…",
-    "csv": "导出 CSV",
     "csvFailed": "无法导出回复。",
     "includeTest": "包含测试回复",
     "including_one": "包含 {{formatted}} 条测试回复。这些数字并非您的真实结果。",
@@ -1949,7 +1986,32 @@
       "next": "下一条"
     },
     "contactLeft_one": "{{count, number}} 人留下了联系方式",
-    "contactLeft_other": "{{count, number}} 人留下了联系方式"
+    "contactLeft_other": "{{count, number}} 人留下了联系方式",
+    "download": "下载",
+    "downloadOptions": "更多下载选项",
+    "downloadDetailed": "详细 CSV（供脚本使用）",
+    "downloadWithIds": "带 ID 行的 CSV",
+    "matrix": {
+      "rowsLabel": "按行的回答",
+      "columnsLabel": "{{row}} 的回答",
+      "rated_one": "{{formatted}} 人评分",
+      "rated_other": "{{formatted}} 人评分",
+      "average": "平均 {{average}}（分数 {{low}} 至 {{high}}）",
+      "removedLabel": "对已删除行和列的回答",
+      "removedRow_one": "行 {{code}}（已删除）：{{formatted}} 条回答",
+      "removedRow_other": "行 {{code}}（已删除）：{{formatted}} 条回答",
+      "removedColumn_one": "列 {{code}}（已删除）：{{formatted}} 条回答",
+      "removedColumn_other": "列 {{code}}（已删除）：{{formatted}} 条回答"
+    },
+    "linkHealth": {
+      "title": "请检查您的链接",
+      "never_filled": "{{total, number}} 条回答中有 {{filled, number}} 条包含 {{id}}：请检查您的链接。",
+      "mostly_missing": "{{total, number}} 条回答中只有 {{filled, number}} 条包含 {{id}}：请检查您的链接。",
+      "hint": "链接通过 {{param}} 填写它。",
+      "from": "缺少的来源：{{channels}}。",
+      "channel": "{{channel}} {{missing}}",
+      "unknown": "未知"
+    }
   },
   "theme": {
     "presets": {
@@ -2087,5 +2149,62 @@
       "failed": "无法删除表单。请稍后重试。",
       "unnamed": "此表单"
     }
+  },
+  "matrix": {
+    "rows": "行",
+    "columns": "列（量表）",
+    "rowN": "第 {{number}} 行",
+    "columnN": "第 {{number}} 列",
+    "codeOf": {
+      "row": "第 {{number}} 行的代码",
+      "column": "第 {{number}} 列的代码"
+    },
+    "codeLocked": "答案按此代码存储，因此有回复后无法更改。请改为修改标签。",
+    "score": "分值",
+    "scoreOf": "第 {{number}} 列的分值",
+    "scoreHint": "分值是可选的整数，范围 -100 到 100：结果会按行计算平均值。",
+    "menu": {
+      "row": "第 {{number}} 行的更多操作",
+      "column": "第 {{number}} 列的更多操作"
+    },
+    "last": {
+      "rows": "矩阵至少需要一行。",
+      "columns": "矩阵至少需要两列。"
+    },
+    "add": {
+      "rows": "添加行",
+      "columns": "添加列"
+    },
+    "shuffleRows": "随机排列行",
+    "shuffleRowsHint": "每位受访者看到的行顺序各不相同。",
+    "display": {
+      "auto": "自动",
+      "grid": "网格",
+      "stacked": "堆叠"
+    },
+    "displayHint": {
+      "auto": "宽屏上显示为网格（最多 7 列），手机上每行单独显示。",
+      "grid": "始终以行列网格显示。",
+      "stacked": "始终每行单独显示，选项列在其下方。"
+    },
+    "minRows": "至少回答的行数",
+    "minRowsHint": "受访者回答任意一行后生效。留空：不限数量。",
+    "requiredHint": "每一行都必须回答。",
+    "scale": {
+      "poor": "差",
+      "fair": "一般",
+      "good": "好",
+      "excellent": "非常好"
+    }
+  },
+  "recall": {
+    "insert": "插入一个值",
+    "hiddenItem": "隐藏字段 · {{name}}",
+    "questionItem": "Q{{number}} · {{headline}}",
+    "nothing": "此处没有可插入的值",
+    "nothingHint": "请添加隐藏字段，或在此文本之前添加评分题或单选题。",
+    "preview": "受访者看到：{{text}}",
+    "previewMissing": "没有值时：{{text}}",
+    "previewEmpty": "（无）"
   }
 }

@@ -3,10 +3,8 @@ VoC Feedback Form API Lambda
 Handles: /feedback-forms/* - multiple forms management
 """
 import copy
-import csv
 import hmac
 import html as html_text
-import io
 import json
 import math
 import os
@@ -27,6 +25,7 @@ from botocore.exceptions import BotoCoreError, ClientError
 
 from shared import category_access, feedback_category, form_theme, null_origin_cors, prototype_pins
 from shared import forms_v2 as fv2
+from shared import forms_v2_csv as fcsv
 from shared import forms_v2_responses as fresp
 from shared.api import (
     api_handler,
@@ -518,8 +517,10 @@ def build_form_item(body: dict, form_id: str | None = None, actor: str = '') -> 
     validate_link_fields(body)
     validate_theme(body)
     definition = fv2.validate_definition(_body_definition(body))
-    # Created live: its text must be readable (shared/forms_v2.py); a form created Off is always stored.
+    # Created live: its text must be readable and no text may show a placeholder as written (shared/forms_v2.py); a
+    # form created Off is always stored.
     fv2.validate_publishable(body.get('theme', DEFAULT_THEME), live=bool(body.get('enabled', False)))
+    fv2.validate_placeholders(definition, live=bool(body.get('enabled', False)))
     test = fv2.test_settings_of({})
     if 'settings' in body:
         test = fv2.validate_test_settings(body['settings'], test)
@@ -1073,7 +1074,8 @@ def _plan_update(stored: Mapping[str, Any], body: Mapping[str, Any], actor: str,
     Both are read-only (the form API returns them) and ignored as fields. On a form with a real response
     (``has_responses``, else ``answered()``: one answered only before 7.04.00) a definition change that drops a
     question id or an option code without naming it in ``removes``, or gives a question it keeps another type or
-    range, is a 409 ``answers_locked`` (shared/forms_v2.py ``unnamed_removals``, ``reshaped_questions``)."""
+    range, is a 409 ``answers_locked`` (shared/forms_v2.py ``unnamed_removals``, ``reshaped_questions``). A write that
+    leaves the form live while a text shows a placeholder as written is a 409 ``unresolved_placeholder``."""
     _require_update_fields(body)
     expected, revision = body.get('expected_revision'), fv2.revision_of(stored)
     expected_writes, writes = body.get('expected_write_count'), _write_count(stored)
@@ -1102,6 +1104,9 @@ def _plan_update(stored: Mapping[str, Any], body: Mapping[str, Any], actor: str,
         if unnamed or reshaped:
             raise ConflictError(_ANSWERS_LOCKED, code='answers_locked',
                                 details={**unnamed, **({'changed': reshaped} if reshaped else {})})
+    # A form put (or kept) live shows no placeholder as written: a form saved earlier with one keeps serving,
+    # and turning it Off always works, but it is not published again until it is fixed.
+    fv2.validate_placeholders(definition, live=bool(live))
     sets: dict[str, Any] = {name: body[name] for name in UPDATABLE_FIELDS if name in body}
     sets.update({**definition, 'schema_version': fv2.SCHEMA_VERSION, 'revision': revision + int(changed),
                  'write_count': writes + 1, 'updated_at': now_iso(), 'updated_by': actor})
@@ -1397,7 +1402,8 @@ def _v2_submission(form_id: str, form: Mapping[str, Any], body: Mapping[str, Any
             metadata[key] = contact[field_name]
     content = {'form_revision': revision, 'language': response.language, 'answers': response.answers,
                'hidden': response.hidden, 'ending_id': response.ending_id, 'path': response.path,
-               **({'session': body['session']} if isinstance(body.get('session'), str) else {})}
+               **({'session': body['session']} if isinstance(body.get('session'), str) else {}),
+               **({'channel': body['channel']} if body.get('channel') in fresp.CHANNELS else {})}
     contact_ids = tuple(q['id'] for q in definition.get('questions') or [] if q.get('type') == fv2.CONTACT)
     return _Submission(fresp.response_text(definition, response), fresp.item_rating(definition, response), metadata,
                        fresp.answer_category(definition, response), content,
@@ -2091,6 +2097,7 @@ def _result_row(item: Mapping[str, Any], definition: Mapping[str, Any]) -> Resul
         'language': metadata.get('form_language') or None,
         'revision': metadata.get('form_revision') if isinstance(metadata.get('form_revision'), int) else None,
         'session': metadata.get('form_session') if isinstance(metadata.get('form_session'), str) else None,
+        'channel': metadata.get('form_channel') if isinstance(metadata.get('form_channel'), str) else None,
     }
     created_at = str(item.get('source_created_at') or '')
     answers = metadata.get('form_answers')
@@ -2137,7 +2144,8 @@ def _test_rows(form_id: str, definition: Mapping[str, Any]) -> Iterator[ResultRo
         extra: dict[str, Any] = {'is_test': True, 'response_id': str(item.get('response_id') or ''),
                                  'language': item.get('language') or None,
                                  'revision': fv2.plain(item.get('form_revision')),
-                                 'session': item.get('session') if isinstance(item.get('session'), str) else None}
+                                 'session': item.get('session') if isinstance(item.get('session'), str) else None,
+                                 'channel': item.get('channel') if isinstance(item.get('channel'), str) else None}
         hidden = fv2.plain(item.get('hidden')) if isinstance(item.get('hidden'), Mapping) else {}
         created_at = str(item.get('created_at') or '')
         if isinstance(answers, Mapping) and answers:
@@ -2277,7 +2285,6 @@ MAX_RESPONSES_PAGE = 100
 DEFAULT_RESPONSES_PAGE = 50
 #: A CSV export holds at most this many responses (the newest), within API Gateway's answer size.
 MAX_CSV_RESPONSES = 10_000
-_CSV_FORMULA_START = ('=', '+', '-', '@', '\t', '\r')
 
 
 def _response_view(row: ResultRow) -> dict[str, Any]:
@@ -2298,44 +2305,26 @@ def _page_offset(params: Mapping[str, Any]) -> int:
     return int(raw)
 
 
-def _csv_cell(value: object) -> str:
-    """A cell as text, never a spreadsheet formula (a leading ``=``, ``+``, ``-``, ``@`` or control is quoted off)."""
-    text = '' if value is None else str(value)
-    return f"'{text}" if text.startswith(_CSV_FORMULA_START) else text
+def _csv_options(params: Mapping[str, Any]) -> tuple[str, bool]:
+    """``layout`` (``familiar``, the default since 7.06.00, or ``detailed``) and ``ids`` (``true`` / ``false``)."""
+    layout = str(params.get('layout') or 'familiar')
+    if layout not in fcsv.LAYOUTS:
+        raise ValidationError(f'layout must be one of: {", ".join(fcsv.LAYOUTS)}')
+    ids = str(params.get('ids') or 'false').lower()
+    if ids not in ('true', 'false'):
+        raise ValidationError('ids must be true or false')
+    return layout, ids == 'true'
 
 
-def _csv_answer(question: Mapping[str, Any], value: object, primary: str) -> str:
-    if isinstance(value, Mapping) and question.get('type') in fv2.SELECT_TYPES:
-        labels = {o['code']: fv2.text_in(o.get('label'), primary, primary) or o['code']
-                  for o in question.get('options') or []}
-        codes = list(value.get('codes') or []) + ([value['code']] if 'code' in value else [])
-        parts = [labels.get(code, code) for code in codes]
-        return '; '.join([*parts, *([f"{fv2.OTHER_CODE}: {value['other']}"] if value.get('other') else [])])
-    if isinstance(value, Mapping):
-        return '; '.join(f'{key}: {item}' for key, item in value.items())
-    return '' if value is None else str(value)
-
-
-def _responses_csv(definition: Mapping[str, Any], rows: list[ResultRow]) -> str:
-    """One row per response: time, ids, test flag, revision, language, ending, one column per question (labels in
-    the first header row, ids in the second), then the hidden fields."""
-    primary = str(definition.get('language') or fv2.DEFAULT_LOCALE)
-    questions = [q for q in definition.get('questions') or [] if q.get('type') != fv2.STATEMENT]
-    hidden_ids = [field_['id'] for field_ in definition.get('hidden_fields') or []]
-    fixed = ['created_at', 'response_id', 'is_test', 'revision', 'language', 'ending_id']
-    out = io.StringIO()
-    writer = csv.writer(out)
-    # The header rows are the author's text (a headline): no cell of the file, header or answer, is ever a formula.
-    labels = [*fixed, *(fv2.text_in(q.get('headline'), primary, primary) for q in questions),
-              *(f'hidden: {hid}' for hid in hidden_ids)]
-    writer.writerow([_csv_cell(cell) for cell in labels])
-    writer.writerow([*fixed, *(q['id'] for q in questions), *(f'hidden.{hid}' for hid in hidden_ids)])
-    for row in rows:
-        cells = [row.created_at, row.response_id, str(row.is_test).lower(), row.revision, row.language, row.ending_id,
-                 *(_csv_answer(q, row.answers.get(q['id']), primary) for q in questions),
-                 *(row.hidden.get(hid, '') for hid in hidden_ids)]
-        writer.writerow([_csv_cell(cell) for cell in cells])
-    return out.getvalue()
+def _responses_csv(form: Mapping[str, Any], form_id: str, definition: Mapping[str, Any], rows: list[ResultRow],
+                   options: tuple[str, bool]) -> Response:
+    """The CSV file of ``rows`` (shared/forms_v2_csv.py) in ``options``' layout, as a download."""
+    layout, ids = options
+    body = fcsv.detailed_csv(definition, rows) if layout == 'detailed' else \
+        fcsv.familiar_csv(definition, rows, tags=[str(tag) for tag in fv2.plain(form.get('tags') or [])], ids=ids)
+    name = fcsv.csv_filename(form.get('name'), form_id, datetime.now(UTC), layout)
+    return Response(status_code=200, content_type='text/csv; charset=utf-8', body=body,
+                    headers={'Content-Disposition': f'attachment; filename="{name}"'})
 
 
 @app.get("/feedback-forms/<form_id>/responses")
@@ -2347,12 +2336,14 @@ def get_form_responses(form_id: str):
 
     ``include_test``: ``false`` (default), ``true``, or ``only`` (the Test tab's list). Pages of ``limit`` (default
     50, at most 100) from ``cursor`` (the previous page's ``next_cursor``); ``format=csv`` answers every matching
-    response (the newest 10,000) as a CSV file instead.
+    response (the newest 10,000) as a CSV file instead, in ``layout`` ``familiar`` (the default since 7.06.00, with
+    ``ids=true`` a second header row of ids) or ``detailed`` (7.04.00's).
     """
     params = app.current_event.query_string_parameters or {}
     include_test = _include_test(params, allow_only=True)
     filters = _view_filters(params)
     csv_out = params.get('format') == 'csv'
+    csv_options = _csv_options(params) if csv_out else ('familiar', False)
     limit = validate_limit(params.get('limit'), default=DEFAULT_RESPONSES_PAGE, max_val=MAX_RESPONSES_PAGE)
     offset = _page_offset(params)
     form = _load_form_for_query(form_id, 'Failed to fetch form responses')
@@ -2360,9 +2351,7 @@ def get_form_responses(form_id: str):
     rows = filter_rows(_view_rows(form, form_id, definition, include_test), **filters)
     rows.sort(key=lambda row: row.created_at, reverse=True)
     if csv_out:
-        return Response(status_code=200, content_type='text/csv; charset=utf-8',
-                        body=_responses_csv(definition, rows[:MAX_CSV_RESPONSES]),
-                        headers={'Content-Disposition': f'attachment; filename="{form_id}-responses.csv"'})
+        return _responses_csv(form, form_id, definition, rows[:MAX_CSV_RESPONSES], csv_options)
     page = rows[offset:offset + limit]
     more = offset + limit < len(rows)
     return {'success': True, 'form_id': form_id, 'revision': fv2.revision_of(form), 'total': len(rows),

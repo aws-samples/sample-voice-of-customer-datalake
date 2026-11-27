@@ -54,7 +54,7 @@ describe('opChoices and choiceKey', () => {
 
 describe('the choices stay within the ops the server takes (schemas/form-logic-ops.json)', () => {
   const SERVER: Readonly<Record<QuestionType, readonly string[]>> = logicOps.ops_by_type
-  const TYPES: readonly QuestionType[] = ['single_select', 'multi_select', 'open_text', 'rating', 'nps', 'csat', 'ces', 'statement', 'consent', 'contact_info']
+  const TYPES: readonly QuestionType[] = ['single_select', 'multi_select', 'open_text', 'rating', 'nps', 'csat', 'ces', 'statement', 'consent', 'contact_info', 'matrix']
 
   it('names every question type the builder has, and only ops a rule can hold', () => {
     const sorted = (types: readonly string[]) => [...types].sort((a, b) => a.localeCompare(b))

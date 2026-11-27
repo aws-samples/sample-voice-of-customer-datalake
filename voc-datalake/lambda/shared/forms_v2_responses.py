@@ -19,6 +19,7 @@ from typing import Any, Final
 from urllib.parse import urlsplit
 
 from shared.exceptions import ValidationError
+from shared.forms_recall import shown_as_ids
 from shared.forms_v2 import (
     CONSENT,
     CONTACT,
@@ -26,6 +27,7 @@ from shared.forms_v2 import (
     CSAT,
     FORM_LOCALES,
     HIDDEN_ID,
+    MATRIX,
     MAX_HIDDEN_FIELDS,
     MAX_HIDDEN_VALUE_CHARS,
     MAX_OPEN_TEXT_CHARS,
@@ -49,8 +51,10 @@ __all__ = [
     'answer_category',
     'check_envelope',
     'contact_of',
+    'headline_of',
     'is_v2_response',
     'item_rating',
+    'matrix_label',
     'response_text',
     'validate_response',
 ]
@@ -269,9 +273,37 @@ def _statement(question: Mapping[str, Any], _value: object) -> None:
     raise _bad(question, ': a statement takes no answer')
 
 
+def _codes_in(question: Mapping[str, Any], key: str) -> list[str]:
+    return [str(entry['code']) for entry in question.get(key) or [] if isinstance(entry, Mapping)]
+
+
+def _matrix(question: Mapping[str, Any], value: object) -> dict[str, Any] | None:
+    """``{rows: {row: column}}``: known rows and columns only, kept in the question's row order (a row given ``null``
+    is unanswered); every row when it is required, at least ``min_rows`` once any is answered."""
+    if not isinstance(value, Mapping) or set(value) != {'rows'} or not isinstance(value['rows'], Mapping):
+        raise _bad(question, ' must be {"rows": {row code: column code}}')
+    rows, columns, given = _codes_in(question, 'rows'), set(_codes_in(question, 'columns')), value['rows']
+    unknown = sorted(str(key)[:40] for key in given if key not in rows)
+    if unknown:
+        raise _bad(question, f'.rows.{unknown[0]} is not a row of this question')
+    stray = [str(row) for row, column in given.items() if column is not None and column not in columns]
+    if stray:
+        raise _bad(question, f'.rows.{stray[0]} must name a column of this question')
+    answered = {row: given[row] for row in rows if given.get(row) is not None}
+    if not answered:
+        return None
+    if question.get('required') is True and len(answered) < len(rows):
+        missing = next(row for row in rows if row not in answered)
+        raise _bad(question, f'.rows.{missing} is required: answer every row', ANSWER_REQUIRED)
+    least = question.get('min_rows')
+    if isinstance(least, int) and len(answered) < least:
+        raise _bad(question, f' must answer at least {least} rows', SELECTION_COUNT)
+    return {'rows': answered}
+
+
 _NORMALIZERS: Final[Mapping[str, Callable[[Mapping[str, Any], object], Any]]] = {
     OPEN_TEXT: _open_text, SINGLE: _single, MULTI: _multi, **dict.fromkeys(SCALE_TYPES, _scale),
-    CONSENT: _consent, CONTACT: _contact, STATEMENT: _statement,
+    CONSENT: _consent, CONTACT: _contact, STATEMENT: _statement, MATRIX: _matrix,
 }
 
 
@@ -471,17 +503,40 @@ def _summary(question: Mapping[str, Any], answer: object, primary: str) -> str:
     return '✓'
 
 
+def matrix_label(question: Mapping[str, Any], key: str, code: str, primary: str) -> str:
+    """A matrix row's or column's label in the primary language (its code when it has none, or no longer exists)."""
+    for entry in question.get(key) or []:
+        if isinstance(entry, Mapping) and entry.get('code') == code:
+            return text_in(entry.get('label'), primary, primary) or code
+    return code
+
+
+def headline_of(question: Mapping[str, Any], primary: str) -> str:
+    """A question's headline in the primary language as a reader of its answers sees it (placeholders as ``[id]``)."""
+    return shown_as_ids(text_in(question.get('headline'), primary, primary))
+
+
+def _summary_lines(question: Mapping[str, Any], answer: object, primary: str) -> list[str]:
+    """``headline: answer``, or for a matrix one ``headline — row: column`` line per answered row."""
+    headline = headline_of(question, primary)
+    if question['type'] == MATRIX and isinstance(answer, Mapping):
+        return [f'{headline} — {matrix_label(question, "rows", str(row), primary)}: '
+                f'{matrix_label(question, "columns", str(column), primary)}'
+                for row, column in (answer.get('rows') or {}).items()]
+    return [f'{headline}: {_summary(question, answer, primary)}']
+
+
 def response_text(definition: Mapping[str, Any], response: Response) -> str:
     """The item's text: each free-text answer under its headline in the primary language, in path order; a
-    response without free text gets its structured answers as ``headline: answer`` lines instead."""
+    response without free text gets its structured answers as ``headline: answer`` lines instead (a matrix one
+    ``headline — row: column`` line per row). A headline's placeholders read ``[id]``, never a respondent's value."""
     primary = str(definition.get('language'))
     questions = {question['id']: question for question in definition.get('questions') or []}
     answered = [(questions[qid], response.answers[qid]) for qid in response.path if qid in response.answers]
-    blocks = [f'{text_in(q.get("headline"), primary, primary)}\n{text}' for q, a in answered
-              if (text := _free_text(q, a))]
+    blocks = [f'{headline_of(q, primary)}\n{text}' for q, a in answered if (text := _free_text(q, a))]
     if blocks:
         return '\n\n'.join(blocks)
-    return '\n'.join(f'{text_in(q.get("headline"), primary, primary)}: {_summary(q, a, primary)}' for q, a in answered)
+    return '\n'.join(line for q, a in answered for line in _summary_lines(q, a, primary))
 
 
 def answer_category(definition: Mapping[str, Any], response: Response) -> dict[str, str] | None:
