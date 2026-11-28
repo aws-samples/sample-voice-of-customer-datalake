@@ -7,6 +7,7 @@ from boto3.dynamodb.conditions import Key
 
 from jobs.retention import boards, boards_rekey, copies, handler, lineage, runs
 from jobs.retention.test.conftest import BUCKET, days_ago, put_feedback
+from jobs.retention.test.conftest import raw_keys as _keys
 from shared.digests import sha256_hex
 from shared.feature_requests_store import support_key
 from shared.legal_basis import LEGACY_LEGAL_BASIS
@@ -46,11 +47,6 @@ def _tombstones(aws, source: str) -> list[dict]:
 def _audit(aws) -> dict:
     [row] = aws['aggregates'].query(KeyConditionExpression=Key('pk').eq(runs.AUDIT_PK))['Items']
     return row
-
-
-def _keys(aws) -> set[str]:
-    page = aws['s3'].list_object_versions(Bucket=BUCKET)
-    return {entry['Key'] for entry in page.get('Versions', [])}
 
 
 class TestTombstones:

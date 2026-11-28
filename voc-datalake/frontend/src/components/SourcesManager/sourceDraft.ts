@@ -87,6 +87,7 @@ const PROBLEMS = {
   tags: { messageKey: 'components:sourcesManager.problems.tags' },
   idFormat: { messageKey: 'components:sourcesManager.problems.idFormat' },
   idDuplicate: { messageKey: 'components:sourcesManager.problems.idDuplicate' },
+  idReserved: { messageKey: 'components:sourcesManager.problems.idReserved' },
   radarBrand: { messageKey: 'components:sourcesManager.problems.radarBrand' },
 } as const
 
@@ -105,9 +106,16 @@ export function draftProblem(draft: readonly DraftProfile[]): ProfileProblem | n
   return unnamedBrand === undefined ? null : { messageKey: PROBLEMS.radarBrand.messageKey, params: { name: unnamedBrand.profile.label } }
 }
 
+/**
+ * The ids a new profile cannot take: their raw folders hold whole-file uploads (the API refuses them too,
+ * lambda/shared/source_profiles.py `RESERVED_SOURCE_IDS`; a profile already saved under one may stay).
+ */
+const RESERVED_SOURCE_IDS: ReadonlySet<string> = new Set(['csv_upload', 'json_upload'])
+
 /** Why a new id cannot be added (a translation key), or null. */
 export function newIdProblem(id: string, draft: readonly DraftProfile[]): string | null {
   if (!SOURCE_ID_RE.test(id)) return PROBLEMS.idFormat.messageKey
   if (draft.some((d) => d.profile.id === id)) return PROBLEMS.idDuplicate.messageKey
+  if (RESERVED_SOURCE_IDS.has(id)) return PROBLEMS.idReserved.messageKey
   return null
 }

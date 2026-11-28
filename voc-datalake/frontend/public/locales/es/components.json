@@ -725,6 +725,7 @@
       "tags": "{{name}}: corrija primero las etiquetas.",
       "idFormat": "Use minúsculas, dígitos, \"_\" o \"-\" (hasta 48).",
       "idDuplicate": "Esa fuente ya tiene un perfil.",
+      "idReserved": "Este ID está reservado para cargas de archivos completos; elige otro ID.",
       "radarBrand": "{{name}}: indique la marca que sigue esta fuente de Radar."
     },
     "radarLegacy": "Fuente de Radar para {{brand}}: las reseñas de esta fuente van a Radar.",

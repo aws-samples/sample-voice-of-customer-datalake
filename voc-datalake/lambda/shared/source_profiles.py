@@ -36,7 +36,7 @@ from __future__ import annotations
 import os
 import re
 import time
-from collections.abc import Mapping
+from collections.abc import Collection, Mapping
 from decimal import Decimal
 from typing import Any, Final
 
@@ -61,6 +61,7 @@ __all__ = [
     'PII_ALLOW',
     'PII_POLICIES',
     'PII_SUMMARY_ONLY',
+    'RESERVED_SOURCE_IDS',
     'SOURCES_SETTINGS_KEY',
     'SOURCE_ID_RE',
     'SourceProfilesUnavailable',
@@ -95,6 +96,12 @@ MIN_RETENTION_DAYS: Final = 30
 MAX_RETENTION_DAYS: Final = 3650
 # `\Z`, not `$` (see shared.dimension_config.DIMENSION_KEY_RE).
 SOURCE_ID_RE: Final = re.compile(r'^[a-z0-9][a-z0-9_-]{0,47}\Z')
+#: The ids no profile is saved under (7.109.00): ``raw/csv_upload/`` and ``raw/json_upload/`` (a workspace's too) hold
+#: whole-file uploads (shared/retention.py ``whole_upload_key``), so a source of either id would archive its items'
+#: own copies beside the whole files. A profile stored under one before still loads, and a save that keeps it still
+#: saves: only a new one is refused (``validate_source_profiles``' ``stored_ids``). ``manual_import`` and
+#: ``feedback_form`` stay sources: their per-item copies are told apart from their whole files by the item.
+RESERVED_SOURCE_IDS: Final = frozenset({'csv_upload', 'json_upload'})
 
 _CACHE_TTL_SECONDS: Final = 300
 _ERROR_CACHE_TTL_SECONDS: Final = 30
@@ -181,10 +188,13 @@ def _dimension_defaults(
     return defaults
 
 
-def _profile(entry: object, dimensions_config: list[dict[str, Any]] | None, *, strict: bool) -> dict[str, Any]:
+def _profile(entry: object, dimensions_config: list[dict[str, Any]] | None, *, strict: bool,
+             stored_ids: Collection[str] = ()) -> dict[str, Any]:
     source = as_object(entry, 'source profile')
     source_id = _source_id(source)
     what = f'Source "{source_id}"'
+    if strict and source_id in RESERVED_SOURCE_IDS and source_id not in stored_ids:
+        raise ValueError(f'{what}: this id is reserved for whole-file uploads; choose another id')
     retention_days = _retention_days(source, what)
     try:
         tags = validate_tags(source.get('tags'))
@@ -207,8 +217,8 @@ def _profile(entry: object, dimensions_config: list[dict[str, Any]] | None, *, s
 
 
 def _profiles(value: object, dimensions_config: list[dict[str, Any]] | None, *,
-              strict: bool) -> list[dict[str, Any]]:
-    profiles = [_profile(entry, dimensions_config, strict=strict)
+              strict: bool, stored_ids: Collection[str] = ()) -> list[dict[str, Any]]:
+    profiles = [_profile(entry, dimensions_config, strict=strict, stored_ids=stored_ids)
                 for entry in bounded_list(value, MAX_SOURCE_PROFILES, 'source profiles')]
     ids = [profile['id'] for profile in profiles]
     if len(set(ids)) != len(ids):
@@ -216,14 +226,17 @@ def _profiles(value: object, dimensions_config: list[dict[str, Any]] | None, *,
     return profiles
 
 
-def validate_source_profiles(value: object, dimensions_config: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def validate_source_profiles(value: object, dimensions_config: list[dict[str, Any]],
+                             stored_ids: Collection[str] = ()) -> list[dict[str, Any]]:
     """The normalised profiles list, or ValueError with a client-safe message.
 
     ``dimension_defaults`` must name configured dimensions and their values
     (exact value names, as the Settings editor offers them), and a profile with
-    ``retention_days`` must state its ``retention_legal_basis`` (``shared.legal_basis``).
+    ``retention_days`` must state its ``retention_legal_basis`` (``shared.legal_basis``). A ``RESERVED_SOURCE_IDS``
+    id is refused unless it is one of ``stored_ids`` (the ids already saved: the PUT replaces the whole list, so a
+    list that keeps a profile saved before 7.109.00 still saves).
     """
-    return _profiles(value, dimensions_config, strict=True)
+    return _profiles(value, dimensions_config, strict=True, stored_ids=stored_ids)
 
 
 #: The profile fields a workspace's profile leaves empty: the retention window and its basis, Radar's brand and

@@ -701,6 +701,7 @@
       "tags": "{{name}}: fix the tags first.",
       "idFormat": "Use lowercase letters, digits, \"_\" or \"-\" (up to 48).",
       "idDuplicate": "That source already has a profile.",
+      "idReserved": "This id is reserved for whole-file uploads; choose another id.",
       "radarBrand": "{{name}}: name the brand this Radar source tracks."
     },
     "radarLegacy": "Radar source for {{brand}}: this source's reviews go to Radar.",

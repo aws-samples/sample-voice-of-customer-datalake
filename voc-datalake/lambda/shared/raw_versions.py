@@ -57,6 +57,7 @@ __all__ = [
     'RAW_PREFIX',
     'UNKNOWN_VERSION',
     'Connector',
+    'ItemArchive',
     'app_connector',
     'content_digest',
     'folder_of',

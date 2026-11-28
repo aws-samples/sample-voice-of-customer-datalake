@@ -71,6 +71,7 @@ import ssl
 import sys
 import urllib.error
 import urllib.request
+from collections.abc import Mapping
 from datetime import UTC, datetime
 from typing import Any
 
@@ -96,6 +97,7 @@ from shared.row_ids import OPAQUE_ID_RE
 from shared.run_rows import run_status, scraper_run_partition
 from shared.scraper_limits import MAX_SCRAPERS, MAX_URLS_PER_SCRAPER, MAX_WEBSCRAPER_CONFIGS_BYTES
 from shared.scraper_run_errors import redacted_scraper_errors
+from shared.source_profiles import RESERVED_SOURCE_IDS
 from shared.tables import get_aggregates_table
 from shared.timestamps import now_iso
 from shared.url_policy import (
@@ -411,6 +413,16 @@ def _normalise_radar_brand(scraper: dict) -> None:
         scraper.pop('radar_brand', None)
 
 
+def _refuse_reserved_name(scraper: dict, stored: Mapping[str, Any] | None) -> None:
+    """400 when ``scraper`` takes a reserved source id as a new name: a scraper's name is its items' source id
+    (``source_platform_override``, plugins/webscraper), and a ``RESERVED_SOURCE_IDS`` folder holds whole-file uploads
+    (shared/source_profiles.py). A scraper stored under that name before (``stored``) keeps saving."""
+    name = scraper.get('name')
+    kept = stored is not None and stored.get('name') == name
+    if isinstance(name, str) and name in RESERVED_SOURCE_IDS and not kept:
+        raise ValidationError(f'The name "{name}" is reserved for whole-file uploads; choose another name')
+
+
 def _upserted_configs(configs: list, scraper: dict) -> list:
     """`configs` with `scraper` created or replaced by id, stored as sent.
 
@@ -468,6 +480,7 @@ def save_scraper():
         secrets, configs = _webscraper_configs_in_store(store)
         stored = config_write_guard.find_existing(configs, lambda c: c.get('id') == scraper['id'])
         config_write_guard.check_write(stored, mode=mode, base=base, what=f'A scraper with id "{scraper["id"]}"')
+        _refuse_reserved_name(scraper, stored)
         configs = _upserted_configs(configs, scraper)
         secrets['webscraper_configs'] = json.dumps(configs)
         store.write(secrets)

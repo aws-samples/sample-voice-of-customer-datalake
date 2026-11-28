@@ -38,6 +38,12 @@ def put_feedback(aws: dict[str, Any], feedback_id: str, source: str = 'web', **e
                                    'date': days_ago(1), **extra})
 
 
+def raw_keys(aws: dict[str, Any]) -> set[str]:
+    """Every key in the raw bucket that still has a version holding data."""
+    page = aws['s3'].list_object_versions(Bucket=BUCKET)
+    return {entry['Key'] for entry in page.get('Versions', [])}
+
+
 def erasure_job(aws: dict[str, Any], job_id: str, field: str, value: str, **row: Any) -> dict[str, Any]:
     """A queued erasure job row (its ``row`` fields, None left out), and the invoke event that runs it."""
     item = {'pk': ERASURE_JOB_PK, 'sk': job_id, 'job_id': job_id, 'status': 'queued', 'field': field,

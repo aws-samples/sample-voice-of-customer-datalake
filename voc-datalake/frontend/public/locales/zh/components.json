@@ -701,6 +701,7 @@
       "tags": "{{name}}:请先修正标签。",
       "idFormat": "使用小写字母、数字、“_”或“-”(最多 48 个)。",
       "idDuplicate": "该来源已有配置。",
+      "idReserved": "此 ID 保留给整文件上传；请选择其他 ID。",
       "radarBrand": "{{name}}:请填写此雷达来源跟踪的品牌。"
     },
     "radarLegacy": "{{brand}} 的雷达来源:此来源的评论进入雷达。",

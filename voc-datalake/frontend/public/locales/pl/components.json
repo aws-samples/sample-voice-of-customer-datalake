@@ -747,6 +747,7 @@
       "tags": "{{name}}: najpierw popraw tagi.",
       "idFormat": "Użyj małych liter, cyfr, \"_\" lub \"-\" (do 48 znaków).",
       "idDuplicate": "To źródło ma już profil.",
+      "idReserved": "Ten identyfikator jest zarezerwowany dla przesyłania całych plików; wybierz inny identyfikator.",
       "radarBrand": "{{name}}: podaj markę, którą śledzi to źródło Radar."
     },
     "radarLegacy": "Źródło Radar dla marki {{brand}}: opinie z tego źródła trafiają do Radar.",

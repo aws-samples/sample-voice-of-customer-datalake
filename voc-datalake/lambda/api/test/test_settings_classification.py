@@ -107,6 +107,15 @@ class TestSources:
         response, _ = route('PUT', '/settings/sources', body={'sources': []}, claims=USER_CLAIMS)
         assert response['statusCode'] == 403
 
+    def test_a_new_source_named_csv_upload_is_a_400_that_says_to_choose_another_id(self, route):
+        response, body = route('PUT', '/settings/sources', body={'sources': [{'id': 'csv_upload'}]})
+        assert (response['statusCode'], 'choose another id' in body['error']) == (400, True)
+
+    def test_a_list_keeping_a_stored_csv_upload_profile_still_saves(self, route, table):
+        table.put_item(Item={'pk': 'SETTINGS#sources', 'sk': 'config', 'sources': [{'id': 'csv_upload'}]})
+        response, body = route('PUT', '/settings/sources', body={'sources': [{'id': 'csv_upload'}, {'id': 'web'}]})
+        assert (response['statusCode'], [source['id'] for source in body['sources']]) == (200, ['csv_upload', 'web'])
+
 
 @pytest.mark.usefixtures('table')
 class TestErasure:

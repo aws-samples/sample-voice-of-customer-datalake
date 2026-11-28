@@ -9,8 +9,10 @@ generation deletes it, and re-writes the same key), never a delete without a
 tombstone.
 
 Then the item goes with its own raw archive (``retention.delete_item`` /
-``retention.delete_radar_item``). The whole-file upload an item came from is
-deleted only by a whole-source erasure; any other run lists it for review. An S3 import's
+``retention.delete_radar_item``). The whole file an item came from (a CSV / JSON upload, a form import's original
+or a paste, in either scope) is deleted only by a whole-source erasure (the deployment's CSV / JSON upload; a paste
+file or a form import's original goes with that erasure's sweep of ``raw/{source}/``); any other run lists it for
+review. An S3 import's
 original file is linked from no row, so a run that deletes an S3 import's item lists the
 originals folder of the item's scope for review instead (``shared/retention.py``).
 """
@@ -137,11 +139,20 @@ class ItemDeleter:
             note_review_file(self._run, prefix)
 
     def _whole_upload(self, item: Mapping[str, Any]) -> None:
+        """The whole file the item came from, in either scope (``retention.whole_upload_key``): kept and listed for
+        review, except that the whole-source erasure of the item's source deletes the deployment's CSV / JSON upload
+        and leaves a file under ``raw/{source}/`` (a paste's, a form import's original) to its own sweep of that
+        folder (``handler._sweep_raw``); a file no sweep reaches is listed."""
         key = retention.whole_upload_key(item, self._bucket)
         if key is None:
             return
-        whole_source = self._run.get('field') == SOURCE_FIELD and item_source(item) == self._run.get('source')
-        if not whole_source:
+        source = item_source(item)
+        whole_source = self._run.get('field') == SOURCE_FIELD and source == self._run.get('source')
+        if whole_source and not retention.is_deletable_upload(key):
+            swept = retention.raw_source_prefix(source)
+            if swept is None or not key.startswith(swept):
+                note_review_file(self._run, key)
+        elif not whole_source:
             note_review_file(self._run, key)
         elif key not in self._uploads_done:
             self._run['deleted_objects'] += retention.delete_whole_upload(self._s3, self._bucket, key)

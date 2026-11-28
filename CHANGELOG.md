@@ -17,6 +17,170 @@ the platform package version.
 
 ## [Unreleased]
 
+## [7.109.00] - 2026-11-28
+
+A fix: an erasure and a window's run list for review the whole file an erased item came from, in either scope: a
+CSV or JSON upload, a form import's original and a paste. No new route, table or stored-data change (two routes
+refuse a reserved id for a new source or scraper, below); the three stack
+templates whose hashes move (`lib/test-support/baseline.json`) change only by their Lambda code assets and the
+version. Nothing is deleted that was not before.
+
+### Fixed
+
+- **A workspace's CSV and JSON uploads, a form import's original file and the paste confirm's whole file, in either
+  scope, are listed for review when a run deletes one of their items.** `shared/retention.py` `whole_upload_key`,
+  which tells `voc-retention` (`jobs/retention/copies.py` `_whole_upload`) that an item came from a whole file,
+  matched only the deployment's `raw/csv_upload/` and `raw/json_upload/`. So an erasure (by email, author, source id
+  or CSV row) or a window's run that deleted an item of a workspace's `ws/{ws}/raw/csv_upload/…` or
+  `ws/{ws}/raw/json_upload/…` upload, of a form import (`{raw root}feedback_form/import/{form_id}/{run}.{ext}`, since
+  7.67.00, written by `api/feedback_form_handler.py` `_kept_file`) or of a paste
+  (`{raw root}manual_import/{y}/{m}/{d}/{job_id}.json`), the deployment's or a workspace's, deleted the item and
+  kept the whole file holding that person's data without listing it under "files needing review". It now reads a
+  whole file below the raw root of the item's own scope (`raw/` or `ws/{ws}/raw/`, `raw_root`). A key outside that
+  root (another workspace's, the deployment's for a workspace item, a folder under no valid workspace id) is never
+  taken for a whole file of the item's scope and no per-item delete follows it: it is listed as an unknown copy and
+  kept (fail closed). The link is the item's own `s3_raw_uri`:
+  every item of a whole-file upload carries the file's URI (`shared/ingest_archive.py` `stamp_file_archive`), so
+  items stored before this release are covered too, with no backfill. A deployment paste file has the shape of a
+  legacy per-item key (`raw/manual_import/{y}/{m}/{d}/{stem}.json`), so under `manual_import/` the item decides: its
+  own per-item archive (named after its `source_id`, `item_raw_objects`) is deleted with it as before and never
+  listed; any other key there is listed and kept. That is the paste's file (a pasted review's `source_id` is
+  `manual-{job_id}-{n}`, never the file's `{job_id}`, on every paste item since the paste confirm's first release),
+  or a key the run cannot place, listed all the same (fail closed). The paste file's body holds `job_id` and
+  `final_reviews`, which a per-item copy never does: an operator can confirm a listed key with it (the run lists the
+  key either way, so it reads no object). The deployment's CSV and JSON uploads behave as before (a whole-source
+  erasure of their source deletes them, any other run lists them); a deployment paste file and a deployment form
+  import's original are left to the whole-source erasure's sweep of `raw/manual_import/` or `raw/feedback_form/`
+  (`jobs/retention/handler.py` `_sweep_raw`), as before, and never deleted by this step; a whole file that sweep
+  cannot reach is listed. The per-item delete also no longer takes a workspace's CSV or JSON upload, or a form
+  import's original, for an item's own archive when the file is named like the item (`_own_raw_key` refuses the
+  three folders under the item's root). In a workspace, a versioned per-item copy there (`{stem}/{sha16}.{ext}`,
+  read by `shared/raw_versions.py` `parse_item_key`, the only layout a workspace ever wrote and a shape no whole
+  file has) named after the item is still its own: a workspace source stored under `csv_upload` or `json_upload`
+  (now reserved, below) wrote those, and they go with their items as before, never listed; for such a copy the
+  delete names the item's folder and its own key, never the legacy `{stem}.json` beside it, which in those folders
+  is a whole file's shape. The deployment's rule is unchanged: nothing under `raw/csv_upload/` or
+  `raw/json_upload/` is an item's own copy, so a deployment source stored under one of those ids keeps its items'
+  copies there, listed for review when a run deletes the item (as before 7.109.00). Who it affected: every erasure or window's run that deleted an item of a
+  workspace's whole-file upload (a source with no window under a workspace profile allowing PII, or any such upload
+  before 7.108.00), of any form import kept whole, or of any paste kept whole. Tests:
+  `lambda/jobs/retention/test/test_whole_file_review.py`.
+- **A new source profile or web scraper can no longer take the id `csv_upload` or `json_upload`.** Their folders
+  under a raw root hold whole-file uploads, so a new source with one of those ids would archive its items' own copies
+  beside them. `PUT /settings/sources` (`shared/source_profiles.py` `validate_source_profiles`, `RESERVED_SOURCE_IDS`)
+  refuses such an id when it is new to the list, with the 400 `Source "csv_upload": this id is reserved for
+  whole-file uploads; choose another id`; a profile already stored under one still loads, and a list that keeps it
+  still saves (the PUT replaces the whole list). A scraper's name is its items' source id
+  (`source_platform_override`), so `POST /scrapers` refuses a reserved name for a new scraper, or for one renamed to
+  it (`The name "csv_upload" is reserved for whole-file uploads; choose another name`), and a scraper stored under it
+  keeps saving. The web app's Sources page refuses both ids as a new profile with the same words
+  (`sourceDraft.ts` `newIdProblem`, in every language). Not yet reserved: the integrations route's save of the
+  deployment's webscraper configs (`api/integrations_handler.py` `_validate_webscraper_configs`) and an S3 import's
+  folder name, which can still produce such a source id; in the deployment their copies there stay kept and listed,
+  as before (a follow-up). A deployment that already holds a source or scraper under one of these ids with no
+  profile cannot add a profile for it (so no window or redact policy of its own) and keeps working under the
+  defaults; lifting that for such a source is a follow-up. `manual_import` and `feedback_form` stay sources (the
+  paste's and the forms'): their per-item copies are told apart from their whole files. Tests:
+  `lambda/shared/test/test_source_profile_reserved_ids.py`, `api/test/test_settings_classification.py`,
+  `api/test/test_scrapers_handler.py`, `frontend/src/components/SourcesManager/sourceDraft.test.ts`.
+
+The whole files shared by several items, and how each is reached now (every caller of `stamp_file_archive`, the one
+place a URI is set on more than one message):
+
+| Writer | Whole file | How a run reaches it |
+|---|---|---|
+| CSV upload (`api/manual_import_handler.py` `_archive_csv_file`) | `{raw root}csv_upload/{y}/{m}/{d}/{job_id}.csv` | listed; deleted by the deployment's whole-source erasure |
+| JSON upload (`_archive_json_file`) | `{raw root}json_upload/{y}/{m}/{d}/{job_id}.json` | listed; deleted by the deployment's whole-source erasure |
+| Paste confirm (`_archive_confirmed_import`) | `{raw root}manual_import/{y}/{m}/{d}/{job_id}.json` | listed; swept by the deployment's whole-source erasure of `manual_import` |
+| Form import (`api/feedback_form_handler.py` `_kept_file`) | `{raw root}feedback_form/import/{form_id}/{run}.{ext}` | listed; swept by the deployment's whole-source erasure of `feedback_form` |
+| S3 import (`plugins/_shared/raw_original.py`) | `{raw root}s3_import/…`, linked from no item | its folder listed (`import_originals_prefix`, unchanged) |
+
+Every other writer keeps one object per item (`archive_per_item`, the form submission's copy, the email intake, the
+plugins, Data Explorer's object, the processor's inline fallback).
+
+### Upgrade notes
+
+- **Files missed by erasures and windows' runs before this release stay where they are; nothing is deleted.** A run
+  from this release on lists them only when it deletes one of their items, so the items an earlier run already
+  deleted no longer point at them. To find the files an earlier run missed:
+  - **The runs that could have missed one**: the erasure and retention audit rows (`AUDIT#retention` in
+    voc-aggregates) and the erasure job rows (`JOB#erasure`, and a workspace's `WS#{ws}#JOB#erasure`) of runs before
+    this release with `deleted_workspace_items` above 0, or that deleted an item of source `manual_import` or
+    `feedback_form` (each one's tombstones, `AUDIT#tombstone#{source}`, carry its `run_id`; a workspace item's
+    tombstone its `workspace_id`).
+  - **The files**: the objects under `ws/{ws}/raw/csv_upload/` and `ws/{ws}/raw/json_upload/` of each such
+    workspace; the form imports' originals under `raw/feedback_form/import/` and `ws/{ws}/raw/feedback_form/import/`
+    (`{form_id}/{run}.{ext}`; a submission's own copy sits in a dated folder instead, `feedback_form/{y}/…`); and the
+    files directly in a date folder of `raw/manual_import/{y}/{m}/{d}/` and `ws/{ws}/raw/manual_import/{y}/{m}/{d}/`
+    (named `{job_id}.json`, its body holding `job_id` and `final_reviews`; a per-item copy sits one folder deeper,
+    `…/{item}/{sha16}.json`, or in the deployment's legacy layout is named after its item, `manual-{job_id}-{n}.json`).
+    A file directly in such a date folder is not always a paste's: it can also be the legacy per-item copy of a CSV
+    or JSON row filed under the default source `manual_import` (named after that row's id), or an object written
+    through Data Explorer. The body tells them apart: only a paste file holds `job_id` and `final_reviews`.
+    The import history (`IMPORT_RUN` rows, a workspace's `WS#{ws}#IMPORT_RUN`) names each run's whole file in
+    `raw_s3_key` (empty when none was written), a quicker first lead that can miss a run (`record_import_run` never
+    fails the import).
+  - **Which of them held an erased person's data**: its items are those whose `s3_raw_uri` is the file's URI; match
+    on that URI alone. A paste's items also carry `manual-{job_id}-…` in their `source_id`, but a form import's
+    `metadata.form_import_run` is not a key to its file: an import sent in several calls writes one file on the first
+    and names it on the next (`file_key`), each call with its own run id, so one file carries several. A file with
+    fewer items than rows is only a lead, not proof: rows the upload never stored make the
+    same gap (a duplicate row, a row its policy or the redaction refused, a failed send, a dataset row that was only a
+    correction of a stored item, or a row the processor skipped as already stored). Search the file for the erased
+    value, which the job rows never store (they carry its SHA-256 only), or match the rows to the run's tombstones.
+
+  Rewriting or deleting such a file is the operator's decision, under the erasure's legal basis and with its own
+  audit, as for every file on the review list. This release builds no cleanup.
+- **A review list of 200 keys may not be the whole list.** A run names at most 200 files (`MAX_REVIEW_FILES`,
+  `jobs/retention/runs.py`) and sets `more: true` on `files_needing_review` when it kept more: the rest are named
+  nowhere, and the items that pointed at them are gone. For such a run, search the folders above in every scope the
+  run reached (the deployment's, and each `workspace_id` on its tombstones), for the sources its tombstones name.
+- **A workspace's review list is readable by the deployment's admins.** A workspace's erasure writes its job row in
+  its own partition, but its audit row, with `files_needing_review`, goes to the deployment-wide `AUDIT#retention`,
+  as `files_not_checked` already does: keys only, never content, and a workspace key names its workspace id.
+- **Not covered: the earlier whole file of a corrected CSV dataset row.** A dataset row a later upload changed
+  (`csv_replace`) points at the newest upload's file only (`shared/csv_updates.py`), so the earlier upload's whole
+  file that held its older version is not listed when the item is erased. Find it in the import history: the earlier
+  runs of the same source with a non-empty `raw_s3_key`.
+- **Not covered: the whole file of an upload whose rows were all stored already.** The same rows uploaded again
+  write a second whole file, but the processor skips each item it already stored, so no item points at that file and
+  no run lists it. Find it in the import history (a run with a non-empty `raw_s3_key` whose rows were already stored)
+  or in the folders above: a whole file no item's `s3_raw_uri` names.
+- **Not covered, and older than this release: a per-item copy outside `manual_import/` not named after its item's
+  source id.** The per-item delete takes only a copy named after the item's `source_id` (`shared/archive_keys.py`:
+  one written under a sanitised or truncated name before that rule, or an object an item was pointed at by hand), and
+  `whole_upload_key` lists only the whole-file folders, `manual_import/` and keys outside the item's root, so such a
+  copy is kept and not listed. A follow-up (TENETS.md, D5's gaps row) lists every key an erased item points at that
+  the run kept. Until then, a whole-source erasure's sweep of `raw/{source}/` removes them; for a field erasure,
+  compare the items' `s3_raw_uri` with the keys the run deleted.
+
+### Tenet check
+
+Tenets touched: D5, D8 (TENETS.md).
+
+- **D5, customer data is never removed; a legal obligation is the only exception** (advanced): an erasure must reach
+  every copy of the person's data or say which it could not. The whole file an item points at (a workspace's
+  upload, a form import's original, a paste) is now named on the job and audit rows as a file needing review, for
+  items stored before this release too. Fail closed: a key under `manual_import/` that is not the item's own archive,
+  and a key outside the item's own root, are listed, never deleted, and a whole file is never deleted by a run that
+  was not deleting it before. A per-item copy is still deleted with its item: in a workspace, a versioned copy in a
+  whole-file folder too (a source stored under a reserved id; the deployment's such copies stay kept and listed, as
+  before), and the ids `csv_upload` and `json_upload` are reserved
+  for new sources and scrapers, so no new source's copies land beside whole files. D5's gaps row in TENETS.md marks
+  the gap fixed and writes down what stays open: the whole files written before 7.108.00 (now listed when a run
+  deletes one of their items, still removed only by the operator), the corrected dataset row's earlier file, a
+  re-upload's file no item points at, and, older than this release, a per-item copy not named after its item, kept
+  and not listed (a follow-up).
+- **D8, each workspace is its own boundary** (held): a workspace item's whole file is only named, by its key, on the
+  run's rows, never read and never deleted; the per-item delete still follows only a key under the item's own
+  scope's root, and a key of another scope is never taken for this scope's whole file. One exposure is the same as
+  before and written down: a workspace erasure's audit row, with its review list, is in the deployment-wide
+  `AUDIT#retention`, so the deployment's admins can read a workspace's keys (never content), as with
+  `files_not_checked`.
+
+What it is not: no cleanup of existing whole files, no backfill of items, no change to what an upload writes, no
+change to a stored source profile, and no new review tool beyond the existing list.
+
 ## [7.108.00] - 2026-11-28
 
 A fix: a workspace's manual import keeps its raw copies by the deployment's retention window, as every other

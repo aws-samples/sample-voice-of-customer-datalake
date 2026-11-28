@@ -27,17 +27,19 @@ its counters) and its per-item raw archive is removed with it, in BOTH layouts
 delete markers) under the item's folder ``raw/{source}/{y}/{m}/{d}/{stem}/``,
 whichever of the two its ``s3_raw_uri`` names. A raw object is deleted only
 when it is that item's OWN archive: under ``raw/``, in the configured bucket,
-outside the whole-upload archives (``raw/csv_upload/``, ``raw/json_upload/``),
+outside the whole-upload archives (``csv_upload/``, ``json_upload/``, ``feedback_form/import/`` under its root),
 and named after the item's ``source_id`` the way every per-item archive is
 (``plugins/_shared/raw_archive``, ``shared/ingest_archive``). An API-side item
 received again on a later day (a new ingest-date folder) leaves its older folder
 to the whole-source erasure; a correction (CSV dataset update) writes into the
 stored item's own folder, so it goes with the item. A whole-file archive shared by many items
-(``raw/csv_upload/``, ``raw/json_upload/``) is never an item's own archive. Every row of
-one such file is filed under the one source its upload named, so a whole-source
-erasure deletes the file (every version, ``delete_whole_upload``); any other erasure
-or retention run leaves it and lists it on its job / audit row as a file needing
-review (keys only), because rewriting it without the erased rows would mean
+(a CSV / JSON upload, ``csv_upload/`` / ``json_upload/``, a form import's original,
+``feedback_form/import/{form_id}/{run}.{ext}``, or a paste's ``manual_import/{y}/{m}/{d}/{job_id}.json``, in either
+scope: ``whole_upload_key``) is never an item's own archive. Every row of one deployment CSV / JSON upload is filed
+under the one source its upload named, so a whole-source erasure deletes the file (every version,
+``delete_whole_upload``), and a deployment paste file or form import original goes with that erasure's sweep of
+``raw/manual_import/`` or ``raw/feedback_form/``; any other erasure or retention run leaves a whole file and lists it on its
+job / audit row as a file needing review (keys only), because rewriting it without the erased rows would mean
 re-parsing a CSV whose column mapping is not stored.
 
 Every kept Silver version of a deleted item (``silver/{source}/{feedback_id}/``, the
@@ -87,7 +89,7 @@ from boto3.dynamodb.conditions import Attr, ConditionBase
 from shared.archive_keys import archive_key_stem
 from shared.logging import logger
 from shared.radar_store import marker_key
-from shared.raw_versions import RAW_PREFIX, parse_item_key, raw_root
+from shared.raw_versions import RAW_PREFIX, ItemArchive, parse_item_key, raw_root
 from shared.silver_provenance import SILVER_PREFIX, silver_item_prefix
 from shared.ws_repo import WORKSPACE_KEY_PREFIX, WorkspaceScope, partition_scope, ws_table
 
@@ -105,6 +107,7 @@ __all__ = [
     'erase_matches',
     'holds_files',
     'import_originals_prefix',
+    'is_deletable_upload',
     'item_feedback_id',
     'item_scope',
     'item_source',
@@ -210,6 +213,15 @@ def item_feedback_id(item: Mapping[str, Any]) -> str:
 _RADAR_PK_PREFIX: Final = 'RADAR#'
 _RADAR_ITEMS_MARK: Final = '#ITEMS#'
 _WHOLE_UPLOAD_PREFIXES: Final = ('raw/csv_upload/', 'raw/json_upload/')
+# The whole-file folders below either scope's raw root (``raw/``, ``ws/{ws}/raw/``), each holding only whole files:
+# the CSV / JSON uploads' (``api/manual_import_handler.py``) and the form imports' originals
+# (``shared/forms_v2_import.py`` ``file_key_of``: ``feedback_form/import/{form_id}/{run}.{ext}``, beside the dated
+# per-item folders of source ``feedback_form``, whose first segment is a year). The source profiles reserve the
+# first two as source ids (shared/source_profiles.py ``RESERVED_SOURCE_IDS``).
+_WHOLE_UPLOAD_FOLDERS: Final = ('csv_upload/', 'json_upload/', 'feedback_form/import/')
+# The paste confirm's folder: its whole files beside the per-item archives of source ``manual_import``
+# (whole_upload_key tells them apart).
+_PASTE_FOLDER: Final = 'manual_import/'
 # The s3_import plugin's label for an imported file's items (plugins/s3_import/ingestor/handler.py
 # `_get_source_from_key`) and the folder it keeps the files' originals in under a bronze root
 # (shared/plugin_identity.py `S3_IMPORT_SOURCE`, which plugins/_shared/raw_original.py files them under).
@@ -376,11 +388,30 @@ def _own_raw_key(item: Mapping[str, Any], bucket: str) -> tuple[str, str] | None
         return None
     parsed = urlparse(uri)
     key = parsed.path.lstrip('/')
-    if parsed.scheme != 's3' or parsed.netloc != bucket or not key.startswith(raw_root(item_scope(item))):
+    scope = item_scope(item)
+    root = raw_root(scope)
+    if parsed.scheme != 's3' or parsed.netloc != bucket or not key.startswith(root):
         return None
-    if key.startswith(_WHOLE_UPLOAD_PREFIXES) or '..' in key.split('/'):
+    if '..' in key.split('/'):
+        return None
+    if _in_whole_folder(key, root) and (scope is None or _versioned_archive(key) is None):
+        # A CSV / JSON upload or a form import's original holds every row of its upload: never one item's own. In a
+        # workspace only, a versioned per-item copy ({stem}/{sha16}.{ext}, a shape no whole file has, and the only
+        # layout a workspace ever wrote) of a source stored under a reserved id may be one there
+        # (shared/source_profiles.py ``RESERVED_SOURCE_IDS``); the deployment's rule is unchanged: kept and listed.
         return None
     return key, source_id
+
+
+def _in_whole_folder(key: str, root: str) -> bool:
+    """Whether ``key`` is in one of the whole-file folders below ``root`` (``_WHOLE_UPLOAD_FOLDERS``)."""
+    return key.startswith(root) and key.removeprefix(root).startswith(_WHOLE_UPLOAD_FOLDERS)
+
+
+def _versioned_archive(key: str) -> ItemArchive | None:
+    """The per-item archive ``key`` is a VERSION of (``{folder}{sha16}.{ext}``), or None: its legacy key too."""
+    archive = parse_item_key(key)
+    return archive if archive is not None and key != archive.legacy_key else None
 
 
 def item_raw_objects(item: Mapping[str, Any], bucket: str) -> ItemRawObjects | None:
@@ -390,7 +421,9 @@ def item_raw_objects(item: Mapping[str, Any], bucket: str) -> ItemRawObjects | N
     ``.../{stem}.json`` or versioned ``.../{stem}/{sha16}.json``, names the legacy key
     AND the folder holding every version, whichever of the two the item references.
     Any other key under ``raw/`` whose file stem is the item's is that exact key only,
-    as before. The stem must be the writers' collision-free one (``shared/archive_keys.py``).
+    as before. The stem must be the writers' collision-free one (``shared/archive_keys.py``). In a whole-file folder
+    (a versioned copy only, ``_own_raw_key``) the legacy key is never named: ``{stem}.json`` there is a whole file's
+    shape, so only the item's folder and its own key go.
     """
     own = _own_raw_key(item, bucket)
     if own is None:
@@ -398,8 +431,11 @@ def item_raw_objects(item: Mapping[str, Any], bucket: str) -> ItemRawObjects | N
     key, source_id = own
     stem = archive_key_stem(source_id)
     archive = parse_item_key(key)
+    if archive is not None and archive.stem != stem:
+        return None
     if archive is not None:
-        return ItemRawObjects(key=archive.legacy_key, folder=archive.folder) if archive.stem == stem else None
+        whole_folder = _in_whole_folder(key, raw_root(item_scope(item)))
+        return ItemRawObjects(key=key if whole_folder else archive.legacy_key, folder=archive.folder)
     return ItemRawObjects(key=key, folder=None) if key.rpartition('/')[2].removesuffix('.json') == stem else None
 
 
@@ -494,20 +530,54 @@ def delete_radar_item(radar_table: Any, s3: Any, bucket: str, item: Mapping[str,
 
 
 def whole_upload_key(item: Mapping[str, Any], bucket: str) -> str | None:
-    """The key of the whole-file upload (``raw/csv_upload/``, ``raw/json_upload/``) ``item`` came from, or None.
+    """The key of the whole file ``item`` came from (its ``s3_raw_uri``), or None: a file to list for review.
 
-    Such a file holds every row of one CSV / JSON upload, all filed under the one
-    source the upload named (``api/manual_import_handler.py``), so only a
-    whole-source erasure of that source may delete it (``delete_whole_upload``).
+    A whole file holds every row of one upload, below the raw root of the item's own scope (``raw_root``: ``raw/`` or
+    ``ws/{ws}/raw/``): a CSV / JSON upload (``csv_upload/``, ``json_upload/``, ``api/manual_import_handler.py``), a
+    form import's original (``feedback_form/import/{form_id}/{run}.{ext}``, ``api/feedback_form_handler.py``) and the
+    paste confirm's ``manual_import/{y}/{m}/{d}/{job_id}.json``. A paste file has the shape of a legacy per-item key,
+    so a key under ``manual_import/`` is told apart by the item: its own per-item archive (``item_raw_objects``: named
+    after its ``source_id``) is not a whole file. Any other key there is: its paste's file (a pasted review's
+    ``source_id`` is ``manual-{job_id}-{n}``, never the file's ``{job_id}``, on every paste item since the first
+    release; the file's body holds ``job_id`` and ``final_reviews``, which an operator can check, and which this
+    run does not read, since the key is listed either way), or a key the run cannot place, listed all the same. In a
+    workspace's CSV / JSON or form import folder only a versioned per-item copy (``{stem}/{sha16}.{ext}``, a shape no whole file
+    has) named after the item is its own: a source stored under a reserved id before 7.109.00 wrote those.
+
+    A key outside the item's own root (another workspace's, the deployment's for a workspace item, or under no
+    workspace at all) is never a whole file of this scope, and no per-item delete follows it: it is returned too, an
+    unknown copy (fail closed). Every key returned is only listed, never deleted, unless it is the deployment's CSV /
+    JSON upload and the run is its source's whole-source erasure (``delete_whole_upload``, ``is_deletable_upload``).
+    The item's ``s3_raw_uri`` is the link (``stamp_file_archive`` writes the file's URI on every item of the upload),
+    so items stored before 7.109.00 are covered too. None for no URI, another bucket, a folder or a ``..`` key.
     """
+    key = _raw_uri_key(item, bucket)
+    if key is None:
+        return None
+    root = raw_root(item_scope(item))
+    if not key.startswith(root):
+        return key
+    if not key.removeprefix(root).startswith((*_WHOLE_UPLOAD_FOLDERS, _PASTE_FOLDER)):
+        return None
+    # The item's own per-item copy there (in a whole-file folder a versioned one only: ``_own_raw_key``) goes with it.
+    return None if item_raw_objects(item, bucket) is not None else key
+
+
+def is_deletable_upload(key: str) -> bool:
+    """Whether ``key`` is a whole file a whole-source erasure deletes itself: the deployment's CSV / JSON upload."""
+    return key.startswith(_WHOLE_UPLOAD_PREFIXES)
+
+
+def _raw_uri_key(item: Mapping[str, Any], bucket: str) -> str | None:
+    """The object key of ``item``'s ``s3_raw_uri`` in ``bucket`` (an object, never a folder), or None."""
     uri = item.get('s3_raw_uri')
     if not isinstance(uri, str) or not bucket:
         return None
     parsed = urlparse(uri)
     key = parsed.path.lstrip('/')
-    if parsed.scheme != 's3' or parsed.netloc != bucket or '..' in key.split('/'):
+    if parsed.scheme != 's3' or parsed.netloc != bucket or '..' in key.split('/') or key.endswith('/'):
         return None
-    return key if key.startswith(_WHOLE_UPLOAD_PREFIXES) and not key.endswith('/') else None
+    return key
 
 
 def import_originals_prefix(item: Mapping[str, Any]) -> str | None:

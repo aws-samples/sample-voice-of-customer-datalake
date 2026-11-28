@@ -161,3 +161,25 @@ class TestSaveScraperValidatesEveryUrl:
         assert response['statusCode'] == 200
         assert body['success'] is True
         mock_secrets.put_secret_value.assert_called_once()
+
+
+class TestScraperNamesReservedAsSourceIds:
+    """A scraper's name is its items' source id (``source_platform_override``): a new scraper cannot take the id of
+    a whole-file folder (shared/source_profiles.py ``RESERVED_SOURCE_IDS``), and one stored under it keeps saving."""
+
+    def _save(self, scraper, stored, api_gateway_event, lambda_context):
+        with patch('scrapers_handler.secretsmanager') as secrets:
+            secrets.get_secret_value.return_value = {'SecretString': json.dumps({'webscraper_configs': json.dumps(stored)})}
+            response, body = call_route(lambda_handler, api_gateway_event, lambda_context,
+                                        method='POST', path='/scrapers', body={'scraper': scraper})
+        return response['statusCode'], body, secrets.put_secret_value.called
+
+    def test_a_new_scraper_named_json_upload_is_a_400_that_says_to_choose_another_name(
+            self, api_gateway_event, lambda_context):
+        status, body, written = self._save({'id': 's1', 'name': 'json_upload'}, [], api_gateway_event, lambda_context)
+        assert (status, 'choose another name' in json.dumps(body), written) == (400, True, False)
+
+    def test_a_stored_scraper_named_csv_upload_still_saves(self, api_gateway_event, lambda_context):
+        stored = [{'id': 's1', 'name': 'csv_upload'}]
+        status, _, written = self._save({'id': 's1', 'name': 'csv_upload'}, stored, api_gateway_event, lambda_context)
+        assert (status, written) == (200, True)

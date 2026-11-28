@@ -701,6 +701,7 @@
       "tags": "{{name}}: Korrigieren Sie zuerst die Tags.",
       "idFormat": "Kleinbuchstaben, Ziffern, „_“ oder „-“ verwenden (bis zu 48).",
       "idDuplicate": "Diese Quelle hat bereits ein Profil.",
+      "idReserved": "Diese ID ist für Uploads ganzer Dateien reserviert; wählen Sie eine andere ID.",
       "radarBrand": "{{name}}: Geben Sie die Marke an, die diese Radar-Quelle beobachtet."
     },
     "radarLegacy": "Radar-Quelle für {{brand}}: Die Bewertungen dieser Quelle gehen an Radar.",

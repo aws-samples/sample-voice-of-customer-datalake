@@ -1996,6 +1996,16 @@ def get_sources_route():
     return {'sources': [{key: p[key] for key in ('id', 'label', 'restricted')} for p in profiles]}
 
 
+def _stored_source_ids(scope: WorkspaceScope | None) -> frozenset[str]:
+    """The ids of ``scope``'s saved profiles, which a save may keep even when reserved since (shared/source_profiles.py
+    ``RESERVED_SOURCE_IDS``); none when the stored row is corrupt (a reserved id is then refused, the safe side)."""
+    try:
+        return frozenset(profile['id'] for profile in load_source_profiles(_configured_table(), scope))
+    except ValueError:
+        logger.warning('Stored source profiles are invalid; keeping no reserved id on save')
+        return frozenset()
+
+
 @app.put("/settings/sources")
 @tracer.capture_method
 def put_sources_route():
@@ -2014,7 +2024,8 @@ def put_sources_route():
         if problem is not None:
             raise ValidationError(problem)
     dimensions = _stored_dimensions_or_500(scope)
-    sources = _validated_list('sources', lambda value: validate_source_profiles(value, dimensions))
+    stored_ids = _stored_source_ids(scope)
+    sources = _validated_list('sources', lambda value: validate_source_profiles(value, dimensions, stored_ids))
     _put_config_row(SOURCES_KIND, SOURCES_SETTINGS_KEY, scope, 'sources', sources, event)
     clear_source_profiles_cache()
     logger.info('Source profiles saved', extra={'sources': len(sources)})

@@ -725,6 +725,7 @@
       "tags": "{{name}} : corrigez d'abord les étiquettes.",
       "idFormat": "Utilisez des minuscules, des chiffres, « _ » ou « - » (48 au maximum).",
       "idDuplicate": "Cette source a déjà un profil.",
+      "idReserved": "Cet identifiant est réservé aux imports de fichiers entiers ; choisissez-en un autre.",
       "radarBrand": "{{name}} : indiquez la marque suivie par cette source Radar."
     },
     "radarLegacy": "Source Radar pour {{brand}} : les avis de cette source vont dans Radar.",
