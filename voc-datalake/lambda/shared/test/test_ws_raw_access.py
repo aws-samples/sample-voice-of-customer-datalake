@@ -273,8 +273,10 @@ ALLOWED: Final[dict[str, tuple[int, dict[str, int]]]] = {
     'lambda/api/metrics_handler.py': (2, {'Table': 2, 'batch': 1, 'meta.client': 1}),
     # 7.104.00: 2 accessor calls fewer: the product context's first write and an upload's record are put by their
     # stores now (shared/product_proposals.py ``write_context``, shared/product_sources.py ``put_source``).
+    # 3h-S3b (7.106.00): 1 fewer: the delete's citing documents take the request's scope; the product report's counted
+    # create stays the deployment's (its job is 3h-S8's).
     'lambda/api/product_context.py': (3, {'generate_presigned_url': 1, 'get_projects_table': 1,
-                                          'project accessor(workspace=None)': 2}),
+                                          'project accessor(workspace=None)': 1}),
     # transact: 2, one of them the client's method kept as `transact` and called later.
     # voc-wiki's prototype builder (merged in 7.33.00): projects.py's prototype store reads the pin forms' table
     # (get_aggregates_table), projects_handler.py's prototype routes read the projects table five more times.
@@ -530,11 +532,11 @@ ALLOWED: Final[dict[str, tuple[int, dict[str, int]]]] = {
                                                        'project accessor(workspace=None)': 3}),
     'lambda/shared/validation_documents.py': (3, {'project accessor(workspace=None)': 1}),
     'lambda/shared/library_worker.py': (3, {'get_projects_table': 1}),
-    # The Product tab's sources (7.104.00, docs/project-workspace.md): their store, the deployment's until projects move
-    # (every key takes the workspace, every entry point refuses one: PRODUCT_SOURCES_STORE): the projects table, a
-    # source's text put at its derivable key, and the reads' counters, a project's and a person's link reads a day
-    # (PRODUCTURL#) and a person's file reads (PRODUCTFILE#, 7.104.00 round 1), kept 2 days; the routes' voc-aggregates
-    # handle for those counters.
+    # The Product tab's sources (7.104.00, docs/project-workspace.md): their store (every key takes the workspace; a
+    # workspace's since 7.106.00, 3h-S3b, behind the projects seam): the projects table, a source's text put at its
+    # derivable key, and the reads' counters, a project's and a person's link reads a day (PRODUCTURL#) and a person's
+    # file reads (PRODUCTFILE#, 7.104.00 round 1), kept 2 days, a workspace's under WS#{ws}# (scoped_pk); the routes'
+    # voc-aggregates handle for those counters.
     'lambda/shared/product_sources.py': (3, {'PRODUCTFILE#': 1, 'PRODUCTURL#': 1, 'get_projects_table': 1,
                                              'put_object': 1}),
     'lambda/shared/product_source_routes.py': (3, {'get_aggregates_table': 1}),

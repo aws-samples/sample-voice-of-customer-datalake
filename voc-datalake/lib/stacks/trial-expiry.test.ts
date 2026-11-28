@@ -97,7 +97,9 @@ describe('the voc-trial-expiry job', () => {
     const guard = statementsOf(jobRole(), { guard: true });
     expect(guard.every((s) => s.effect === 'Deny')).toBe(true);
     const outside = guard.find((s) => s.sid === 'DenyAuditRowWritesOutsideOwnPartition');
-    expect(outside?.condition).toStrictEqual({ 'ForAnyValue:StringLike': { 'dynamodb:LeadingKeys': ['AUDIT#*'] },
+    // Since 7.106.00 the guard's audit keys name a workspace's own audit partitions too (`WS#{one id}#AUDIT#*`).
+    expect(outside?.condition).toStrictEqual({ 'ForAnyValue:StringLike': { 'dynamodb:LeadingKeys': ['AUDIT#*',
+      `WS#ws_${'?'.repeat(26)}#AUDIT#*`] },
       'ForAnyValue:StringNotLike': { 'dynamodb:LeadingKeys': ['AUDIT#WS#*'] } });
     expect(guard.some((s) => s.actions.includes('dynamodb:DeleteItem') && s.actions.includes('dynamodb:UpdateItem')))
       .toBe(true);

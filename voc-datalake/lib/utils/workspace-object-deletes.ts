@@ -18,10 +18,15 @@
  */
 import * as iam from 'aws-cdk-lib/aws-iam';
 import type * as s3 from 'aws-cdk-lib/aws-s3';
-import { RAW_BUCKET_WORKSPACE_PREFIXES, WORKSPACE_LIBRARY_PREFIX } from '../stacks/core-buckets';
+import {
+  RAW_BUCKET_WORKSPACE_PREFIXES, WORKSPACE_LIBRARY_PREFIX, WORKSPACE_PRODUCT_DOCS_OBJECTS,
+} from '../stacks/core-buckets';
 
-/** The one tenant-workspace prefix a deployment grant may name beside its own (7.62.00: `ws/{one id}/library/`). */
-const TENANT_PREFIXES: readonly string[] = [WORKSPACE_LIBRARY_PREFIX];
+/**
+ * The tenant-workspace prefixes a deployment grant may name beside its own: `ws/{one id}/library/` (7.62.00) and a
+ * workspace's projects' product documents, `ws/{one id}/projects/*\/product_docs/*` (7.106.00).
+ */
+const TENANT_PREFIXES: readonly string[] = [WORKSPACE_LIBRARY_PREFIX, WORKSPACE_PRODUCT_DOCS_OBJECTS];
 
 /** What a role needs to delete every version of an object. */
 export const VERSION_DELETE_ACTIONS = ['s3:DeleteObject', 's3:DeleteObjectVersion', 's3:ListBucketVersions'] as const;

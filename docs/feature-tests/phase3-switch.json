@@ -481,6 +481,74 @@
       "unit": [],
       "e2e": [],
       "exemption": null
+    },
+    {
+      "id": "7.106.00",
+      "aliases": [
+        "7.106.0",
+        "3h-S3b"
+      ],
+      "title": "A project's product documents and the Product tab's sources take their workspace through 7.103.00's seam (slice 3h-S3b of docs/multi-workspace.md's project plan; no production behaviour change): with…",
+      "source": {
+        "changelog": "7.106.00",
+        "doc": "docs/multi-workspace.md"
+      },
+      "kind": "plumbing",
+      "status": "done",
+      "unit": [
+        {
+          "runner": "pytest",
+          "node": "voc-datalake/lambda/api/test/test_product_routes_workspace.py::test_another_workspaces_member_gets_a_missing_projects_404_and_changes_nothing",
+          "written_by": "voc-lead-3h/s3b",
+          "accepted_by": null,
+          "accepted_at": null,
+          "digest": "e41ce231ff3c78066ec31b62bc42653fe1e14eb87577eb2b1b20ae1ee2d1b029",
+          "verdict": null,
+          "rejections": []
+        },
+        {
+          "runner": "pytest",
+          "node": "voc-datalake/lambda/api/test/test_product_routes_workspace.py::test_the_twin_reads_only_the_workspace_its_event_names",
+          "written_by": "voc-lead-3h/s3b",
+          "accepted_by": "eval-s3b/1",
+          "accepted_at": "b311b18116206eb88fc34197a9cbc8a96ea78ad0",
+          "digest": "2eee53cf8c901b40b97a1158ac3fbd0128c50ac20ec48ca15d51b4874603f611",
+          "verdict": "docs/test-verdicts/7.106.00/pytest-9fdea5415d92.md",
+          "rejections": []
+        },
+        {
+          "runner": "pytest",
+          "node": "voc-datalake/lambda/api/test/test_product_routes_workspace.py::test_every_key_and_counter_takes_the_workspace_and_none_is_exactly_the_deployments",
+          "written_by": "voc-lead-3h/s3b",
+          "accepted_by": "eval-s3b/1",
+          "accepted_at": "b311b18116206eb88fc34197a9cbc8a96ea78ad0",
+          "digest": "2eee53cf8c901b40b97a1158ac3fbd0128c50ac20ec48ca15d51b4874603f611",
+          "verdict": "docs/test-verdicts/7.106.00/pytest-a58f6953afdd.md",
+          "rejections": []
+        },
+        {
+          "runner": "pytest",
+          "node": "voc-datalake/lambda/api/test/test_product_routes_workspace.py::test_with_the_seam_off_a_header_changes_nothing",
+          "written_by": "voc-lead-3h/s3b",
+          "accepted_by": null,
+          "accepted_at": null,
+          "digest": "e41ce231ff3c78066ec31b62bc42653fe1e14eb87577eb2b1b20ae1ee2d1b029",
+          "verdict": null,
+          "rejections": []
+        },
+        {
+          "runner": "pytest",
+          "node": "voc-datalake/lambda/api/test/test_product_routes_workspace.py::test_the_upload_refuses_an_image_in_a_workspace_with_the_extractors_message_and_writes_nothing",
+          "written_by": "voc-lead-3h/s3b",
+          "accepted_by": "eval-s3b/1",
+          "accepted_at": "b311b18116206eb88fc34197a9cbc8a96ea78ad0",
+          "digest": "2eee53cf8c901b40b97a1158ac3fbd0128c50ac20ec48ca15d51b4874603f611",
+          "verdict": "docs/test-verdicts/7.106.00/pytest-3b659fc316c6.md",
+          "rejections": []
+        }
+      ],
+      "e2e": [],
+      "exemption": null
     }
   ]
 }

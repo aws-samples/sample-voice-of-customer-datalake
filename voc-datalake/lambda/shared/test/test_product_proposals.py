@@ -4,6 +4,7 @@ and an audit row, and never lets an autonomous caller replace a value a person t
 from __future__ import annotations
 
 import inspect
+import re
 from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import Any, ClassVar
@@ -371,36 +372,36 @@ class TestTheLimits:
         return create_pk_sk_table('test-aggregates')
 
     def test_one_extract_a_minute_per_project(self, aggregates):
-        proposals.count_extract(aggregates, PROJECT, 'editor-sub', NOW)
+        proposals.count_extract(aggregates, PROJECT, 'editor-sub', NOW, workspace=None)
         with pytest.raises(TooManyRequestsError) as limited:
-            proposals.count_extract(aggregates, PROJECT, 'other-sub', NOW)
+            proposals.count_extract(aggregates, PROJECT, 'other-sub', NOW, workspace=None)
         assert limited.value.code == 'rate_limited'
 
     def test_ten_a_day_per_project(self, aggregates):
         for minute in range(proposals.PROJECT_EXTRACTS_PER_DAY):
-            proposals.count_extract(aggregates, PROJECT, f'sub-{minute}', NOW.replace(minute=minute))
+            proposals.count_extract(aggregates, PROJECT, f'sub-{minute}', NOW.replace(minute=minute), workspace=None)
         with pytest.raises(TooManyRequestsError):
-            proposals.count_extract(aggregates, PROJECT, 'sub-new', NOW.replace(minute=30))
+            proposals.count_extract(aggregates, PROJECT, 'sub-new', NOW.replace(minute=30), workspace=None)
 
     def test_twenty_a_day_per_person(self, aggregates):
         for index in range(proposals.PERSON_EXTRACTS_PER_DAY):
-            proposals.count_extract(aggregates, f'p{index}', 'editor-sub', NOW)
+            proposals.count_extract(aggregates, f'p{index}', 'editor-sub', NOW, workspace=None)
         with pytest.raises(TooManyRequestsError):
-            proposals.count_extract(aggregates, 'p-new', 'editor-sub', NOW)
+            proposals.count_extract(aggregates, 'p-new', 'editor-sub', NOW, workspace=None)
 
     def test_a_refused_extract_counts_against_no_limit(self, aggregates):
         # Review Q4 (7.104.00 round 1): the limits were counted one by one, so a person at their day's limit still
         # spent the project's minute and day.
         for index in range(proposals.PERSON_EXTRACTS_PER_DAY):
-            proposals.count_extract(aggregates, f'p{index}', 'editor-sub', NOW)
+            proposals.count_extract(aggregates, f'p{index}', 'editor-sub', NOW, workspace=None)
         with pytest.raises(TooManyRequestsError) as limited:
-            proposals.count_extract(aggregates, 'p-new', 'editor-sub', NOW)
+            proposals.count_extract(aggregates, 'p-new', 'editor-sub', NOW, workspace=None)
         assert limited.value.code == 'rate_limited'
         assert not [row for row in aggregates.scan()['Items'] if 'p-new' in row['pk']]
-        proposals.count_extract(aggregates, 'p-new', 'other-sub', NOW)
+        proposals.count_extract(aggregates, 'p-new', 'other-sub', NOW, workspace=None)
 
     def test_the_counters_expire_after_two_days(self, aggregates):
-        proposals.count_extract(aggregates, PROJECT, 'editor-sub', NOW)
+        proposals.count_extract(aggregates, PROJECT, 'editor-sub', NOW, workspace=None)
         rows = aggregates.scan()['Items']
         assert {row['pk'] for row in rows} == {
             'PRODUCTX#PROJECT#p1#202611261200', 'PRODUCTX#PROJECT#p1#2026-11-26', 'PRODUCTX#USER#editor-sub#2026-11-26'}
@@ -492,35 +493,55 @@ class TestADeletedSource:
 
 
 class TestTheWorkspace:
-    """The store's scope (7.104.00, docs/multi-workspace.md 3h): every key takes the workspace, a required keyword,
-    and every public function refuses one (``PRODUCT_SOURCES_STORE``) before it reads or writes anything."""
+    """The store's scope (docs/multi-workspace.md 3h): every key takes the workspace, a required keyword. Since
+    7.106.00 (3h-S3b) the context, the latest proposal, an accept, a dismiss and ``forget_source`` act in it (the
+    routes' cases: lambda/api/test/test_product_routes_workspace.py); the extract's own stores refuse one
+    (``PRODUCT_EXTRACT_STORE``) before they read or write anything, until its job moves (3h-S8)."""
 
     SCOPE = WorkspaceScope('ws_01JC3Q8ZK6V7W9X2Y4A5B6C7D8')
     REFUSALS: ClassVar[dict[str, Callable[[Any, WorkspaceScope], object]]] = {
-        'context_state': lambda table, ws: proposals.context_state(table, PROJECT, workspace=ws),
         'put_proposal': lambda table, ws: proposals.put_proposal(table, PROJECT, {'sk': 'x'}, workspace=ws),
-        'latest_row': lambda table, ws: proposals.latest_row(table, PROJECT, workspace=ws),
-        'dismiss': lambda table, ws: proposals.dismiss(table, PROJECT, 'pp_x', workspace=ws),
-        'write_context': lambda table, ws: proposals.write_context(table, PROJECT, {'product_name': 'x'}, PERSON,
-                                                                   workspace=ws),
-        'accept': lambda table, ws: proposals.accept(table, PROJECT, 'pp_x', {'fields': {}}, PERSON, workspace=ws),
-        'forget_source': lambda table, ws: proposals.forget_source(table, PROJECT, 'doc_a', workspace=ws),
         'take_lock': lambda table, ws: proposals.take_lock(table, PROJECT, 'lock-1', 'sub', NOW, workspace=ws),
         'note_lock_job': lambda table, ws: proposals.note_lock_job(table, PROJECT, 'lock-1', 'job_1', workspace=ws),
         'release_lock': lambda table, ws: proposals.release_lock(table, PROJECT, 'lock-1', workspace=ws),
+        'count_extract': lambda table, ws: proposals.count_extract(table, PROJECT, 'sub', NOW, workspace=ws),
     }
+    #: The functions that act in the workspace they are given (3h-S3b), and the key builders.
+    SCOPED: ClassVar[frozenset[str]] = frozenset({'context_state', 'latest_row', 'dismiss', 'write_context', 'accept',
+                                                  'forget_source', 'new_proposal_key'})
 
     @pytest.mark.parametrize('name', sorted(REFUSALS))
-    def test_a_workspace_is_refused_before_any_read_or_write(self, name):
+    def test_the_extracts_stores_refuse_a_workspace_before_any_read_or_write(self, name):
         table = MagicMock()
-        with pytest.raises(NotPerWorkspaceError, match=r'^Product sources is not per workspace yet$'):
+        with pytest.raises(NotPerWorkspaceError, match=r'^The product extract is not per workspace yet$'):
             self.REFUSALS[name](table, self.SCOPE)
         assert table.mock_calls == []
 
-    def test_every_public_function_that_takes_a_workspace_is_one_of_those_refusals(self):
+    def test_every_public_function_that_takes_a_workspace_is_scoped_or_refuses_it(self):
         takes = {name for name in proposals.__all__ if callable(getattr(proposals, name))
                  and 'workspace' in inspect.signature(getattr(proposals, name)).parameters}
-        assert takes - {'new_proposal_key'} == set(self.REFUSALS)
+        assert takes == set(self.REFUSALS) | self.SCOPED
+        assert set(self.REFUSALS).isdisjoint(self.SCOPED)
+
+    def test_the_accepts_audit_partition_is_one_the_audit_row_guard_denies_changing(self):
+        """7.106.00: the deployment's ``AUDIT#…`` and a workspace's ``WS#{one id}#AUDIT#…``, the two patterns of
+        lib/utils/audit-row-guard.ts ``AUDIT_ROW_PARTITION_PATTERNS`` (its test pins the same key from the IAM side)."""
+        guarded = re.compile(r'AUDIT#.*|WS#ws_.{26}#AUDIT#.*')
+        assert proposals.audit_pk(workspace=None) == 'AUDIT#product_context'
+        assert proposals.audit_pk(workspace=self.SCOPE) == f'WS#{self.SCOPE.ws}#AUDIT#product_context'
+        assert all(guarded.fullmatch(proposals.audit_pk(workspace=scope)) for scope in (None, self.SCOPE))
+
+    def test_the_workspaces_context_and_latest_proposal_are_read_from_its_project_partition(self):
+        table = MagicMock()
+        table.get_item.return_value = {'Item': {'product_name': 'Orbit'}}
+        table.query.return_value = {'Items': []}
+        assert proposals.context_state(table, PROJECT, workspace=self.SCOPE).values['product_name'] == 'Orbit'
+        assert table.get_item.call_args.kwargs['Key'] == {'pk': project_pk(PROJECT, workspace=self.SCOPE),
+                                                          'sk': 'PRODUCT_CONTEXT'}
+        assert proposals.latest_row(table, PROJECT, workspace=self.SCOPE) is None
+        condition = table.query.call_args.kwargs['KeyConditionExpression']
+        assert condition.get_expression()['values'][0].get_expression()['values'][1] == project_pk(
+            PROJECT, workspace=self.SCOPE)
 
     @pytest.mark.parametrize('scope', [None, SCOPE], ids=['deployment', 'workspace'])
     def test_a_new_proposals_key_is_in_its_scopes_project_partition(self, scope):

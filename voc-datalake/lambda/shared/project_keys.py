@@ -50,8 +50,8 @@ if TYPE_CHECKING:
 __all__ = ['AGENT_RUNS_STORE', 'ASSIST_JOB_PREFIX', 'COMMENT_PARTITION_PREFIX', 'COMMENT_SERIES_PREFIX',
            'DEPLOYMENT_LINK_REGISTRY_PK', 'DEPLOYMENT_PROJECT_REGISTRY_PK', 'DEPLOYMENT_SERIES_REGISTRY_PK',
            'PRODUCT_CONTEXT_SK',
-           'PRODUCT_DOC_SK_PREFIX', 'PRODUCT_EXTRACT_SK', 'PRODUCT_PROPOSAL_SK_PREFIX',
-           'PRODUCT_SOURCES_STORE', 'PROJECT_GATE_STORE', 'PROJECT_JOB_WORK_STORE',
+           'PRODUCT_DOC_SK_PREFIX', 'PRODUCT_EXTRACT_SK', 'PRODUCT_EXTRACT_STORE', 'PRODUCT_PROPOSAL_SK_PREFIX',
+           'PROJECT_GATE_STORE', 'PROJECT_JOB_WORK_STORE',
            'PROJECT_TYPE_PK', 'PROTOTYPE_BUILDER_STORE', 'PROTOTYPE_SK_PREFIX', 'REVIEWER_ROUTES_STORE',
            'REVIEW_REGISTRIES_MARKER_KEY', 'REVIEW_REGISTRIES_MARKER_SK', 'REVISE_FROM_COMMENTS_STORE', 'SERIES_ID_RE', 'NotPerWorkspaceError',
            'ProjectPartition', 'comment_partition_ids', 'comment_series_item', 'comments_pk',
@@ -146,10 +146,11 @@ PRODUCT_PROPOSAL_SK_PREFIX: Final = 'PRODUCT_PROPOSAL#'
 #: ``lock_id``), stale after 16 minutes; released by an update, never deleted (a project delete sweeps it). Neither
 #: the workspace export nor the project bundle carries it.
 PRODUCT_EXTRACT_SK: Final = 'PRODUCT_EXTRACT'
-#: A project's product sources (7.104.00: the reading of an uploaded file or a link on the projects API's assist twin,
-#: shared/product_source_worker.py, and an interview's answers saved as a source, shared/product_sources.py): their
-#: rows and objects are the deployment's, so a workspace is refused until the switch (3h) threads it.
-PRODUCT_SOURCES_STORE: Final = 'Product sources'
+#: The Product tab's extract (7.104.00): its proposal's put, its lock and its limits' counters
+#: (shared/product_proposals.py), reached only by the extract's route and its document-generator job, refused in a
+#: workspace until that job moves (3h-S8). The sources, the context and the proposals' review take the workspace since
+#: 7.106.00 (3h-S3b), which retired the store name they were refused by, ``Product sources``.
+PRODUCT_EXTRACT_STORE: Final = 'The product extract'
 #: A series id's shape (shared/document_series.py ``series_id``: ``ser_`` + 24 hex), which a reader of a project's
 #: ``COMMENT_SERIES#`` rows checks before it names a comment partition (the hard delete, the workspace export).
 SERIES_ID_RE: Final = re.compile(r'ser_[0-9a-f]{24}')

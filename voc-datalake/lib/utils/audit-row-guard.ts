@@ -16,8 +16,10 @@
  * feedback edits, each `AUDIT#WS#*` only; a trial's end, voc-trial-expiry, `AUDIT#WS#*` only (7.71.00); a workspace's
  * hard delete, voc-workspace-delete: its tombstones,
  * `AUDIT#tombstone#*` only, in voc-aggregates, and `AUDIT#workspace-deletes` only in voc-workspaces, where the
- * workspaces API writes that partition's request and cancel rows). Every role that can write in one of those
- * tables gets, on it, an explicit Deny pinned by `dynamodb:LeadingKeys` to `AUDIT#*`:
+ * workspaces API writes that partition's request and cancel rows). Since 7.106.00 a workspace's own audit partitions
+ * too, `WS#{ws}#AUDIT#…` (voc-projects' `WS#{ws}#AUDIT#product_context`, a product proposal accept's, written by the
+ * projects API inside the accept's transaction). Every role that can write in one of those tables gets, on it, an
+ * explicit Deny pinned by `dynamodb:LeadingKeys` to `AUDIT#*` and `WS#{one id}#AUDIT#*`:
  *
  *   - a table the role is that table's audit writer for: Deny DeleteItem, UpdateItem and BatchWriteItem (no audit
  *     row is ever changed or removed, a batch delete included; every writer puts its rows one PutItem at a time);
@@ -51,10 +53,19 @@ import type * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import type { IConstruct } from 'constructs';
 import { z } from 'zod';
+import { WORKSPACE_ID_PATTERN } from '../stacks/core-buckets';
 import { WORKSPACE_RESOLUTION_POLICY_ID } from './workspace-resolution-grants';
 
-/** The partition-key pattern of every audit row. */
+/** The partition-key pattern of every deployment-wide audit row. */
 const AUDIT_PARTITION_PATTERN = 'AUDIT#*';
+/**
+ * A workspace's own audit partitions, `WS#{ws}#AUDIT#…` (7.106.00: a product proposal accept's
+ * `WS#{ws}#AUDIT#product_context`, lambda/shared/product_proposals.py `audit_pk`, written inside the accept's
+ * transaction, which a workspace's writes keep under `WS#{ws}#`). One workspace id per pattern
+ * (`WORKSPACE_ID_PATTERN`'s 26 `?`), never `WS#*#AUDIT#*`: IAM's `*` also matches `#`, so that would reach any
+ * workspace row whose key holds `#AUDIT#` further on (a source or a project named so).
+ */
+const WORKSPACE_AUDIT_PARTITION_PATTERN = `WS#${WORKSPACE_ID_PATTERN}#AUDIT#*`;
 /** Sids of the statements this module adds. */
 export const AUDIT_DENY_CHANGE_SID = 'DenyAuditRowChanges';
 export const AUDIT_DENY_WRITE_SID = 'DenyAuditRowWritesByNonWriters';
@@ -191,7 +202,11 @@ function writtenTables(document: iam.PolicyDocument, tableArns: ReadonlySet<stri
   return new Set(statements.flatMap((raw) => tablesWritten(StatementSchema.parse(raw), tableArns)));
 }
 
-const AUDIT_KEYS = { 'ForAnyValue:StringLike': { 'dynamodb:LeadingKeys': [AUDIT_PARTITION_PATTERN] } };
+/** Every audit partition's pattern, the deployment's and a workspace's (a construct's own Deny uses them too). */
+export const AUDIT_ROW_PARTITION_PATTERNS: readonly string[] = [AUDIT_PARTITION_PATTERN,
+  WORKSPACE_AUDIT_PARTITION_PATTERN];
+
+const AUDIT_KEYS = { 'ForAnyValue:StringLike': { 'dynamodb:LeadingKeys': [...AUDIT_ROW_PARTITION_PATTERNS] } };
 
 const denyOnAuditRows = (sid: string, actions: string[], resources: string[], conditions: Record<string, unknown> = AUDIT_KEYS) =>
   new iam.PolicyStatement({ sid, effect: iam.Effect.DENY, actions, resources, conditions });

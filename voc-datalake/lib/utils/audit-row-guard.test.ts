@@ -18,7 +18,28 @@ import { byCodeUnit } from './compare';
 const GUARDED_TABLES = ['AggregatesTable', 'ProjectsTable', 'ParticipantsTable', 'FeatureRequestsTable',
   'ConversationsTable', 'WorkspacesTable'] as const;
 const WRITES = /^dynamodb:(PutItem|UpdateItem|DeleteItem|BatchWriteItem|\*)$/;
-const AUDIT_CONDITION = { 'ForAnyValue:StringLike': { 'dynamodb:LeadingKeys': ['AUDIT#*'] } };
+/** A workspace's own audit partitions in the tables it writes rows of (7.106.00: an accept's
+ *  `WS#{ws}#AUDIT#product_context`, lambda/shared/product_proposals.py `audit_pk`), one workspace id per pattern. */
+const WORKSPACE_AUDIT_PATTERN = `WS#ws_${'?'.repeat(26)}#AUDIT#*`;
+const AUDIT_CONDITION = { 'ForAnyValue:StringLike': { 'dynamodb:LeadingKeys': ['AUDIT#*', WORKSPACE_AUDIT_PATTERN] } };
+
+/** IAM's StringLike on one key: `*` any run, `?` one character. */
+const iamLike = (pattern: string, key: string): boolean => new RegExp(`^${pattern
+  .replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*').replace(/\?/g, '.')}$`).test(key);
+
+describe('the workspace audit partition (7.106.00)', () => {
+  it('a workspace accept\'s audit key is an audit key the guard names, and no other workspace row is', () => {
+    // lambda/shared/product_proposals.py audit_pk(workspace=WorkspaceScope(ws)), pinned on the Python side too
+    // (lambda/shared/test/test_product_proposals.py).
+    const key = 'WS#ws_01JC3Q8ZK6V7W9X2Y4A5B6C7D8#AUDIT#product_context';
+    expect(AUDIT_CONDITION['ForAnyValue:StringLike']['dynamodb:LeadingKeys'].some((p) => iamLike(p, key))).toBe(true);
+    for (const other of ['WS#ws_01JC3Q8ZK6V7W9X2Y4A5B6C7D8#PROJECT#p1', 'AUDIX#x',
+      'WS#ws_01JC3Q8ZK6V7W9X2Y4A5B6C7D8#SOURCE#web#AUDIT#x']) {
+      expect(AUDIT_CONDITION['ForAnyValue:StringLike']['dynamodb:LeadingKeys'].some((p) => iamLike(p, other)))
+        .toBe(false);
+    }
+  });
+});
 
 /** Table → the roles that may PUT an audit row there (the audit writers; the settings API only `AUDIT#delete`, the
  *  users API only `AUDIT#platform-admins`). */

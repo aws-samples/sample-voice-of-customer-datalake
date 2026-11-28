@@ -17,6 +17,121 @@ the platform package version.
 
 ## [Unreleased]
 
+## [7.106.00] - 2026-11-28
+
+A project's product documents and the Product tab's sources take their workspace through 7.103.00's seam (slice
+3h-S3b of docs/multi-workspace.md's project plan; no production behaviour change): with the seam's `RESOLVE` off, as
+in every deployment until the flip (3h-S12), the projects API keeps ignoring `X-Workspace-Id` and every route acts
+on the deployment's rows, objects and counters exactly as before. Tests turn the seam on to prove the routes are ready.
+
+### Changed
+
+- **The routes threaded** (`api/projects_handler.py` `PRODUCT_ROUTES`, 12, now in `THREADED_ROUTES`): the product
+  context's read and write, the product documents' list, upload URL and delete, and the Product tab's sources (an
+  upload announced, a refresh, a link, typed answers) and proposals (the latest, an accept, a dismiss). Each passes
+  the request's scope to every store (`api/product_context.py`, `shared/product_source_routes.py`,
+  `shared/product_proposal_routes.py`; the included routers read it with `shared/project_request_scope.py`
+  `held_scope`); an autonomous writer's check reads the owner from the workspace's project.
+- **The extract stays refused in a workspace**, by name, now under 3h-S8: its document-generator job (the job row
+  and its work) is the deployment's. Its route passes the request's scope to its own stores, which refuse a workspace
+  (`PRODUCT_EXTRACT_STORE`: the proposal's put, the lock, the limits' count). `NOT_YET` no longer names 3h-S3b.
+- **The stores' refusals lift** for what this slice threads: the sources (`shared/product_sources.py`, the typed
+  answers' save among them; a voice interview's transcript stays the deployment's, its session is 3h-S3c's), the
+  product context's reader and writer, the latest proposal, an accept, a dismiss and a deleted source's
+  `forget_source` (`shared/product_proposals.py`). `Product sources` (`PRODUCT_SOURCES_STORE`) is retired.
+- **The twin reads the workspace its event names**: the starting route sets the event's `workspace_id` from the
+  request's resolved scope (`shared/workspace_routing.py` `workspace_payload`, given the scope's `WorkspaceContext`:
+  set last, over any field of that name), never from the body; `shared/product_source_worker.py` reads and writes only
+  that scope's row and objects, so an event naming another workspace finds no claimed source and writes nothing.
+- **Keys in a workspace**: a source's row and a proposal, the context and the lock are rows of the workspace's project
+  partition (`WS#{ws}#PROJECT#{id}`, `project_pk`); an upload, the twin's file and every source's text are under
+  `ws/{ws}/projects/{id}/product_docs/` (`scoped_object_key`); the counters in voc-aggregates are scoped under
+  `WS#{ws}#` (`PRODUCTURL#…`, `PRODUCTFILE#…`, `PRODUCTX#…`). A delete's `AUDIT#delete` row names the workspace
+  (its target's `workspace`); an accept's audit row is the workspace's own, `WS#{ws}#AUDIT#product_context`, one of
+  the accept's transaction entries as the deployment's `AUDIT#product_context` row is (atomic in both scopes), and kept
+  when the workspace is deleted (ids only). With no workspace every key is exactly the deployment's.
+- **The per-person caps apply per workspace, deliberately**: a person's daily link reads (60), file reads (60) and
+  extracts (20) are counted in each workspace they work in, as its projects are, so a person in N workspaces may use N
+  times a cap; the per-project caps are unchanged. Only platform admins create workspaces, which bounds N. A
+  deployment-wide ceiling per person is a follow-up if cost needs it (docs/multi-workspace.md).
+- **The extract's job refuses a workspace itself** (`shared/product_extract.py` `run`), before any source is read or
+  the model asked, beside the job runner's own refusal.
+- **An image is still refused at upload in a workspace**, before its record is written (400 `image_in_workspace`,
+  with the extractor's own message, "Images can't be described in a workspace yet. Upload the design as a .md or .txt
+  file."), until the model picks move into the workspace (3f).
+- **IAM**: the projects API's role (and its assist twin, which shares it) gains read, write and version delete on one
+  workspace id's `ws/{id}/projects/*/product_docs/*`, beside the deployment's `projects/*/product_docs/*`, in the same
+  statement (`lib/stacks/api-projects-lambda.ts`, `lib/utils/workspace-object-deletes.ts`); no DynamoDB grant changes
+  (the role's voc-projects and voc-aggregates grants carry no `LeadingKeys` condition). One more cdk-nag finding of
+  VocApiStack's objects acknowledgement (152 to 153). The CDK baseline's template hashes move with the grant and the
+  release number.
+- **The audit-row guard covers a workspace's audit partitions** (`lib/utils/audit-row-guard.ts`): every Deny it adds
+  (and the review registries marker's own) names `WS#{one id}#AUDIT#*` beside `AUDIT#*`, so no role may change or
+  remove an accept's `WS#{ws}#AUDIT#product_context` row, and only the projects API may put one (TENETS.md D5).
+- Not yet: the twin's reading of a scanned PDF (and a PDF reached by a link) asks the model through the Documents
+  Library's `describe`, which uses the deployment's model choices, in a workspace too; the twin and the Library keep
+  the deployment's model choices until they move into each workspace (decision 6, the slice after 3h). A person's own
+  way of working (AI-driven or not), checked for an autonomous writer, is the person's setting, not the workspace's.
+
+### Upgrade notes
+
+- Nothing to do: no workspace reaches these routes until the flip. A deployment's product documents, sources,
+  proposals and counters keep their keys.
+
+### Tests
+
+- `lambda/api/test/test_product_routes_workspace.py` (new, 79 cases): with the seam on, in moto, two workspaces and a
+  deployment project, each with a source, a context and a proposal: the 12 routes are threaded and the extract is
+  refused by name (3h-S8); B's member gets, for A's project, the exact 404 of an id that exists nowhere on each route,
+  with nothing written; a caller who is no member of A (the deployment's `admins` included) gets A's 404 before the
+  gate or a product store reads anything; each route acts on A's rows, objects and counters only (the context, the
+  listing and its stall check, an upload's `ws/` key, a delete of A's record, text and citations, an announced
+  upload read by the twin under A, a link and its refresh counted under `WS#{A}#`, typed answers, the latest
+  proposal, an accept and its audit row in A's own partition, in the accept's transaction, so a refused accept
+  writes none, a dismiss); the twin reads only the workspace its event names; a body cannot name it, and the resolved
+  context names A on the twin's event over a field naming B; every key and counter takes the workspace, and with none
+  is exactly the deployment's; the extract's stores refuse a workspace; an image is refused in A with the extractor's
+  own message (read from its source) and is still taken in the deployment; with the seam off a header changes nothing
+  on any route, and each write route answers and writes exactly as with no header (rows, counters, objects, the
+  twin's events). Seen red: 35 of the first 69 before the code (every route refused in a workspace, the old keys and
+  counters); the audit row's two cases on the after-commit put of the first round; the twin's override case with
+  `workspace_payload` letting the field win; the write equivalence 9 of 9 with the seam resolving while off; the
+  others are pins that held before and hold after (the non-member's 404, the deployment's image).
+- `shared/test/test_product_extract.py`: a workspace's extract job reads no source, asks no model and writes nothing
+  (seen red: the job read the workspace's sources first).
+- The keyword guard (`test_project_workspace_keyword.py`): `api/product_context.py` joins `GUARDED` (42 to 43
+  modules); the ratchet (`LITERAL_NONE`) goes down from 252 in 38 modules to 223 in 36 (the source routes' 10 and
+  the proposal routes' 11 gone, `api/product_context.py` 15 to 7: what stays is the product report and the PRD /
+  PR-FAQ and visual-brief blocks, the jobs' reads, 3h-S8). `test_ws_raw_access.py`: `api/product_context.py`'s
+  `project accessor(workspace=None)` 2 to 1. The workspace delete's key families register the four counters' builders
+  (`TTL`: a count each, kept two days) and the accepts' audit partition (`KEPT`, seeded and kept by the delete). The
+  stores' suites prove the lifted refusals act in the workspace and the extract's still refuse; the product documents' unit and mutation suites name the deployment at every call.
+- `lib/app-exact-grants.test.ts`: the projects role's version-delete statement names exactly its prefixes, the
+  workspace's product documents among them (seen red with the grant removed).
+
+### Tenet check
+
+Tenets touched: D8, D4, D5, 4, 6, 7 (TENETS.md).
+
+- **D8, each workspace is its own boundary** (advanced): a workspace's product documents, sources and proposals are
+  read and written in that workspace's rows, objects and counters, proved on every route before any workspace can
+  reach them; another workspace's member gets the one 404, and the twin's workspace is the one the request resolved.
+  Not yet within that boundary: the model choices the twin's scanned-PDF reading uses (the deployment's, until
+  decision 6 moves them), and a person's own way of working, which is theirs, not the workspace's.
+- **D4, full audit and lineage** (held): a delete's and an accept's audit rows name the workspace, the accept's in
+  its own transaction.
+- **D5, customer data is never removed outside a legal obligation; workspace deletes are recorded** (held): no new
+  delete path; the accepts' audit rows are kept when a workspace is deleted, and the counters expire as before.
+- **4, headless by design** (held): the change is in the API; the web app is unchanged.
+- **6, build it as if it is already a service** (held): one new grant, one workspace id's
+  `ws/<one id>/projects/*/product_docs/*`, pinned by a CDK test and written in TENETS.md's tenet 6 row; a person's
+  caps apply per workspace, a deliberate choice with a follow-up for a deployment-wide ceiling.
+- **7, fully serverless** (held): no new resource or fixed cost; the counters stay one partition per project or
+  person a day (no hot key), and no whole-partition read is added.
+
+What it is not: no workspace reaches these routes yet (the flip, 3h-S12); the extract, the product report and the
+PRD / PR-FAQ and visual-brief blocks are 3h-S8's; an image in a workspace waits for the model picks.
+
 ## [7.105.00] - 2026-11-28
 
 Tooling only: the roadmap gate's program. Every release this line shipped since 6.05.00 is now a roadmap item in a

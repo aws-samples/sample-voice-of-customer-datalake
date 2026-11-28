@@ -230,7 +230,7 @@ def _caller_category_scope() -> dict:
     return category_access.scope_to_config(scope)
 
 
-_SCOPE_CONTEXT_KEY = 'project_scope'
+_SCOPE_CONTEXT_KEY = project_request_scope.SCOPE_CONTEXT_KEY
 
 
 def _gate_meta(project_id: str, workspace: WorkspaceScope | None) -> dict | None:
@@ -260,8 +260,20 @@ _DOC = f'{_P}/documents/<document_id>'
 _PROTO = f'{_P}/prototypes/<document_id>'
 _PERSONA = f'{_P}/personas/<persona_id>'
 
-#: The routes that act in the request's workspace (3h-S3a), as ``(method, Powertools route template)``: each passes
-#: the request's scope to every store and gate call it makes.
+#: The product documents and the Product tab's sources and proposals (3h-S3b, 7.106.00): api/product_context.py,
+#: shared/product_source_routes.py and shared/product_proposal_routes.py, each passing the request's scope to every
+#: store, the twin's event naming the resolved workspace. The extract is not among them: its job is 3h-S8's.
+PRODUCT_ROUTES: Final = frozenset({
+    ('GET', f'{_P}/product-context'), ('PUT', f'{_P}/product-context'), ('GET', f'{_P}/product-docs'),
+    ('POST', f'{_P}/product-docs/upload-url'), ('DELETE', f'{_P}/product-docs/<doc_id>'),
+    ('POST', f'{_P}/product-docs/<doc_id>/uploaded'), ('POST', f'{_P}/product-docs/<doc_id>/refresh'),
+    ('POST', f'{_P}/product-docs/urls'), ('POST', f'{_P}/product-docs/answers'),
+    ('GET', f'{_P}/product-proposals/latest'), ('POST', f'{_P}/product-proposals/<proposal_id>/accept'),
+    ('POST', f'{_P}/product-proposals/<proposal_id>/dismiss'),
+})
+
+#: The routes that act in the request's workspace (3h-S3a; the product routes since 3h-S3b), as ``(method, Powertools
+#: route template)``: each passes the request's scope to every store and gate call it makes.
 THREADED_ROUTES: Final = frozenset({
     ('GET', '/projects'), ('POST', '/projects'), ('GET', _P), ('PUT', _P), ('POST', f'{_P}/chat-context'),
     ('PUT', f'{_P}/visibility'), ('POST', f'{_P}/owner'),
@@ -270,7 +282,7 @@ THREADED_ROUTES: Final = frozenset({
     ('POST', f'{_P}/documents'), ('PUT', _DOC), ('GET', f'{_DOC}/versions'),
     ('POST', f'{_DOC}/versions/<version_id>/restore'), ('POST', f'{_DOC}/duplicate'),
     ('PUT', _PERSONA), ('PUT', f'{_PERSONA}/protection'), ('POST', f'{_PERSONA}/notes'),
-})
+}) | PRODUCT_ROUTES
 
 
 def _family(slice_id: str, *routes: tuple[str, str]) -> dict[tuple[str, str], str]:
@@ -282,17 +294,6 @@ def _family(slice_id: str, *routes: tuple[str, str]) -> dict[tuple[str, str], st
 #: deployment's rows; the flip (3h-S12) needs this map empty. The reviewer routes (``/review/…``) are here too, and
 #: never resolve a workspace (a reviewer is outside it: ``_resolves_its_own_scope``).
 NOT_YET: Final[dict[tuple[str, str], str]] = {
-    # The product documents; since 7.104.00 the Product tab's sources (a file's reading, a link, typed answers) and
-    # its extract and proposals beside them (shared/product_source_routes.py, shared/product_proposal_routes.py: every
-    # store they reach refuses a workspace, PRODUCT_SOURCES_STORE; the extract's work also waits for 3h-S8's job store).
-    **_family('3h-S3b', ('GET', f'{_P}/product-context'), ('PUT', f'{_P}/product-context'),
-              ('GET', f'{_P}/product-docs'), ('POST', f'{_P}/product-docs/upload-url'),
-              ('DELETE', f'{_P}/product-docs/<doc_id>'),
-              ('POST', f'{_P}/product-docs/<doc_id>/uploaded'), ('POST', f'{_P}/product-docs/<doc_id>/refresh'),
-              ('POST', f'{_P}/product-docs/urls'), ('POST', f'{_P}/product-docs/answers'),
-              ('POST', f'{_P}/product-extract'), ('GET', f'{_P}/product-proposals/latest'),
-              ('POST', f'{_P}/product-proposals/<proposal_id>/accept'),
-              ('POST', f'{_P}/product-proposals/<proposal_id>/dismiss')),
     # The company persona library, the board, the persona copy and grounding, the decisions, the validation and voice.
     **_family('3h-S3c', ('GET', '/company-personas'), ('POST', '/company-personas/generate'),
               ('POST', '/company-personas/import'), ('GET', '/company-personas/jobs'),
@@ -341,8 +342,11 @@ NOT_YET: Final[dict[tuple[str, str], str]] = {
               ('DELETE', f'{_PROTO}/drafts/<draft_id>'), ('GET', f'{_PROTO}/outline'),
               ('GET', f'{_PROTO}/walkthrough'), ('PUT', f'{_PROTO}/walkthrough'),
               ('POST', f'{_PROTO}/walkthrough/draft'), ('POST', f'{_P}/build-prototype')),
-    # The jobs and the assists.
-    **_family('3h-S8', ('POST', f'{_P}/personas/import'), ('POST', f'{_P}/feedback-preview'),
+    # The jobs and the assists. The Product tab's extract (7.104.00) is one since 3h-S3b threaded its sources and
+    # proposals: its route passes the request's scope to its own stores, which refuse a workspace until its
+    # document-generator job (the job row and its work) moves here.
+    **_family('3h-S8', ('POST', f'{_P}/product-extract'),
+              ('POST', f'{_P}/personas/import'), ('POST', f'{_P}/feedback-preview'),
               ('POST', f'{_P}/personas/generate'), ('POST', f'{_P}/research'), ('POST', f'{_P}/document'),
               ('POST', f'{_P}/documents/merge'), ('GET', f'{_P}/jobs/<job_id>'), ('GET', f'{_P}/jobs'),
               ('POST', f'{_P}/prfaq-autofill'), ('POST', f'{_P}/research/suggest-questions'),
@@ -429,11 +433,7 @@ def _request_caller() -> Caller:
 
 def _request_scope() -> ProjectScope:
     """The scope the middleware resolved for this request (``DEPLOYMENT`` until the flip, 3h-S12)."""
-    scope = app.context.get(_SCOPE_CONTEXT_KEY)
-    if not isinstance(scope, ProjectScope):
-        # Unreachable: the middleware sets it for every routed request.
-        raise AuthorizationError("The request's project scope could not be determined")
-    return scope
+    return project_request_scope.held_scope(app.context)
 
 
 def _require_ai_writing(project_id: str, doc_type: object, workspace: WorkspaceScope | None) -> ai_mode.AiMode | None:
@@ -4791,7 +4791,7 @@ def api_put_prioritization_config():
 @app.get("/projects/<project_id>/product-context")
 @tracer.capture_method
 def api_get_product_context(project_id: str):
-    return pc_get_context(project_id)
+    return pc_get_context(project_id, workspace=_request_scope().workspace)
 
 
 @app.put("/projects/<project_id>/product-context")
@@ -4799,26 +4799,29 @@ def api_get_product_context(project_id: str):
 def api_update_product_context(project_id: str):
     # Who writes, and for an agent, a plan step or an MCP client whether its person's way of working lets the AI
     # write the product description (shared/product_proposal_routes.py writer_of, tenet 3).
-    return pc_update_context(project_id, json_body_value(app),
-                             actor=product_proposal_routes.writer_of(app.current_event.raw_event, project_id))
+    workspace = _request_scope().workspace
+    return pc_update_context(project_id, json_body_value(app), workspace=workspace,
+                             actor=product_proposal_routes.writer_of(app.current_event.raw_event, project_id,
+                                                                     workspace=workspace))
 
 
 @app.get("/projects/<project_id>/product-docs")
 @tracer.capture_method
 def api_list_product_docs(project_id: str):
-    return pc_list_docs(project_id)
+    return pc_list_docs(project_id, workspace=_request_scope().workspace)
 
 
 @app.post("/projects/<project_id>/product-docs/upload-url")
 @tracer.capture_method
 def api_create_product_doc_upload_url(project_id: str):
-    return pc_create_upload_url(project_id, json_object_body(app), actor=_delete_actor())
+    return pc_create_upload_url(project_id, json_object_body(app), actor=_delete_actor(),
+                                workspace=_request_scope().workspace)
 
 
 @app.delete("/projects/<project_id>/product-docs/<doc_id>")
 @tracer.capture_method
 def api_delete_product_doc(project_id: str, doc_id: str):
-    return pc_delete_doc(project_id, doc_id, actor=_delete_actor())
+    return pc_delete_doc(project_id, doc_id, actor=_delete_actor(), workspace=_request_scope().workspace)
 
 
 def _started_feedback_assist(

@@ -21,9 +21,14 @@ The text goes to ``product_doc_extracted_key`` and the source is marked ``ready`
 (``extracted_chars``, ``truncated``, ``method``, ``pages``, ``injection_flag``; a link's ``final_url``, ``title``,
 ``fetched_at``), or ``failed`` with the person's message. Text that reads like instructions to a model is flagged,
 never refused. A source deleted while it was read finds its row gone at the ready write and takes its text back; one
-claimed again (a refresh) keeps the text for the newer read. A workspace's event is refused until the switch
-(shared/project_keys.py ``PRODUCT_SOURCES_STORE``, docs/multi-workspace.md 3h). ``run`` never raises (an async
-invoke's retry could not help).
+claimed again (a refresh) keeps the text for the newer read. ``run`` never raises (an async invoke's retry could not
+help).
+
+The scope is the event's (since 7.106.00, 3h-S3b, docs/multi-workspace.md 3h): its ``workspace_id``, which the starting
+route sets from the request's resolved scope (shared/workspace_routing.py ``workspace_payload``: set last, over any
+field of the same name), never from a caller's body; shared/ws_repo.py ``message_scope`` reads it (none: the
+deployment's; one that is not a workspace id: refused). Every row and object it reads or writes is that scope's, so an
+event naming another workspace than the source's finds no source claimed there and writes nothing.
 """
 from __future__ import annotations
 
@@ -51,7 +56,6 @@ from shared.product_sources import (
     settle,
     take_back_text,
 )
-from shared.project_keys import PRODUCT_SOURCES_STORE, NotPerWorkspaceError, require_deployment
 from shared.timestamps import now_iso
 from shared.ws_repo import message_scope
 
@@ -170,7 +174,7 @@ def _read_source(table: Any, project_id: str, item: Mapping[str, Any], token: st
 
 @dataclass(frozen=True)
 class _Claim:
-    """What an event names: the source, the claim's token and the scope (the deployment's, until the switch)."""
+    """What an event names: the source, the claim's token and the scope (its ``workspace_id``, or the deployment)."""
 
     project_id: str
     doc_id: str
@@ -179,18 +183,13 @@ class _Claim:
 
 
 def _claim_of(event: Mapping[str, Any]) -> _Claim | None:
-    """The event's claim, or None (logged) for an event the twin refuses: a field missing or not text, a workspace
-    field that is not one, or a workspace (the product sources are not per workspace yet)."""
+    """The event's claim, or None (logged) for an event the twin refuses: a field missing or not text, or a workspace
+    field that is not one."""
     refused, scope = message_scope(event)
     ids = [event.get(name) for name in ('project_id', 'doc_id', 'token')]
     texts = [value for value in ids if isinstance(value, str) and value]
     if refused or len(texts) != len(ids):
         logger.error('Product source extraction event refused')
-        return None
-    try:
-        require_deployment(scope, PRODUCT_SOURCES_STORE)
-    except NotPerWorkspaceError:
-        logger.warning('Product source extraction event refused: the product sources are not per workspace yet')
         return None
     return _Claim(texts[0], texts[1], texts[2], scope)
 

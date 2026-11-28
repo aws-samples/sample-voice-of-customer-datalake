@@ -15,6 +15,7 @@ from shared.model_profile import E2E_PROFILE, model_profile_scope
 from shared.product_extract_model import ModelAnswer, ModelTimedOut, Refusal
 from shared.test.product_extract_fixtures import BEGIN, END, NOTICE, PROJECT, World
 from shared.test.product_extract_fixtures import world as extract_world
+from shared.ws_repo import WorkspaceScope
 
 SONNET55 = 'global.anthropic.claude-sonnet-5-5'
 SONNET5 = 'global.anthropic.claude-sonnet-5'
@@ -26,8 +27,8 @@ PNG = b'\x89PNG\r\n\x1a\n' + b'0' * 64
 class Ctx(JobContext):
     """A job context that records its progress and has ``remaining`` milliseconds left."""
 
-    def __init__(self, remaining: int | None = 880_000) -> None:
-        super().__init__(PROJECT, 'job_1', workspace=None)
+    def __init__(self, remaining: int | None = 880_000, *, workspace: WorkspaceScope | None = None) -> None:
+        super().__init__(PROJECT, 'job_1', workspace=workspace)
         self.steps: list[tuple[int, str]] = []
         self.remaining = remaining
 
@@ -67,6 +68,30 @@ def _texts(call: extract.ExtractCall) -> list[str]:
 def _proposals(world: World) -> list[dict[str, Any]]:
     items = world.table.scan()['Items']
     return sorted((item for item in items if item['sk'].startswith('PRODUCT_PROPOSAL#')), key=lambda i: i['sk'])
+
+
+class WorkspaceCtx(Ctx):
+    """A job context naming a workspace (the extract is the deployment's until its job moves, 3h-S8)."""
+
+    def __init__(self) -> None:
+        super().__init__(workspace=WorkspaceScope('ws_01JC3Q8ZK6V7W9X2Y4A5B6C7D8'))
+
+
+def test_a_workspace_job_is_refused_before_any_read_or_model_call(world):
+    """7.106.00 (review S-1): the extract refuses a workspace at its start: no source read, no Bedrock call, no lock
+    touched, nothing written."""
+    from shared.project_keys import NotPerWorkspaceError
+
+    world.source('d1')
+    before = world.table.scan()['Items']
+    with patch('shared.product_extract.stream_answer') as ask, patch.object(world.table, 'query') as query, \
+            pytest.raises(NotPerWorkspaceError, match=r'^The product extract is not per workspace yet$'):
+        extract.run(WorkspaceCtx(), PROJECT, 'job_1', {'lock_id': 'lock-1'},
+                    clients=extract.Clients(table=world.table, s3=world.s3, bucket='raw-bucket', bedrock='bedrock'))
+    ask.assert_not_called()
+    query.assert_not_called()
+    assert world.s3.reads == []
+    assert world.table.scan()['Items'] == before
 
 
 class TestTheSources:

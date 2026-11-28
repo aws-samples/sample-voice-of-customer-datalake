@@ -205,7 +205,8 @@ class TestTheProductContextRoutesDelegate:
         if method == 'PUT':
             caller = Actor(sub='test-user-id', kind='admin', autonomous=False)
         kwargs = {'actor': caller} if method != 'GET' else {}
-        handler.assert_called_once_with(*args, **kwargs)
+        # The request's scope (3h-S3b): the deployment's while the seam is off.
+        handler.assert_called_once_with(*args, **kwargs, workspace=None)
 
     @pytest.mark.parametrize(('path', 'job_type', 'delegate', 'sent', 'received'), [
         ('prfaq-autofill', 'assist_prfaq_autofill', 'autofill_prfaq_questions', None, {}),

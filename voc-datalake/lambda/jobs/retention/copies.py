@@ -37,9 +37,9 @@ TOMBSTONE_PK_PREFIX: Final = TOMBSTONE_PARTITION_PREFIX
 def tombstone_key(source: str, feedback_id: str, scope: WorkspaceScope | None = None) -> dict[str, str]:
     """The key of one deleted item's tombstone in voc-aggregates.
 
-    A workspace's item keeps the same partition (``AUDIT#tombstone#{source}``, so the audit-row guard, which pins
-    ``AUDIT#*``, protects it like every other tombstone; a ``WS#{ws}#AUDIT#…`` partition would be outside it) and
-    names its workspace in the sort key, ``{ws}#{feedback_id}``: two workspaces' copies of one source item, and the
+    A workspace's item keeps the same partition (``AUDIT#tombstone#{source}``, which the audit-row guard's ``AUDIT#*``
+    protects like every other tombstone, so a source's tombstones stay in one partition) and names its workspace in
+    the sort key, ``{ws}#{feedback_id}``: two workspaces' copies of one source item, and the
     deployment's, share a ``feedback_id`` but never a tombstone.
     """
     return {'pk': f'{TOMBSTONE_PK_PREFIX}{source}', 'sk': feedback_id if scope is None else f'{scope.ws}#{feedback_id}'}

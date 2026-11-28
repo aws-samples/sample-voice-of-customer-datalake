@@ -1,10 +1,13 @@
 """A project's product context as written, its product proposals and their review, and the extract's lock and limits
 (7.104.00, docs/project-workspace.md → Product tab).
 
-Rows in the project's partition (shared/project_keys.py), the deployment's until projects move (3h): every key takes
-the workspace, a required keyword (3h-S1b's rule, shared/test/test_project_workspace_keyword.py ``GUARDED``), and every
-public function refuses one (``PRODUCT_SOURCES_STORE``, NotPerWorkspaceError) until the switch threads it, the audit
-row and the limits' counters with it:
+Rows in the project's partition (shared/project_keys.py ``project_pk``): every key takes the workspace, a required
+keyword (3h-S1b's rule, shared/test/test_project_workspace_keyword.py ``GUARDED``). Since 7.106.00 (3h-S3b) the context's
+reader and writer, the latest proposal, an accept, a dismiss and a deleted source's ``forget_source`` act in the
+workspace they are given (its project's partition, ``WS#{ws}#PROJECT#{id}``; an accept's audit row is in
+``WS#{ws}#AUDIT#product_context`` and names it, ``workspace``); the extract's own stores (``put_proposal``, the lock, ``count_extract``, whose counters take
+``WS#{ws}#`` already) still refuse one (``PRODUCT_EXTRACT_STORE``, NotPerWorkspaceError) until the extract's job moves
+(3h-S8):
 
 * ``PRODUCT_CONTEXT``: the product context (shared/product_fields.py's 12 fields), with ``field_meta.{field}`` =
   ``{by, sub, at}`` (and an accept's ``proposal_id`` and ``source_ids``): who last wrote each field, ``by`` one of
@@ -32,11 +35,13 @@ Every write is one transaction with the project's writable check, conditional on
 read: an accept's is the value the reviewer saw (``seen``), a field changed since is a ``changed`` conflict; a PUT's is
 the value it just read. A lost race is read again once, then answered 503 ``busy``. An accept also writes the
 proposal's ``accepted`` marks and status (conditional on its ``updated_at`` as read, so two accepts never lose each
-other's marks) and an ``AUDIT#product_context`` row (ids only, never content); an accepted value the reviewer edited is
+other's marks) and an audit row (ids only, never content; ``audit_pk``: ``AUDIT#product_context``, a workspace's
+under ``WS#{ws}#``), all in the one transaction; an accepted value the reviewer edited is
 recorded as theirs (``by`` ``person``, or ``assistant`` for an autonomous caller), the proposal's id and sources kept.
 
-The limits are shared/aws.py ``count_once`` counters in voc-aggregates, all three counted at once or none: 1 extract
-a minute and 10 a day per project, 20 a day per person (429 ``rate_limited``).
+The limits are shared/aws.py ``count_once`` counters in voc-aggregates (``extract_counter_keys``, a workspace's under
+``WS#{ws}#``), all three counted at once or none: 1 extract a minute and 10 a day per project, 20 a day per person
+(429 ``rate_limited``).
 """
 from __future__ import annotations
 
@@ -72,12 +77,13 @@ from shared.product_fields import ALL_FIELDS, FIELD_LABELS, STRING_FIELDS, clean
 from shared.project_keys import (
     PRODUCT_CONTEXT_SK,
     PRODUCT_EXTRACT_SK,
+    PRODUCT_EXTRACT_STORE,
     PRODUCT_PROPOSAL_SK_PREFIX,
-    PRODUCT_SOURCES_STORE,
     project_pk,
     require_deployment,
 )
 from shared.project_writes import NEW_ROW_CONDITION, projects_table_name, transact_project_actions
+from shared.scoped_keys import scoped_pk
 from shared.timestamps import now_iso
 
 if TYPE_CHECKING:
@@ -186,8 +192,7 @@ def _text(value: object) -> str:
 
 def context_state(table: Any, project_id: str, *, workspace: WorkspaceScope | None) -> ContextState:
     """The product context's row, read strongly: the one reader of it (the routes, the PRD / PR-FAQ block, the
-    extract, the voice interviewer)."""
-    require_deployment(workspace, PRODUCT_SOURCES_STORE)
+    extract, the voice interviewer), in ``workspace`` (None: the deployment)."""
     item = consistent_item(table, _context_key(project_id, workspace=workspace)) or {}
     meta = item.get('field_meta')
     return ContextState(
@@ -217,8 +222,9 @@ def person_typed(state: ContextState, name: str) -> bool:
 
 
 def put_proposal(table: Any, project_id: str, item: Mapping[str, Any], *, workspace: WorkspaceScope | None) -> None:
-    """Put a new proposal (refused for a deleted project) and supersede every open one before it."""
-    require_deployment(workspace, PRODUCT_SOURCES_STORE)
+    """Put a new proposal (refused for a deleted project) and supersede every open one before it. The extract's
+    (refused in a workspace until its job moves, 3h-S8)."""
+    require_deployment(workspace, PRODUCT_EXTRACT_STORE)
     transact_project_actions(table, project_id, [{'Put': {
         'TableName': projects_table_name(table), 'Item': dict(item), 'ConditionExpression': NEW_ROW_CONDITION}}],
         workspace=workspace)
@@ -239,7 +245,6 @@ def put_proposal(table: Any, project_id: str, item: Mapping[str, Any], *, worksp
 
 def latest_row(table: Any, project_id: str, *, workspace: WorkspaceScope | None) -> dict[str, Any] | None:
     """The project's newest proposal row, whatever its status, or None."""
-    require_deployment(workspace, PRODUCT_SOURCES_STORE)
     response = table.query(KeyConditionExpression=_proposals_partition(project_id, workspace=workspace),
                            ScanIndexForward=False, Limit=1, ConsistentRead=True)
     items = response.get('Items') or []
@@ -299,7 +304,6 @@ def _proposal(table: Any, project_id: str, proposal_id: str, *,
 def dismiss(table: Any, project_id: str, proposal_id: str, now: str | None = None, *,
             workspace: WorkspaceScope | None) -> dict[str, str]:
     """Dismiss an open proposal (again: the same answer); 409 ``proposal_closed`` once applied or superseded."""
-    require_deployment(workspace, PRODUCT_SOURCES_STORE)
     key, row = _proposal(table, project_id, proposal_id, workspace=workspace)
     if row.get('status') != DISMISSED and not update_unless_condition_fails(
             table, Key=key, UpdateExpression='SET #status = :dismissed, updated_at = :now',
@@ -481,7 +485,6 @@ def write_context(table: Any, project_id: str, patch: Mapping[str, str], actor: 
     An autonomous caller never replaces a value a person typed (``person_typed``): those fields are answered as
     ``person_value`` conflicts and the rest is written; when every field is one, 409 ``conflict`` carrying them. A
     write in between (a person typing) is caught by the write's condition and read again once."""
-    require_deployment(workspace, PRODUCT_SOURCES_STORE)
     return _twice(lambda: _patch_once(table, project_id, patch, actor, workspace=workspace))
 
 
@@ -505,13 +508,31 @@ def _proposal_entry(table_name: str, key: Mapping[str, str], applied: Iterable[s
                        'ExpressionAttributeNames': names, 'ExpressionAttributeValues': values}}
 
 
-def _audit_entry(table_name: str, project_id: str, proposal: Mapping[str, Any], applied: list[str], actor: Actor,
-                 now: str) -> dict[str, Any]:
+def _audit_item(project_id: str, proposal: Mapping[str, Any], applied: list[str], actor: Actor,
+                now: str, *, workspace: WorkspaceScope | None) -> dict[str, Any]:
+    """The accept's audit row (ids only, never content) in ``audit_pk``'s partition, naming its workspace
+    (``workspace``) when it is one's, as a deleted product document's ``AUDIT#delete`` row does."""
     model = mapping_at(proposal, 'model')
-    item = {'pk': AUDIT_PK, 'sk': f'{now}#{secrets.token_hex(8)}', 'kind': AUDIT_KIND, 'project_id': project_id,
-            'proposal_id': proposal.get('proposal_id'), 'fields': applied,
+    item = {'pk': audit_pk(workspace=workspace), 'sk': f'{now}#{secrets.token_hex(8)}', 'kind': AUDIT_KIND,
+            'project_id': project_id, 'proposal_id': proposal.get('proposal_id'), 'fields': applied,
             'actor': {'sub': actor.sub, 'kind': actor.kind}, 'model_id': model.get('id'), 'at': now}
-    return {'Put': {'TableName': table_name, 'Item': item, 'ConditionExpression': 'attribute_not_exists(pk)'}}
+    if workspace is not None:
+        item['workspace'] = workspace.ws
+    return item
+
+
+def audit_pk(*, workspace: WorkspaceScope | None) -> str:
+    """The accepts' audit partition: ``AUDIT#product_context`` for the deployment, ``WS#{ws}#AUDIT#product_context``
+    for a workspace (since 7.106.00), inside the workspace, so its row is one of the accept's own transaction entries
+    (a workspace's transaction writes only its own rows, shared/ws_repo.py), atomic with the accept in both scopes. No
+    role may change or remove a row there, nor put one but this one's writer: the audit-row guard denies both patterns,
+    `AUDIT#*` and `WS#{one id}#AUDIT#*` (lib/utils/audit-row-guard.ts). Kept when the workspace is deleted
+    (jobs/workspace_delete/test/families.py: ids only, as the deployment's are)."""
+    return scoped_pk(workspace, AUDIT_PK)
+
+
+def _audit_entry(table_name: str, item: Mapping[str, Any]) -> dict[str, Any]:
+    return {'Put': {'TableName': table_name, 'Item': dict(item), 'ConditionExpression': 'attribute_not_exists(pk)'}}
 
 
 def _proposal_entry_of(table_name: str, key: Mapping[str, str], proposal: Mapping[str, Any], applied: list[str],
@@ -563,7 +584,8 @@ def _write_once(table: Any, project_id: str, key: Mapping[str, str], body: Mappi
         transact_project_actions(table, project_id, [
             _context_entry(table_name, project_id, state, write, actor, workspace=workspace),
             _proposal_entry_of(table_name, key, proposal, applied, status, now),
-            _audit_entry(table_name, project_id, proposal, applied, actor, now)], workspace=workspace)
+            _audit_entry(table_name, _audit_item(project_id, proposal, applied, actor, now, workspace=workspace))],
+            workspace=workspace)
     except ClientError as error:
         if _cancelled(error, _CONTEXT_AT, _PROPOSAL_AT):
             return None
@@ -574,7 +596,6 @@ def accept(table: Any, project_id: str, proposal_id: str, body: Mapping[str, Any
            workspace: WorkspaceScope | None) -> dict[str, Any]:
     """Write the requested fields whose stored value is still the one seen: ``{applied, conflicts, status}``; 409
     carrying ``conflicts`` when none could be written, 409 ``proposal_closed`` once the proposal is not open."""
-    require_deployment(workspace, PRODUCT_SOURCES_STORE)
     key = _proposal_key(project_id, proposal_id, workspace=workspace)
     result = _twice(lambda: _write_once(table, project_id, key, body, actor, workspace=workspace))
     if not result['applied']:
@@ -635,10 +656,8 @@ def forget_source(table: Any, project_id: str, doc_id: str, *, workspace: Worksp
     the source), its questions, and its ``sources`` entry for the source, the source's name included, which GET
     …/latest marks ``deleted``; an erasure by email lists a proposal whose remaining words hold the address for review
     (jobs/retention/project_people.py). Each update is conditional on the citations as read, so a concurrent delete
-    of another source or an accept is read again. Never raises (the source is deleted either way) but for a
-    workspace, refused before any read (NotPerWorkspaceError): a failure is logged. Answers how many proposals cited
-    it."""
-    require_deployment(workspace, PRODUCT_SOURCES_STORE)
+    of another source or an accept is read again. Never raises (the source is deleted either way): a failure is
+    logged. Answers how many proposals of ``workspace``'s project (None: the deployment's) cited it."""
     try:
         rows = query_all(table, {
             'KeyConditionExpression': _proposals_partition(project_id, workspace=workspace),
@@ -662,7 +681,7 @@ def forget_source(table: Any, project_id: str, doc_id: str, *, workspace: Worksp
 def take_lock(table: Any, project_id: str, lock_id: str, started_by: str, now: datetime, *,
               workspace: WorkspaceScope | None) -> bool:
     """Hold the project's extract lock as ``lock_id``: False while another extract holds it (and is not stale)."""
-    require_deployment(workspace, PRODUCT_SOURCES_STORE)
+    require_deployment(workspace, PRODUCT_EXTRACT_STORE)
     epoch = int(now.timestamp())
     return update_unless_condition_fails(
         table, Key=_lock_key(project_id, workspace=workspace),
@@ -675,7 +694,7 @@ def take_lock(table: Any, project_id: str, lock_id: str, started_by: str, now: d
 
 def note_lock_job(table: Any, project_id: str, lock_id: str, job_id: str, *, workspace: WorkspaceScope | None) -> None:
     """Name the job holding the lock (best effort: the lock holds either way)."""
-    require_deployment(workspace, PRODUCT_SOURCES_STORE)
+    require_deployment(workspace, PRODUCT_EXTRACT_STORE)
     update_unless_condition_fails(table, Key=_lock_key(project_id, workspace=workspace),
                                   UpdateExpression='SET job_id = :job',
                                   ConditionExpression='lock_id = :id',
@@ -684,24 +703,33 @@ def note_lock_job(table: Any, project_id: str, lock_id: str, job_id: str, *, wor
 
 def release_lock(table: Any, project_id: str, lock_id: str, *, workspace: WorkspaceScope | None) -> None:
     """Release the lock if ``lock_id`` still holds it (a stale one taken over is the new holder's)."""
-    require_deployment(workspace, PRODUCT_SOURCES_STORE)
+    require_deployment(workspace, PRODUCT_EXTRACT_STORE)
     update_unless_condition_fails(table, Key=_lock_key(project_id, workspace=workspace),
                                   UpdateExpression='REMOVE lock_id SET released_at = :now',
                                   ConditionExpression='lock_id = :id',
                                   ExpressionAttributeValues={':id': lock_id, ':now': now_iso()})
 
 
-def _counter_keys(project_id: str, subject: str, now: datetime) -> tuple[tuple[dict[str, str], int], ...]:
+def extract_counter_keys(project_id: str, subject: str, now: datetime, *,
+                         workspace: WorkspaceScope | None) -> tuple[tuple[dict[str, str], int], ...]:
+    """The extract limits' counters and their limits in voc-aggregates: the project's of ``now``'s UTC minute and day
+    and the person's of its day, in ``workspace`` (``WS#{ws}#…``; None: the deployment's)."""
     day = f'{now:%Y-%m-%d}'
-    return (({'pk': f'PRODUCTX#PROJECT#{project_id}#{now:%Y%m%d%H%M}', 'sk': 'COUNT'}, EXTRACTS_PER_MINUTE),
-            ({'pk': f'PRODUCTX#PROJECT#{project_id}#{day}', 'sk': 'COUNT'}, PROJECT_EXTRACTS_PER_DAY),
-            ({'pk': f'PRODUCTX#USER#{subject}#{day}', 'sk': 'COUNT'}, PERSON_EXTRACTS_PER_DAY))
+    return (({'pk': scoped_pk(workspace, f'PRODUCTX#PROJECT#{project_id}#{now:%Y%m%d%H%M}'), 'sk': 'COUNT'},
+             EXTRACTS_PER_MINUTE),
+            ({'pk': scoped_pk(workspace, f'PRODUCTX#PROJECT#{project_id}#{day}'), 'sk': 'COUNT'},
+             PROJECT_EXTRACTS_PER_DAY),
+            ({'pk': scoped_pk(workspace, f'PRODUCTX#USER#{subject}#{day}'), 'sk': 'COUNT'}, PERSON_EXTRACTS_PER_DAY))
 
 
-def count_extract(aggregates: Any, project_id: str, subject: str, now: datetime) -> None:
+def count_extract(aggregates: Any, project_id: str, subject: str, now: datetime, *,
+                  workspace: WorkspaceScope | None) -> None:
     """Count one extract against each limit, all three at once or none (shared/aws.py ``count_once``), or 429
-    ``rate_limited`` when one is reached (nothing counted)."""
+    ``rate_limited`` when one is reached (nothing counted). Refused in a workspace until the extract's job moves
+    (3h-S8), before anything is counted."""
+    require_deployment(workspace, PRODUCT_EXTRACT_STORE)
     message = (f'Too many extracts: at most {EXTRACTS_PER_MINUTE} a minute and {PROJECT_EXTRACTS_PER_DAY} a day per '
                f'project, {PERSON_EXTRACTS_PER_DAY} a day per person. Try again later.')
     count_once(aggregates, [Counter(key, limit, 'rate_limited', message)
-                            for key, limit in _counter_keys(project_id, subject, now)], now)
+                            for key, limit in extract_counter_keys(project_id, subject, now, workspace=workspace)],
+               now)

@@ -212,10 +212,13 @@ class TestEventsItRefuses:
             assert run(event) == {'status': 'ignored'}
             assert world.row('d1')['status'] == 'extracting'
 
-    def test_a_workspaces_event_is_refused_until_the_switch_and_nothing_is_read(self):
-        with sources_world() as world, patch.object(world.projects, 'get_item') as read:
-            assert run(_event(workspace_id='ws_01JC3Q8ZK6V7W9X2Y4A5B6C7D8')) == {'status': 'ignored'}
-            read.assert_not_called()
+    def test_a_workspaces_event_reads_that_workspaces_source_only(self):
+        """Since 7.106.00 (3h-S3b) the event's workspace is the scope: the deployment's claimed source is not read,
+        the workspace's (none here) is looked for, and nothing is written."""
+        with sources_world() as world:
+            world.claimed('d1')
+            assert run(_event(workspace_id='ws_01JC3Q8ZK6V7W9X2Y4A5B6C7D8')) == {'status': 'skipped'}
+            assert world.row('d1')['status'] == 'extracting'
 
 
 def test_an_unexpected_failure_is_recorded_and_never_raised():

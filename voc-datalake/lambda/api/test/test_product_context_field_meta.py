@@ -45,7 +45,7 @@ def _stored(table) -> dict:
 
 
 def test_the_first_write_records_each_field_it_wrote_as_the_persons(table):
-    pc.update_context('p1', {'product_name': 'Acme Notes', 'current_state': 'beta', 'bogus': 'x'}, actor=ADA)
+    pc.update_context('p1', {'product_name': 'Acme Notes', 'current_state': 'beta', 'bogus': 'x'}, actor=ADA, workspace=None)
     meta = _meta(table)
     assert set(meta) == {'product_name', 'current_state'}
     assert {(entry['by'], entry['sub']) for entry in meta.values()} == {('person', 'sub-ada')}
@@ -53,8 +53,8 @@ def test_the_first_write_records_each_field_it_wrote_as_the_persons(table):
 
 
 def test_a_later_write_records_its_own_fields_and_keeps_the_others(table):
-    pc.update_context('p1', {'product_name': 'Acme Notes'}, actor=ADA)
-    pc.update_context('p1', {'one_liner': 'Meeting notes that write themselves'}, actor=MCP)
+    pc.update_context('p1', {'product_name': 'Acme Notes'}, actor=ADA, workspace=None)
+    pc.update_context('p1', {'one_liner': 'Meeting notes that write themselves'}, actor=MCP, workspace=None)
     meta = _meta(table)
     assert (meta['product_name']['by'], meta['one_liner']['by'], meta['one_liner']['sub']) == (
         'person', 'assistant', 'mcp:tok1')
@@ -62,7 +62,7 @@ def test_a_later_write_records_its_own_fields_and_keeps_the_others(table):
 
 def test_a_record_from_before_7_72_gets_its_map_on_its_first_write(table):
     table.put_item(Item={**CONTEXT_KEY, 'product_name': 'Old name', 'updated_at': '2026-01-01T00:00:00+00:00'})
-    pc.update_context('p1', {'product_name': 'Acme Notes'}, actor=ADA)
+    pc.update_context('p1', {'product_name': 'Acme Notes'}, actor=ADA, workspace=None)
     assert _meta(table)['product_name']['by'] == 'person'
 
 
@@ -70,14 +70,14 @@ def test_a_record_from_before_7_72_gets_its_map_on_its_first_write(table):
     ('user', 'person'), ('admin', 'person'), ('mcp', 'assistant'), ('agent', 'assistant'), ('plan', 'assistant'),
 ])
 def test_who_wrote_it_follows_the_kind_of_caller(table, kind, by):
-    pc.update_context('p1', {'key_features': 'Search'}, actor=_caller(kind))
+    pc.update_context('p1', {'key_features': 'Search'}, actor=_caller(kind), workspace=None)
     assert _meta(table)['key_features']['by'] == by
 
 
 @pytest.mark.usefixtures('table')
 def test_the_context_route_is_read_without_the_meta():
-    pc.update_context('p1', {'product_name': 'Acme Notes'}, actor=ADA)
-    assert 'field_meta' not in pc.get_context('p1')['context']
+    pc.update_context('p1', {'product_name': 'Acme Notes'}, actor=ADA, workspace=None)
+    assert 'field_meta' not in pc.get_context('p1', workspace=None)['context']
 
 
 def test_the_assistants_approval_card_is_the_person_who_approved_it(table):
@@ -85,7 +85,7 @@ def test_the_assistants_approval_card_is_the_person_who_approved_it(table):
     from shared.product_proposal_routes import writer_of
 
     card = {'requestContext': {'authorizer': {'claims': {'sub': 'sub-ada', 'cognito:groups': 'users'}}}}
-    pc.update_context('p1', {'non_goals': 'No video'}, actor=writer_of(card, 'p1'))
+    pc.update_context('p1', {'non_goals': 'No video'}, actor=writer_of(card, 'p1', workspace=None), workspace=None)
     assert _meta(table)['non_goals'] == {**_meta(table)['non_goals'], 'by': 'person', 'sub': 'sub-ada'}
 
 
@@ -102,7 +102,7 @@ def test_a_write_on_a_row_without_field_meta_meanwhile_given_one_is_read_again(t
         reads.append(state)
         return state
     with patch.object(product_proposals, 'context_state', side_effect=a_map_meanwhile):
-        pc.update_context('p1', {'one_liner': 'Fast'}, actor=ADA)
+        pc.update_context('p1', {'one_liner': 'Fast'}, actor=ADA, workspace=None)
     assert len(reads) == 2
     assert (_meta(table)['product_name'], _meta(table)['one_liner']['by']) == ({'by': 'person'}, 'person')
 
@@ -112,9 +112,9 @@ def test_a_write_on_a_row_without_field_meta_meanwhile_given_one_is_read_again(t
 
 @pytest.mark.parametrize('kind', ['mcp', 'agent', 'plan'])
 def test_an_assistant_write_over_a_persons_value_is_a_conflict_and_the_rest_applies(table, kind):
-    pc.update_context('p1', {'product_name': 'Acme Notes'}, actor=ADA)
+    pc.update_context('p1', {'product_name': 'Acme Notes'}, actor=ADA, workspace=None)
     answer = pc.update_context('p1', {'product_name': 'Acme AI', 'one_liner': 'Notes that write themselves'},
-                               actor=_caller(kind, f'{kind}-1'))
+                               actor=_caller(kind, f'{kind}-1'), workspace=None)
     assert answer['conflicts'] == [{'field': 'product_name', 'reason': 'person_value'}]
     assert (answer['context']['product_name'], answer['context']['one_liner']) == (
         'Acme Notes', 'Notes that write themselves')
@@ -123,18 +123,18 @@ def test_an_assistant_write_over_a_persons_value_is_a_conflict_and_the_rest_appl
 
 
 def test_when_every_field_is_a_persons_the_write_is_refused_and_nothing_changes(table):
-    pc.update_context('p1', {'product_name': 'Acme Notes', 'non_goals': 'No video'}, actor=ADA)
+    pc.update_context('p1', {'product_name': 'Acme Notes', 'non_goals': 'No video'}, actor=ADA, workspace=None)
     before = _stored(table)
     with pytest.raises(ConflictError) as refused:
-        pc.update_context('p1', {'product_name': 'Acme AI', 'non_goals': 'Video'}, actor=MCP)
+        pc.update_context('p1', {'product_name': 'Acme AI', 'non_goals': 'Video'}, actor=MCP, workspace=None)
     assert (refused.value.code, refused.value.details['conflicts']) == ('conflict', [
         {'field': 'product_name', 'reason': 'person_value'}, {'field': 'non_goals', 'reason': 'person_value'}])
     assert _stored(table) == before
 
 
 def test_the_assistant_writing_a_persons_value_as_it_is_leaves_it_the_persons(table):
-    pc.update_context('p1', {'product_name': 'Acme Notes'}, actor=ADA)
-    answer = pc.update_context('p1', {'product_name': 'Acme Notes', 'one_liner': 'Fast'}, actor=MCP)
+    pc.update_context('p1', {'product_name': 'Acme Notes'}, actor=ADA, workspace=None)
+    answer = pc.update_context('p1', {'product_name': 'Acme Notes', 'one_liner': 'Fast'}, actor=MCP, workspace=None)
     assert 'conflicts' not in answer
     assert (_meta(table)['product_name']['by'], _meta(table)['one_liner']['by']) == ('person', 'assistant')
 
@@ -142,24 +142,24 @@ def test_the_assistant_writing_a_persons_value_as_it_is_leaves_it_the_persons(ta
 def test_the_assistant_replaces_its_own_or_an_empty_value_never_an_unattributed_one(table):
     # Review S1 (7.104.00 round 1): a value written before field_meta existed (no entry) is a person's.
     table.put_item(Item={**CONTEXT_KEY, 'key_features': 'Old list', 'updated_at': '2026-01-01T00:00:00+00:00'})
-    pc.update_context('p1', {'one_liner': 'Fast'}, actor=MCP)
-    answer = pc.update_context('p1', {'one_liner': 'Faster', 'key_features': 'Search'}, actor=MCP)
+    pc.update_context('p1', {'one_liner': 'Fast'}, actor=MCP, workspace=None)
+    answer = pc.update_context('p1', {'one_liner': 'Faster', 'key_features': 'Search'}, actor=MCP, workspace=None)
     assert answer['conflicts'] == [{'field': 'key_features', 'reason': 'person_value'}]
     assert (_stored(table)['one_liner'], _stored(table)['key_features']) == ('Faster', 'Old list')
     # A person replaces any.
-    assert 'conflicts' not in pc.update_context('p1', {'one_liner': 'Fastest', 'key_features': 'Search'}, actor=ADA)
+    assert 'conflicts' not in pc.update_context('p1', {'one_liner': 'Fastest', 'key_features': 'Search'}, actor=ADA, workspace=None)
     assert (_stored(table)['one_liner'], _stored(table)['key_features']) == ('Fastest', 'Search')
 
 
 def test_a_legacy_list_valued_field_is_a_persons_too(table):
     table.put_item(Item={**CONTEXT_KEY, 'key_features': ['Search', 'Sync'], 'field_meta': {}})
     with pytest.raises(ConflictError):
-        pc.update_context('p1', {'key_features': 'Other'}, actor=MCP)
+        pc.update_context('p1', {'key_features': 'Other'}, actor=MCP, workspace=None)
     assert _stored(table)['key_features'] == ['Search', 'Sync']
 
 
 def test_a_person_typing_between_the_assistants_read_and_write_is_caught_and_read_again(table):
-    pc.update_context('p1', {'product_name': 'Acme Notes'}, actor=MCP)
+    pc.update_context('p1', {'product_name': 'Acme Notes'}, actor=MCP, workspace=None)
     real = product_proposals.context_state
     reads = []
 
@@ -173,6 +173,6 @@ def test_a_person_typing_between_the_assistants_read_and_write_is_caught_and_rea
 
     with patch.object(product_proposals, 'context_state', side_effect=read_then_a_person_types), \
             pytest.raises(ConflictError) as refused:
-        pc.update_context('p1', {'product_name': 'Acme AI'}, actor=MCP)
+        pc.update_context('p1', {'product_name': 'Acme AI'}, actor=MCP, workspace=None)
     assert (len(reads), refused.value.details['conflicts']) == (2, [{'field': 'product_name', 'reason': 'person_value'}])
     assert _stored(table)['product_name'] == 'Typed'

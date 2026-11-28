@@ -141,7 +141,7 @@ def test_every_attribute_the_extractor_reads_is_one_the_upload_route_writes():
     s3.generate_presigned_url.return_value = 'https://example-bucket.s3.amazonaws.com/signed'
     with patch.object(product_context, 'projects_table', table), patch.object(product_context, '_s3', return_value=s3):
         product_context.create_upload_url('proj-1', {'filename': 'a.md', 'content_type': 'text/markdown',
-                                                     'size_bytes': 10})
+                                                     'size_bytes': 10}, workspace=None)
 
     written = table.put_item.call_args.kwargs['Item']
     assert set(_SPEC['doc_read_attributes']) <= set(written)

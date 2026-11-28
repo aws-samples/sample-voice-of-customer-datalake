@@ -90,13 +90,13 @@ class TestUploaded:
         world.upload('d1', 'pdf', DOC, PDF)
         call('POST', f'{BASE}/d1/uploaded')
         call('POST', f'{BASE}/d1/uploaded')  # idempotent: claimed already, not counted again
-        [files] = file_read_counters(ADA['sub'], datetime.now(UTC))
+        [files] = file_read_counters(ADA['sub'], datetime.now(UTC), workspace=None)
         assert world.aggregates.get_item(Key=files.key)['Item']['count'] == 1
 
     def test_a_persons_sixty_first_file_read_is_a_429_and_the_upload_stays_pending(self, world, call):
         world.seed('d1', size_bytes=len(DOC))
         world.upload('d1', 'pdf', DOC, PDF)
-        [files] = file_read_counters(ADA['sub'], datetime.now(UTC))
+        [files] = file_read_counters(ADA['sub'], datetime.now(UTC), workspace=None)
         world.aggregates.put_item(Item={**files.key, 'count': MAX_PERSON_FILE_READS_PER_DAY})
         status, body = call('POST', f'{BASE}/d1/uploaded')
         assert (status, body['code'], world.row('d1')['status']) == (429, 'rate_limited', 'pending')
@@ -192,7 +192,7 @@ class TestAddALink:
         assert (status, body['code']) == (400, 'too_many_links')
 
     def test_the_thirty_first_link_read_of_a_day_is_a_429(self, world, call):
-        key = link_reads_key(PROJECT, datetime.now(UTC))
+        key = link_reads_key(PROJECT, datetime.now(UTC), workspace=None)
         world.aggregates.put_item(Item={**key, 'count': MAX_LINK_READS_PER_DAY})
         status, body = call('POST', f'{BASE}/urls', body={'url': LINK})
         assert (status, body['code'], world.sources()) == (429, 'rate_limited', [])
@@ -201,16 +201,16 @@ class TestAddALink:
         # Review S8 (7.104.00 round 1): a person's link reads across every project, counted with the project's,
         # both or neither (shared/aws.py count_once).
         now = datetime.now(UTC)
-        _project, person = link_read_counters(PROJECT, ADA['sub'], now)
+        _project, person = link_read_counters(PROJECT, ADA['sub'], now, workspace=None)
         world.aggregates.put_item(Item={**person.key, 'count': MAX_PERSON_LINK_READS_PER_DAY})
         status, body = call('POST', f'{BASE}/urls', body={'url': LINK})
         assert (status, body['code'], world.sources()) == (429, 'rate_limited', [])
-        assert world.aggregates.get_item(Key=link_reads_key(PROJECT, now)).get('Item') is None
+        assert world.aggregates.get_item(Key=link_reads_key(PROJECT, now, workspace=None)).get('Item') is None
 
     def test_a_link_read_is_counted_for_two_days(self, world, call):
         world.pages.serve(LINK)
         call('POST', f'{BASE}/urls', body={'url': LINK})
-        counter = world.aggregates.get_item(Key=link_reads_key(PROJECT, datetime.now(UTC)))['Item']
+        counter = world.aggregates.get_item(Key=link_reads_key(PROJECT, datetime.now(UTC), workspace=None))['Item']
         assert counter['count'] == 1
         assert 0 < int(counter['ttl']) - datetime.now(UTC).timestamp() <= 2 * 24 * 3600
 
@@ -255,7 +255,7 @@ class TestRefresh:
         # Review S8 (7.104.00 round 1): a person's reads of a PDF, DOCX or PPTX on the twin, a day.
         world.seed('d1', status='failed', error='earlier', size_bytes=len(DOC))
         world.upload('d1', 'pdf', DOC, PDF)
-        [files] = file_read_counters(ADA['sub'], datetime.now(UTC))
+        [files] = file_read_counters(ADA['sub'], datetime.now(UTC), workspace=None)
         world.aggregates.put_item(Item={**files.key, 'count': MAX_PERSON_FILE_READS_PER_DAY})
         status, body = call('POST', f'{BASE}/d1/refresh')
         assert (status, body['code'], world.row('d1')['status']) == (429, 'rate_limited', 'failed')

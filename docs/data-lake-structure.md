@@ -231,9 +231,9 @@ such as every source or persona counter. Common key families include:
 | `CIRCUIT#<plugin>` / `TRIPPED`, `FAILURES#<plugin>` | Plugin circuit breaker ([plugin-architecture.md](plugin-architecture.md#circuit-breaker)); a run in a workspace keeps `WS#<ws>#CIRCUIT#<plugin>` and `WS#<ws>#FAILURES#<plugin>` |
 | `IMPORT_RUN`, `IMPORT_RUN#<run id>` | Import history (kept, no TTL; rows from earlier releases keep their 90-day TTL, [import-history.md](import-history.md)); an S3 import run in a workspace writes `WS#<ws>#IMPORT_RUN` and `WS#<ws>#IMPORT_RUN#<run id>` |
 | `PRIORITIZATION` / `ROW#<id>` | Prioritization rows ([prioritization.md](prioritization.md)) |
-| `PRODUCTX#PROJECT#<project_id>#<YYYYMMDDHHMM>`, `PRODUCTX#PROJECT#<project_id>#<YYYY-MM-DD>`, `PRODUCTX#USER#<sub>#<YYYY-MM-DD>` / `COUNT` | The product extract's limits (since 7.104.00): a project's extracts of a UTC minute (at most 1) and of a UTC day (at most 10), and a person's of a UTC day across projects (at most 20), the three counted together or not at all; 2-day TTL |
-| `PRODUCTURL#PROJECT#<project_id>#<YYYY-MM-DD>`, `PRODUCTURL#USER#<sub>#<YYYY-MM-DD>` / `COUNT` | The product sources' link reads of a UTC day (an add or a refresh, since 7.104.00): a project's (at most 30) and a person's across projects (at most 60), the two counted together; 2-day TTL |
-| `PRODUCTFILE#USER#<sub>#<YYYY-MM-DD>` / `COUNT` | A person's reads of a PDF, Word or PowerPoint product source on the projects API's assist twin of a UTC day (an announced upload or a Retry, at most 60; since 7.104.00); 2-day TTL |
+| `PRODUCTX#PROJECT#<project_id>#<YYYYMMDDHHMM>`, `PRODUCTX#PROJECT#<project_id>#<YYYY-MM-DD>`, `PRODUCTX#USER#<sub>#<YYYY-MM-DD>` / `COUNT` | The product extract's limits (since 7.104.00): a project's extracts of a UTC minute (at most 1) and of a UTC day (at most 10), and a person's of a UTC day across projects (at most 20), the three counted together or not at all; 2-day TTL. A workspace's under `WS#<ws>#PRODUCTX#…` (since 7.106.00; no extract counts one until its job is per workspace, 3h-S8) |
+| `PRODUCTURL#PROJECT#<project_id>#<YYYY-MM-DD>`, `PRODUCTURL#USER#<sub>#<YYYY-MM-DD>` / `COUNT` | The product sources' link reads of a UTC day (an add or a refresh, since 7.104.00): a project's (at most 30) and a person's across projects (at most 60), the two counted together; 2-day TTL. A workspace's under `WS#<ws>#PRODUCTURL#…` (since 7.106.00, behind the projects seam: a person's counted per workspace) |
+| `PRODUCTFILE#USER#<sub>#<YYYY-MM-DD>` / `COUNT` | A person's reads of a PDF, Word or PowerPoint product source on the projects API's assist twin of a UTC day (an announced upload or a Retry, at most 60; since 7.104.00); 2-day TTL. A workspace's under `WS#<ws>#PRODUCTFILE#…` (since 7.106.00, behind the projects seam) |
 
 Metric rows are kept indefinitely (no `ttl`). The table keeps TTL enabled for its operational rows (logs,
 circuit-breaker failures, import history, voting sessions). Settings and other durable configuration rows
@@ -268,7 +268,9 @@ and the source's name stay, the source marked deleted. `PRODUCT_EXTRACT` is the 
 `started_at`, `started_epoch`, `started_by`, `job_id`, `released_at`), held by one extract at a time and taken over
 16 minutes after it started; released by an update, never deleted, and neither exported nor bundled. An accept
 also writes an `AUDIT#product_context` row (ids only: the project, the proposal, the fields, the actor and the
-model).
+model), in the accept's own transaction; a workspace's accept (since 7.106.00, behind the projects seam) writes it
+to `WS#<ws>#AUDIT#product_context`, naming the workspace (`workspace`), kept when the workspace is deleted. No role
+may change or remove a row of either partition (the audit-row guard denies `AUDIT#*` and `WS#<one id>#AUDIT#*`).
 
 PRDs, PR/FAQs, and prototypes have internal version state in a separate partition:
 

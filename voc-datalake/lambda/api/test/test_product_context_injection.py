@@ -132,7 +132,7 @@ class TestImagesAreNotInjectedYet:
         table = MagicMock()
         table.query.return_value = {'Items': [TEXT_DOC, IMAGE_DOC]}
         with patch.object(product_context, 'projects_table', table):
-            docs = product_context.list_docs('proj-1')['docs']
+            docs = product_context.list_docs('proj-1', workspace=None)['docs']
 
         by_id = {d['doc_id']: d for d in docs}
         assert by_id['screenshot']['status'] == 'ready'
@@ -181,7 +181,7 @@ class TestTheReportGateAgreesWithTheInjection:
         table = MagicMock()
         table.query.return_value = {'Items': [TEXT_DOC]}
         with patch.object(product_context, 'projects_table', table):
-            assert product_context._injectable_docs('proj-1') == [TEXT_DOC]
+            assert product_context._injectable_docs('proj-1', workspace=None) == [TEXT_DOC]
 
 
 class TestExtractedBodiesAreFenced:

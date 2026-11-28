@@ -264,7 +264,8 @@ PHASE_3: dict[str, frozenset[str]] = {
         'POST /projects/<project_id>/personas/<persona_id>/evidence/refresh',
         'POST /projects/<project_id>/personas/evidence-pack',
     }),
-    # 7.104.00: the Product tab's sources, the project's (the store refuses a workspace: PRODUCT_SOURCES_STORE).
+    # 7.104.00: the Product tab's sources, the project's. Threaded behind the projects seam since 7.106.00 (3h-S3b):
+    # they act deployment-wide in production until the flip (3h-S12), so they stay pending here.
     'product_source_routes.py': frozenset({
         'POST /projects/<project_id>/product-docs/<doc_id>/refresh',
         'POST /projects/<project_id>/product-docs/<doc_id>/uploaded',

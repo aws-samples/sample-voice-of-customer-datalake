@@ -90,6 +90,7 @@ from shared.product_sources import (
     product_doc_raw_key,
     ready_sources,
 )
+from shared.project_keys import PRODUCT_EXTRACT_STORE, require_deployment
 from shared.prompt_safety import data_block
 from shared.prompts import get_response_language_instruction
 from shared.timestamps import now_iso
@@ -507,9 +508,11 @@ def _answer(ctx: JobContext, clients: Clients, call: ExtractCall) -> tuple[Model
 def run(ctx: JobContext, project_id: str, job_id: str, doc_config: Mapping[str, Any], *,
         clients: Clients) -> dict[str, str]:
     """One extract: the proposal written, ``{proposal_id}``; the lock released in any case. Its rows and objects are
-    the job's scope's (``ctx.workspace``: the deployment's, as shared/jobs.py ``job_handler`` refuses a project job's
-    work in a workspace before it runs, and the product stores refuse one too)."""
+    the job's scope's (``ctx.workspace``). A workspace's job is refused here, before any source is read or the model
+    asked (``PRODUCT_EXTRACT_STORE``, NotPerWorkspaceError), until the extract's job moves (3h-S8): shared/jobs.py
+    ``job_handler`` refuses a project job's work in a workspace first, and this holds on its own."""
     workspace = ctx.workspace
+    require_deployment(workspace, PRODUCT_EXTRACT_STORE)
     try:
         return _extract(ctx, project_id, job_id, doc_config, clients, workspace=workspace)
     finally:

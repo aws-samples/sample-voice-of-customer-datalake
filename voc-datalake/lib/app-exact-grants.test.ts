@@ -126,9 +126,10 @@ describe('exact grants over the app', () => {
   });
 
   it.each([
-    // With the Documents Library's (7.62.00): the deployment's library/ and one workspace id's ws/{id}/library/.
+    // With the Documents Library's (7.62.00): the deployment's library/ and one workspace id's ws/{id}/library/; and
+    // (7.106.00, 3h-S3b) one workspace id's projects' product documents, as the deployment's projects/*/product_docs/*.
     ['ProjectsLambdaRole', ['avatars/*', 'library/*', 'projects/*/product_docs/*', 'prototypes/*',
-      'ws/ws_??????????????????????????/library/*']],
+      'ws/ws_??????????????????????????/library/*', 'ws/ws_??????????????????????????/projects/*/product_docs/*']],
     ['PersonaGeneratorRole', ['avatars/*']],
     ['SettingsLambdaRole', ['company-context/design/logo_preview_*', 'company-context/design/icons_*']],
   ])('the workspace deleter %s: version deletes and listing on exactly its prefixes, never raw/', (role, prefixes) => {

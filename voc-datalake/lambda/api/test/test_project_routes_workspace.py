@@ -22,7 +22,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 from moto import mock_aws
-from moto_helpers import pk_sk_table, rest_event, workspace_route_call
+from moto_helpers import pk_sk_table, rest_event, seed_workspaces, workspace_route_call
 
 import projects_handler
 from shared.indexes import PROJECTS_BY_TYPE_INDEX
@@ -62,10 +62,7 @@ def _meta(pk: str, project_id: str, gsi1pk: str, name: str, owner: str, members:
 
 
 def _seed(projects: Any, workspaces: Any) -> None:
-    for ws, members in MEMBERS.items():
-        workspaces.put_item(Item={'pk': f'WS#{ws}', 'sk': 'META', 'name': ws, 'slug': ws, 'status': 'active'})
-        for sub, role in members.items():
-            workspaces.put_item(Item={'pk': f'WS#{ws}', 'sk': f'MEMBER#{sub}', 'role': role})
+    seed_workspaces(workspaces, MEMBERS)
     for ws, project_id, name, owner, members in (
             (WS_A, P_A, 'alderbrook launch', 'sub-ada', {'sub-ed': 'editor', 'sub-vi': 'editor'}),
             (WS_B, P_B, 'bramblewood launch', 'sub-bramblewood-bea', {})):
@@ -248,7 +245,9 @@ def _path(template: str, project_id: str) -> str:
 
 
 def test_every_threaded_project_route_has_its_isolation_case():
-    project_routes = {key for key in projects_handler.THREADED_ROUTES if key[1] != '/projects'}
+    """The core routes' cases are here; the product routes' (3h-S3b) are test_product_routes_workspace.py's."""
+    project_routes = {key for key in projects_handler.THREADED_ROUTES - projects_handler.PRODUCT_ROUTES
+                      if key[1] != '/projects'}
     assert set(PROJECT_ROUTE_REQUESTS) == project_routes
 
 
@@ -382,7 +381,8 @@ def test_every_route_is_threaded_or_waits_for_a_named_slice():
     assert sorted((threaded | not_yet) - registered) == []
     assert threaded.isdisjoint(not_yet)
     assert library.isdisjoint(threaded | not_yet)
-    assert set(projects_handler.NOT_YET.values()) == {'3h-S3b', '3h-S3c', '3h-S4', '3h-S5', '3h-S6', '3h-S7', '3h-S8'}
+    # 3h-S3b's routes are threaded since 7.106.00 (its extract waits for its job, 3h-S8).
+    assert set(projects_handler.NOT_YET.values()) == {'3h-S3c', '3h-S4', '3h-S5', '3h-S6', '3h-S7', '3h-S8'}
 
 
 @pytest.mark.xfail(strict=True, reason='3h-S12, the flip, needs every project route threaded: it empties NOT_YET and '

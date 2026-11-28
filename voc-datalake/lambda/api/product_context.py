@@ -71,6 +71,7 @@ from shared.prompt_safety import data_block
 from shared.s3_versions import delete_every_version_of_keys
 from shared.tables import get_projects_table
 from shared.timestamps import now_iso
+from shared.ws_repo import WorkspaceScope
 
 projects_table = get_projects_table()
 s3 = None
@@ -204,6 +205,12 @@ PRODUCT_DOC_STATUSES = ('pending', 'extracting', 'ready', 'failed')
 EXTRACTION_STALL_SECONDS = 300
 STALLABLE_STATUSES = ('pending', 'extracting')
 
+# An image uploaded in a workspace is refused here, before its record is written (3h-S3b, 7.106.00): its description
+# reads the model picks (SETTINGS#model), which are not the workspace's yet (3f), and the S3 extractor would only mark
+# it failed with this same text (product_doc_extractor/handler.py WORKSPACE_IMAGE_MESSAGE, the stdlib-only Lambda's
+# own copy; lambda/api/test/test_product_routes_workspace.py holds the two together). Lifted when the picks move.
+WORKSPACE_IMAGE_MESSAGE = "Images can't be described in a workspace yet. Upload the design as a .md or .txt file."
+
 # ── Prompt-injection fence for uploaded-document text ────────────────────────
 # The extraction prompt asks the model to reproduce every visible label VERBATIM,
 # and that text then flows into PRD / PR-FAQ / prototype prompts. A file whose
@@ -239,13 +246,14 @@ def _validate_patch(patch: object) -> dict:
 # ── ProductContext CRUD ──────────────────────────────────────────────────────
 
 @tracer.capture_method
-def get_context(project_id: str) -> dict:
+def get_context(project_id: str, *, workspace: WorkspaceScope | None) -> dict:
     """``{context}``: each of the 12 fields as text ('' when unset; a list stored under the old schema joined by
     lines) and, once the row exists, its ``updated_at`` (shared/product_proposals.py ``context_state``, read
-    strongly). ``field_meta`` is the Product tab's own read (GET …/product-proposals/latest)."""
+    strongly), in ``workspace`` (None: the deployment). ``field_meta`` is the Product tab's own read (GET
+    …/product-proposals/latest)."""
     if not projects_table:
         raise ConfigurationError('Projects table not configured')
-    state = context_state(projects_table, project_id, workspace=None)
+    state = context_state(projects_table, project_id, workspace=workspace)
     out: dict[str, object] = dict(state.values)
     if state.exists:
         out['updated_at'] = state.updated_at
@@ -253,7 +261,7 @@ def get_context(project_id: str) -> dict:
 
 
 @tracer.capture_method
-def update_context(project_id: str, body: object, *, actor: Actor) -> dict:
+def update_context(project_id: str, body: object, *, actor: Actor, workspace: WorkspaceScope | None) -> dict:
     """Apply a validated patch to the product context, creating the record on its first PUT: ``{context}``, and
     ``conflicts`` beside it when some fields were not written.
 
@@ -262,12 +270,13 @@ def update_context(project_id: str, body: object, *, actor: Actor) -> dict:
     autonomous caller whose way of working lets the AI write the product description). The write is
     shared/product_proposals.py ``write_context``: an accept of the values just read, each field recorded in
     ``field_meta`` as the caller's; an MCP client, an agent or a plan step never replaces a value a person typed
-    (``person_value`` conflicts, the rest written; 409 ``conflict`` when every field is one).
+    (``person_value`` conflicts, the rest written; 409 ``conflict`` when every field is one). In ``workspace`` (None:
+    the deployment), the request's scope.
     """
     if not projects_table:
         raise ConfigurationError('Projects table not configured')
-    conflicts = write_context(projects_table, project_id, _validate_patch(body or {}), actor, workspace=None)
-    out = get_context(project_id)
+    conflicts = write_context(projects_table, project_id, _validate_patch(body or {}), actor, workspace=workspace)
+    out = get_context(project_id, workspace=workspace)
     if conflicts:
         out['conflicts'] = conflicts
     return out
@@ -360,11 +369,12 @@ def _declared_size(value: object) -> int | None:
     return int(number)
 
 
-def _list_doc_items(project_id: str) -> list[dict]:
-    """The project's source rows, read strongly (shared/product_sources.py ``list_sources``, their one reader)."""
+def _list_doc_items(project_id: str, *, workspace: WorkspaceScope | None) -> list[dict]:
+    """The project's source rows in ``workspace``, read strongly (shared/product_sources.py ``list_sources``, their
+    one reader)."""
     if not projects_table:
         return []
-    return list_sources(projects_table, project_id, workspace=None)
+    return list_sources(projects_table, project_id, workspace=workspace)
 
 
 def _age_seconds(created_at) -> float | None:
@@ -402,7 +412,7 @@ def _stall_window(item: dict) -> tuple[object, int, str]:
     return item.get('created_at'), EXTRACTION_STALL_SECONDS, STALLED_MESSAGE
 
 
-def _fail_if_stalled(project_id: str, item: dict) -> dict:
+def _fail_if_stalled(project_id: str, item: dict, *, workspace: WorkspaceScope | None) -> dict:
     """Transition a never-extracted document to `failed`, on read.
 
     WHY ON READ rather than a scheduled sweep: nothing else can do it. The client
@@ -424,6 +434,8 @@ def _fail_if_stalled(project_id: str, item: dict) -> dict:
     own timeout (120s), and TWIN_STALL_SECONDS (960) the twin's (900s) — a healthy
     read always completes inside its window. Raising either Lambda's timeout past
     its window would start marking successful reads as failed, so they move together.
+
+    The record is ``workspace``'s (None: the deployment's), the one the listing read.
     """
     status = item.get('status')
     if status not in STALLABLE_STATUSES:
@@ -449,7 +461,7 @@ def _fail_if_stalled(project_id: str, item: dict) -> dict:
         condition += ' AND #token = :token'
     try:
         projects_table.update_item(
-            Key={'pk': project_pk(project_id, workspace=None), 'sk': f'{DOC_SK_PREFIX}{doc_id}'},
+            Key={'pk': project_pk(project_id, workspace=workspace), 'sk': f'{DOC_SK_PREFIX}{doc_id}'},
             UpdateExpression='SET #status = :failed, #error = :error',
             ConditionExpression=condition,
             ExpressionAttributeNames=names,
@@ -483,7 +495,7 @@ def _is_injectable(doc: dict) -> bool:
     )
 
 
-def _injectable_docs(project_id: str) -> list[dict]:
+def _injectable_docs(project_id: str, *, workspace: WorkspaceScope | None) -> list[dict]:
     """Ready documents whose extracted text may be put into a prompt.
 
     IMAGES ARE EXCLUDED, deliberately and temporarily. Rung 1 already wired
@@ -506,14 +518,16 @@ def _injectable_docs(project_id: str) -> list[dict]:
     PREDICATE is not enough — that gate reads this list ONCE and hands it to
     build_product_context_block, so the two also agree on the DATA.
     """
-    return [d for d in _list_doc_items(project_id) if _is_injectable(d)]
+    return [d for d in _list_doc_items(project_id, workspace=workspace) if _is_injectable(d)]
 
 
 @tracer.capture_method
-def list_docs(project_id: str) -> dict:
-    items = _list_doc_items(project_id)
+def list_docs(project_id: str, *, workspace: WorkspaceScope | None) -> dict:
+    """GET …/product-docs: the project's sources in ``workspace`` (None: the deployment), the newest first, a stalled
+    read failed on the way (``_fail_if_stalled``)."""
+    items = _list_doc_items(project_id, workspace=workspace)
     items.sort(key=lambda i: i.get('created_at', ''), reverse=True)
-    return {'docs': [doc_view(_fail_if_stalled(project_id, i)) for i in items]}
+    return {'docs': [doc_view(_fail_if_stalled(project_id, i, workspace=workspace)) for i in items]}
 
 
 def _body_text(body: dict | None, key: str) -> str:
@@ -556,14 +570,16 @@ def _type_cap(content_type: str) -> tuple[int, str]:
 
 
 @tracer.capture_method
-def create_upload_url(project_id: str, body: dict, *, actor: Mapping[str, str] | None = None) -> dict:
+def create_upload_url(project_id: str, body: dict, *, actor: Mapping[str, str] | None = None,
+                      workspace: WorkspaceScope | None) -> dict:
     """
     Validate caps and content type, create a pending DDB record, return a presigned PUT URL.
     The frontend uploads the file directly to S3. A Markdown, text or image upload goes under
     product_docs/raw/, which triggers the extractor lambda; a PDF, DOCX or PPTX under
     product_docs/source/, which the frontend then announces (POST …/{doc}/uploaded) for the
     assist twin to read. ``actor`` (shared/delete_audit.py ``actor_from_event``) is recorded
-    as the source's ``created_by``.
+    as the source's ``created_by``. In ``workspace`` (None: the deployment) the record is the workspace's and its key
+    takes ``ws/{ws}/``; an image is refused there (400 ``image_in_workspace``, ``WORKSPACE_IMAGE_MESSAGE``).
     """
     if not projects_table:
         raise ConfigurationError('Projects table not configured')
@@ -586,6 +602,9 @@ def create_upload_url(project_id: str, body: dict, *, actor: Mapping[str, str] |
             f'Unsupported file type. Accepted: {_ACCEPTED_EXTENSIONS_LABEL}.'
         )
 
+    if workspace is not None and content_type in IMAGE_CONTENT_TYPES:
+        raise ValidationError(WORKSPACE_IMAGE_MESSAGE, code='image_in_workspace')
+
     max_bytes, kind = _type_cap(content_type)
     # `_declared_size` answers None or a size of at least 1 byte, so the lower
     # bound needs no second check here.
@@ -598,12 +617,12 @@ def create_upload_url(project_id: str, body: dict, *, actor: Mapping[str, str] |
 
     doc_id = new_doc_id()
     ext = UPLOAD_CONTENT_TYPES[content_type]
-    s3_raw_key = (product_doc_source_key(project_id, doc_id, ext, workspace=None) if on_twin
-                  else product_doc_raw_key(project_id, doc_id, ext, workspace=None))
+    s3_raw_key = (product_doc_source_key(project_id, doc_id, ext, workspace=workspace) if on_twin
+                  else product_doc_raw_key(project_id, doc_id, ext, workspace=workspace))
     now = now_iso()
 
     item = {
-        'pk': project_pk(project_id, workspace=None),
+        'pk': project_pk(project_id, workspace=workspace),
         'sk': f'{DOC_SK_PREFIX}{doc_id}',
         'doc_id': doc_id,
         'filename': filename[:255],
@@ -622,7 +641,7 @@ def create_upload_url(project_id: str, body: dict, *, actor: Mapping[str, str] |
     if actor:
         item['created_by'] = dict(actor)
     # Within the project's caps (shared/product_sources.py ``put_source``): 400 too_many_sources.
-    put_source(projects_table, project_id, item, workspace=None)
+    put_source(projects_table, project_id, item, workspace=workspace)
 
     params: dict[str, Any] = {
         'Bucket': bucket,
@@ -654,7 +673,8 @@ def create_upload_url(project_id: str, body: dict, *, actor: Mapping[str, str] |
 
 
 @tracer.capture_method
-def delete_doc(project_id: str, doc_id: str, *, actor: Mapping[str, str] | None = None) -> dict:
+def delete_doc(project_id: str, doc_id: str, *, actor: Mapping[str, str] | None = None,
+               workspace: WorkspaceScope | None) -> dict:
     """Delete a product doc: the row, then its raw and extracted objects (every version).
 
     The extracted text is reached by its derivable key too (``product_doc_extracted_key``), since the row names it
@@ -666,25 +686,28 @@ def delete_doc(project_id: str, doc_id: str, *, actor: Mapping[str, str] | None 
     The delete is recorded (``shared.delete_audit``), a document that used it as a
     visual says so (``shared.deleted_sources``), and every product proposal that cited it
     loses those citations, the words they quoted from it (``forget_source``).
+
+    In ``workspace`` (None: the deployment) every row and object is the workspace's (its keys under ``WS#{ws}#`` and
+    ``ws/{ws}/``), and the delete's ``AUDIT#delete`` row names it (its target's ``workspace``).
     """
     if not projects_table:
         raise ConfigurationError('Projects table not configured')
     bucket = os.environ.get('RAW_DATA_BUCKET')
 
     resp = projects_table.get_item(
-        Key={'pk': project_pk(project_id, workspace=None), 'sk': f'{DOC_SK_PREFIX}{doc_id}'}
+        Key={'pk': project_pk(project_id, workspace=workspace), 'sk': f'{DOC_SK_PREFIX}{doc_id}'}
     )
     item = resp.get('Item')
     if not item:
         raise NotFoundError('document not found')
 
     projects_table.delete_item(
-        Key={'pk': project_pk(project_id, workspace=None), 'sk': f'{DOC_SK_PREFIX}{doc_id}'}
+        Key={'pk': project_pk(project_id, workspace=workspace), 'sk': f'{DOC_SK_PREFIX}{doc_id}'}
     )
 
     if bucket:
         stored = (item.get('s3_raw_key'), item.get('s3_extracted_key'))
-        keys = [key for key in (*stored, product_doc_extracted_key(project_id, doc_id, workspace=None))
+        keys = [key for key in (*stored, product_doc_extracted_key(project_id, doc_id, workspace=workspace))
                 if isinstance(key, str) and key]
         try:
             refused = delete_every_version_of_keys(_s3(), bucket, keys)
@@ -693,11 +716,15 @@ def delete_doc(project_id: str, doc_id: str, *, actor: Mapping[str, str] | None 
         else:
             if refused:
                 logger.warning(f'{refused} object version(s) of product doc {doc_id} could not be deleted')
-    record_delete(projects_table, kind='product_doc', target={'project_id': project_id, 'doc_id': doc_id}, actor=actor)
+    target = {'project_id': project_id, 'doc_id': doc_id}
+    if workspace is not None:
+        # ``workspace``, not the messages' ``workspace_id``: an audit target names its scope, it routes nothing.
+        target['workspace'] = workspace.ws
+    record_delete(projects_table, kind='product_doc', target=target, actor=actor)
     mark_citing_documents(projects_table, project_id, [DeletedSource('product_doc', doc_id)], deleted_at=now_iso(),
-                          workspace=None)
+                          workspace=workspace)
     # Its words quoted in the project's product proposals go with it (shared/product_proposals.py forget_source).
-    forget_source(projects_table, project_id, doc_id, workspace=None)
+    forget_source(projects_table, project_id, doc_id, workspace=workspace)
     return {'success': True}
 
 
@@ -737,7 +764,8 @@ def generate_report(project_id: str, body: dict) -> dict:
     response_language = (body or {}).get('response_language')
     title_override = ((body or {}).get('title') or '').strip()
 
-    ctx = get_context(project_id)['context']
+    # The deployment's project: the report is a document-generator job, refused in a workspace (3h-S8).
+    ctx = get_context(project_id, workspace=None)['context']
     has_any = any(ctx.get(k) for k in STRING_FIELDS) or ctx.get(CURRENT_STATE)
     # ONE read of the document list, handed to BOTH the gate below and the block
     # that follows. Reading it twice was a time-of-check/time-of-use race: the
@@ -758,7 +786,7 @@ def generate_report(project_id: str, body: dict) -> dict:
     # short-circuits, so the second read only ever happened on this path, which is
     # exactly the project whose documents are its only content. A project with
     # fields is one query either way; a documents-only project used to be two.
-    docs = None if has_any else _injectable_docs(project_id)
+    docs = None if has_any else _injectable_docs(project_id, workspace=None)
     # No fields and no injectable documents? then there is nothing to summarize.
     if not has_any and not docs:
         raise ValidationError(
@@ -860,8 +888,11 @@ def build_product_context_block(project_id: str, docs: list[dict] | None = None)
     `_is_injectable` is applied either way: a handed-in list is filtered too, so
     the parameter cannot become a back door for the image descriptions rung 3
     owns.
+
+    The deployment's project only: its callers are the jobs and assists (jobs/document_generator, projects.py's
+    assists), each refused in a workspace until 3h-S8 threads them and their scope with it.
     """
-    ctx_resp = get_context(project_id)
+    ctx_resp = get_context(project_id, workspace=None)
     ctx = ctx_resp['context']
 
     sections: list[str] = []
@@ -885,7 +916,7 @@ def build_product_context_block(project_id: str, docs: list[dict] | None = None)
     bucket = os.environ.get('RAW_DATA_BUCKET')
     if bucket:
         ready = (
-            _injectable_docs(project_id) if docs is None
+            _injectable_docs(project_id, workspace=None) if docs is None
             else [d for d in docs if _is_injectable(d)]
         )
         ready.sort(key=lambda d: d.get('created_at', ''))
@@ -977,7 +1008,8 @@ def build_visual_brief_block(
     # one skip path, not two.
     eligible = {
         d.get('doc_id'): d
-        for d in _list_doc_items(project_id)
+        # The deployment's project: a prototype build is a document-generator job, refused in a workspace (3h-S8).
+        for d in _list_doc_items(project_id, workspace=None)
         if d.get('status') == 'ready'
         and d.get('s3_extracted_key')
         and d.get('content_type') in IMAGE_CONTENT_TYPES

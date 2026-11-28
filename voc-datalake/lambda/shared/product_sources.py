@@ -20,9 +20,10 @@ set, not its spend: two adds at once may both take the last place, and a voice i
 during is saved past the cap on purpose (``InterviewAnswers.past_the_cap``); what an extract costs is bounded by the
 characters and images it sends (shared/product_extract.py) and by the read and extract counters, never by the count
 of rows. Its
-rows and objects are the deployment's: every key below takes the workspace (as 3f's do), with no default (3h-S1b's rule:
-every call names its scope, shared/test/test_project_workspace_keyword.py ``GUARDED``), and every entry point refuses
-one (shared/project_keys.py ``PRODUCT_SOURCES_STORE``) until the switch (docs/multi-workspace.md, 3h).
+rows, objects and counters are the scope's (since 7.106.00, 3h-S3b, docs/multi-workspace.md 3h): every key below takes
+the workspace, with no default (3h-S1b's rule: every call names its scope, shared/test/test_project_workspace_keyword.py
+``GUARDED``): a row in the workspace's project partition (``WS#{ws}#PROJECT#{id}``), an object under ``ws/{ws}/``
+(``scoped_object_key``, as 3f's), a counter under ``WS#{ws}#`` (``scoped_pk``), None giving exactly the deployment's.
 
 A source's text is someone else's words (a file, a web page, a person's answers): it reaches a prompt only inside
 the fence (``UNTRUSTED_DOC_BEGIN`` … ``UNTRUSTED_DOC_END``, its body through ``fenced``), and its name only through
@@ -58,17 +59,12 @@ from shared.exceptions import ConfigurationError, ValidationError
 from shared.ingest_tables import table_view
 from shared.library_extract import MAX_UPLOAD_BYTES
 from shared.logging import logger
-from shared.project_keys import (
-    PRODUCT_DOC_SK_PREFIX,
-    PRODUCT_SOURCES_STORE,
-    project_pk,
-    require_deployment,
-)
+from shared.project_keys import PRODUCT_DOC_SK_PREFIX, project_pk
 from shared.project_tables import iter_project_rows
 from shared.project_writes import put_project_item
 from shared.prompt_safety import injection_findings, neutralise_tags
 from shared.s3_versions import delete_every_version_of_keys
-from shared.scoped_keys import scoped_object_key
+from shared.scoped_keys import scoped_object_key, scoped_pk
 from shared.tables import configured_table, get_projects_table
 from shared.timestamps import now_iso
 from shared.workspace_config import get_scoped_item
@@ -91,7 +87,7 @@ __all__ = [
 MAX_DOCS_PER_PROJECT: Final = 20
 MAX_LINKS_PER_PROJECT: Final = 10
 #: A project's link reads a UTC day (an add or a refresh, each one fetch of a page), and a person's, across every
-#: project (``link_read_counters``); a person's reads of a PDF, DOCX or PPTX on the twin a UTC day (an announced upload
+#: project of the scope, the deployment or one workspace (``link_read_counters``); a person's reads of a PDF, DOCX or PPTX on the twin a UTC day (an announced upload
 #: or a retry, ``file_read_counters``). shared/aws.py ``count_once`` counters, kept its 2 days.
 MAX_LINK_READS_PER_DAY: Final = 30
 MAX_PERSON_LINK_READS_PER_DAY: Final = 60
@@ -114,8 +110,8 @@ MAX_INTERVIEW_CHARS: Final = 100_000
 InterviewMode = Literal['typed', 'voice']
 _INTERVIEW_MODES: Final = ('typed', 'voice')
 _INTERVIEW_NAMES: Final = MappingProxyType({'typed': 'Typed answers', 'voice': 'Voice interview'})
-#: The reads' counters in voc-aggregates (the deployment's, as its projects are): a project's and a person's link
-#: reads (``PRODUCTURL#``) and a person's file reads (``PRODUCTFILE#``), spelled here only.
+#: The reads' counters in voc-aggregates (the scope's: a workspace's under ``WS#{ws}#``, 7.106.00): a project's and a
+#: person's link reads (``PRODUCTURL#``) and a person's file reads (``PRODUCTFILE#``), spelled here only.
 _LINK_READS: Final = 'PRODUCTURL#'
 _LINK_READS_PREFIX: Final = f'{_LINK_READS}PROJECT#'
 _PERSON_LINK_READS_PREFIX: Final = f'{_LINK_READS}USER#'
@@ -206,25 +202,30 @@ def source_row_key(project_id: str, doc_id: str, *, workspace: WorkspaceScope | 
     return {'pk': project_pk(project_id, workspace=workspace), 'sk': f'{PRODUCT_DOC_SK_PREFIX}{doc_id}'}
 
 
-def link_reads_key(project_id: str, now: datetime) -> dict[str, str]:
-    """The project's link reads of ``now``'s UTC day in voc-aggregates (the deployment's, as its projects are)."""
-    return {'pk': f'{_LINK_READS_PREFIX}{project_id}#{now:%Y-%m-%d}', 'sk': 'COUNT'}
+def link_reads_key(project_id: str, now: datetime, *, workspace: WorkspaceScope | None) -> dict[str, str]:
+    """The project's link reads of ``now``'s UTC day in voc-aggregates, in ``workspace`` (``WS#{ws}#…``; None: the
+    deployment's)."""
+    return {'pk': scoped_pk(workspace, f'{_LINK_READS_PREFIX}{project_id}#{now:%Y-%m-%d}'), 'sk': 'COUNT'}
 
 
-def link_read_counters(project_id: str, subject: str, now: datetime) -> tuple[Counter, Counter]:
+def link_read_counters(project_id: str, subject: str, now: datetime, *,
+                       workspace: WorkspaceScope | None) -> tuple[Counter, Counter]:
     """One link read's counters, counted together (shared/aws.py ``count_once``): the project's and the person's of
-    ``now``'s UTC day (429 ``rate_limited``)."""
+    ``now``'s UTC day in ``workspace`` (a person's reads are counted per workspace, as its projects are; 429
+    ``rate_limited``)."""
     day = f'{now:%Y-%m-%d}'
-    return (Counter(link_reads_key(project_id, now), MAX_LINK_READS_PER_DAY, 'rate_limited',
+    return (Counter(link_reads_key(project_id, now, workspace=workspace), MAX_LINK_READS_PER_DAY, 'rate_limited',
                     f'A project reads at most {MAX_LINK_READS_PER_DAY} links a day. Try again tomorrow.'),
-            Counter({'pk': f'{_PERSON_LINK_READS_PREFIX}{subject}#{day}', 'sk': 'COUNT'},
+            Counter({'pk': scoped_pk(workspace, f'{_PERSON_LINK_READS_PREFIX}{subject}#{day}'), 'sk': 'COUNT'},
                     MAX_PERSON_LINK_READS_PER_DAY, 'rate_limited',
                     f'You can read at most {MAX_PERSON_LINK_READS_PER_DAY} links a day. Try again tomorrow.'))
 
 
-def file_read_counters(subject: str, now: datetime) -> tuple[Counter]:
-    """One read of a PDF, DOCX or PPTX on the twin: the person's counter of ``now``'s UTC day (429 ``rate_limited``)."""
-    return (Counter({'pk': f'{_PERSON_FILE_READS_PREFIX}{subject}#{now:%Y-%m-%d}', 'sk': 'COUNT'},
+def file_read_counters(subject: str, now: datetime, *, workspace: WorkspaceScope | None) -> tuple[Counter]:
+    """One read of a PDF, DOCX or PPTX on the twin: the person's counter of ``now``'s UTC day in ``workspace`` (429
+    ``rate_limited``)."""
+    return (Counter({'pk': scoped_pk(workspace, f'{_PERSON_FILE_READS_PREFIX}{subject}#{now:%Y-%m-%d}'),
+                     'sk': 'COUNT'},
                     MAX_PERSON_FILE_READS_PER_DAY, 'rate_limited',
                     f'You can have at most {MAX_PERSON_FILE_READS_PER_DAY} files read a day. Try again tomorrow.'),)
 
@@ -488,10 +489,11 @@ def save_interview_source(project_id: str, answers: InterviewAnswers, *,
     ``MAX_INTERVIEW_CHARS`` is cut, ``truncated``); text that reads like instructions to a model is flagged
     (``injection_flag``), never refused. Raises ValidationError for an empty text or an unknown mode, and when the
     project already has its ``MAX_DOCS_PER_PROJECT`` sources (links and answers count; ``TOO_MANY_SOURCES_CODE``)
-    unless ``answers.past_the_cap``, and NotPerWorkspaceError for a workspace until the switch. The text is written before the row, so a row never names text that is not there; a
-    row the project refuses (deleted meanwhile) takes its text back.
+    unless ``answers.past_the_cap``. The text is written before the row, so a row never names text that is not there; a
+    row the project refuses (deleted meanwhile) takes its text back. In a workspace (since 7.106.00) the row is the
+    workspace's project's and the text under ``ws/{ws}/``: the typed answers route passes its request's scope; a voice
+    interview's finalize names the deployment, as every voice session is (its start refuses a workspace, 3h-S3c).
     """
-    require_deployment(workspace, PRODUCT_SOURCES_STORE)
     if answers.mode not in _INTERVIEW_MODES:
         raise ValidationError("mode must be 'typed' or 'voice'")
     text = str(answers.text or '').strip()

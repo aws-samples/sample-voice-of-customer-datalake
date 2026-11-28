@@ -21,8 +21,12 @@ public (shared/url_policy.py ``require_public``, the guard a design reference's 
 characters, and a project names one address once (shared/reference_urls.py ``normalised_reference_url``). Typed
 answers: at most 12, each at most 2,000 characters and its question at most 200 (shared/product_fields.py
 ``MAX_QUESTION_CHARS``, the extract's and the voice interview's cap too), through shared/pii_redaction.py
-``redact_text`` before they are saved. Projects are the deployment's until the switch (docs/multi-workspace.md 3h): no route reads ``X-Workspace-Id``,
-and every key is the deployment's.
+``redact_text`` before they are saved.
+
+Every route acts in the request's scope (since 7.106.00, 3h-S3b, docs/multi-workspace.md 3h): the one the handler's
+middleware resolved (shared/project_request_scope.py ``held_scope``; the deployment's until the flip, 3h-S12), passed to
+every store, the reads' counters with it (``WS#{ws}#``); the twin's event names it from the resolved context
+(shared/workspace_routing.py ``workspace_payload``), never from the body.
 """
 from __future__ import annotations
 
@@ -60,6 +64,7 @@ from shared.product_sources import (
     upload_head,
 )
 from shared.project_gate import caller_from_event
+from shared.project_request_scope import ProjectScope, held_scope
 from shared.reference_urls import normalised_reference_url
 from shared.request_body import json_object_body, reject_unknown_fields, validated_text
 from shared.route_answers import json_response
@@ -67,6 +72,7 @@ from shared.tables import configured_table, get_aggregates_table
 from shared.timestamps import now_iso, parse_iso
 from shared.url_policy import NotPublicURLError, require_public
 from shared.workspace_routing import workspace_payload
+from shared.ws_repo import WorkspaceScope
 
 __all__ = ['app']
 
@@ -80,27 +86,34 @@ NOT_STARTED: Final = 'The reading could not be started. Try again.'
 _LABELS: Final = dict(FIELD_LABELS)
 
 
-def _require_source(table: Any, project_id: str, doc_id: str) -> dict:
-    item = get_source(table, project_id, doc_id, workspace=None)
+def _scope() -> ProjectScope:
+    """The request's scope, as the handler's middleware resolved it."""
+    return held_scope(app.context)
+
+
+def _require_source(table: Any, project_id: str, doc_id: str, *, workspace: WorkspaceScope | None) -> dict:
+    item = get_source(table, project_id, doc_id, workspace=workspace)
     if item is None:
         raise NotFoundError('Product source not found')
     return item
 
 
-def _fresh(table: Any, project_id: str, item: Mapping[str, Any]) -> dict[str, Any]:
+def _fresh(table: Any, project_id: str, item: Mapping[str, Any], *,
+           workspace: WorkspaceScope | None) -> dict[str, Any]:
     """The source as it stands now (another request or the twin may have moved it), as every route answers it."""
-    return doc_view(get_source(table, project_id, str(item['doc_id']), workspace=None) or item)
+    return doc_view(get_source(table, project_id, str(item['doc_id']), workspace=workspace) or item)
 
 
 # ── Starting a read on the twin ─────────────────────────────────────────────────────────────────────────────────
 
 
-def _claim(table: Any, project_id: str, doc_id: str, *, when: tuple[str, ...]) -> str | None:
+def _claim(table: Any, project_id: str, doc_id: str, *, when: tuple[str, ...],
+           workspace: WorkspaceScope | None) -> str | None:
     """Move the source to ``extracting`` under a fresh token when its status is one of ``when``: the token, or None
     when another request moved it first."""
     token = secrets.token_hex(8)
     fields = {'status': 'extracting', 'extract_token': token, 'claimed_at': now_iso()}
-    claimed = settle(table, project_id, doc_id, fields, workspace=None, statuses=when, remove=('error',))
+    claimed = settle(table, project_id, doc_id, fields, workspace=workspace, statuses=when, remove=('error',))
     return token if claimed else None
 
 
@@ -112,14 +125,15 @@ def _twin() -> str:
     raise ServiceError('The reading worker is not configured')
 
 
-def _hand_to_the_twin(table: Any, project_id: str, doc_id: str, token: str) -> None:
-    """Invoke the twin for the claimed source; a failed invoke fails the source (under its token) and is a 500."""
+def _hand_to_the_twin(table: Any, project_id: str, doc_id: str, token: str, scope: ProjectScope) -> None:
+    """Invoke the twin for the claimed source, its event naming ``scope``'s workspace from the resolved context (none
+    for the deployment); a failed invoke fails the source (under its token) and is a 500."""
     try:
         invoke_lambda_async(_twin(), workspace_payload(
-            {'action': EXTRACT_ACTION, 'project_id': project_id, 'doc_id': doc_id, 'token': token}, None))
+            {'action': EXTRACT_ACTION, 'project_id': project_id, 'doc_id': doc_id, 'token': token}, scope.context))
     except Exception as exc:
         logger.exception('A product source reading could not be started')
-        settle(table, project_id, doc_id, {'status': 'failed', 'error': NOT_STARTED}, workspace=None,
+        settle(table, project_id, doc_id, {'status': 'failed', 'error': NOT_STARTED}, workspace=scope.workspace,
                statuses=('extracting',), token=token)
         raise ServiceError(NOT_STARTED) from exc
 
@@ -137,20 +151,21 @@ def _subject() -> str:
 
 
 def _aggregates() -> Any:
-    """voc-aggregates: the reads' counters (the deployment's, as its projects are)."""
+    """voc-aggregates: the reads' counters (the request scope's: a workspace's under ``WS#{ws}#``)."""
     return configured_table(get_aggregates_table(), 'Aggregates')
 
 
-def _count_link_read(project_id: str) -> None:
-    """One more of the project's and the caller's link reads today, both or neither, or 429 ``rate_limited``."""
+def _count_link_read(project_id: str, *, workspace: WorkspaceScope | None) -> None:
+    """One more of the project's and the caller's link reads today in ``workspace``, both or neither, or 429
+    ``rate_limited``."""
     now = datetime.now(UTC)
-    count_once(_aggregates(), link_read_counters(project_id, _subject(), now), now)
+    count_once(_aggregates(), link_read_counters(project_id, _subject(), now, workspace=workspace), now)
 
 
-def _count_file_read() -> None:
-    """One more of the caller's reads of a PDF, DOCX or PPTX today, or 429 ``rate_limited``."""
+def _count_file_read(*, workspace: WorkspaceScope | None) -> None:
+    """One more of the caller's reads of a PDF, DOCX or PPTX today in ``workspace``, or 429 ``rate_limited``."""
     now = datetime.now(UTC)
-    count_once(_aggregates(), file_read_counters(_subject(), now), now)
+    count_once(_aggregates(), file_read_counters(_subject(), now, workspace=workspace), now)
 
 
 # ── Routes ───────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -163,20 +178,22 @@ def product_doc_uploaded(project_id: str, doc_id: str):
     and the twin reads it (202), counted towards the caller's file reads (429 ``rate_limited``). Idempotent: a source
     already claimed, read or failed, and one the S3-triggered extractor reads (Markdown, text, an image), answer as
     they are (202)."""
+    scope = _scope()
+    workspace = scope.workspace
     table = projects_table()
-    item = _require_source(table, project_id, doc_id)
+    item = _require_source(table, project_id, doc_id, workspace=workspace)
     if item.get('status') != 'pending' or not read_on_twin(item):
         return json_response(202, {'doc': doc_view(item)})
-    head = upload_head(project_id, item, workspace=None)
+    head = upload_head(project_id, item, workspace=workspace)
     if head is None:
         raise ConflictError('The file has not arrived yet. Upload it again.', code='not_uploaded')
     if head['length'] != int(item.get('size_bytes') or 0) or head['content_type'] != item.get('content_type'):
         raise ConflictError('The uploaded file is not the one announced. Upload it again.', code='upload_mismatch')
-    _count_file_read()
-    token = _claim(table, project_id, doc_id, when=('pending',))
+    _count_file_read(workspace=workspace)
+    token = _claim(table, project_id, doc_id, when=('pending',), workspace=workspace)
     if token is not None:
-        _hand_to_the_twin(table, project_id, doc_id, token)
-    return json_response(202, {'doc': _fresh(table, project_id, item)})
+        _hand_to_the_twin(table, project_id, doc_id, token, scope)
+    return json_response(202, {'doc': _fresh(table, project_id, item, workspace=workspace)})
 
 
 @app.post("/projects/<project_id>/product-docs/<doc_id>/refresh")
@@ -187,8 +204,10 @@ def refresh_product_doc(project_id: str, doc_id: str):
     ``extracting`` (a read under way), ``not_failed`` (a file read fine), ``not_uploaded``, ``stale`` (moved
     meanwhile); 429 ``rate_limited``. A link's read counts towards the day's link reads, a file's towards the
     caller's file reads."""
+    scope = _scope()
+    workspace = scope.workspace
     table = projects_table()
-    item = _require_source(table, project_id, doc_id)
+    item = _require_source(table, project_id, doc_id, workspace=workspace)
     status = str(item.get('status'))
     if not read_on_twin(item):
         raise ConflictError('This source is read when it is added. Delete it and add it again.',
@@ -196,18 +215,18 @@ def refresh_product_doc(project_id: str, doc_id: str):
     if status == 'extracting' and not _is_stale(item):
         raise ConflictError('This source is being read. Wait for it to finish.', code='extracting')
     if item.get('source_kind') == 'url':
-        _count_link_read(project_id)
+        _count_link_read(project_id, workspace=workspace)
     elif status != 'failed' and not _is_stale(item):
         raise ConflictError('Only a source whose read failed can be read again.', code='not_failed')
-    elif upload_head(project_id, item, workspace=None) is None:
+    elif upload_head(project_id, item, workspace=workspace) is None:
         raise ConflictError('The file never arrived. Delete this source and upload it again.', code='not_uploaded')
     else:
-        _count_file_read()
-    token = _claim(table, project_id, doc_id, when=(status,))
+        _count_file_read(workspace=workspace)
+    token = _claim(table, project_id, doc_id, when=(status,), workspace=workspace)
     if token is None:
         raise ConflictError('This source changed meanwhile. Reload it.', code='stale')
-    _hand_to_the_twin(table, project_id, doc_id, token)
-    return json_response(202, {'doc': _fresh(table, project_id, item)})
+    _hand_to_the_twin(table, project_id, doc_id, token, scope)
+    return json_response(202, {'doc': _fresh(table, project_id, item, workspace=workspace)})
 
 
 def _public_link(body: Mapping[str, Any]) -> str:
@@ -236,21 +255,24 @@ def add_product_doc_url(project_id: str):
     ``too_many_sources``, ``too_many_links``; 409 ``duplicate``; 429 ``rate_limited``. The caps are checked before the
     read is counted, and again as the row is put (``put_source``)."""
     url = _public_link(json_object_body(app))
+    scope = _scope()
+    workspace = scope.workspace
     table = projects_table()
-    sources = list_sources(table, project_id, workspace=None)
+    sources = list_sources(table, project_id, workspace=workspace)
     require_room(sources, link=True)
     _refuse_a_second_copy(sources, url)
-    _count_link_read(project_id)
+    _count_link_read(project_id, workspace=workspace)
     doc_id, token, now = new_doc_id(), secrets.token_hex(8), now_iso()
     row = {
-        **source_row_key(project_id, doc_id, workspace=None), 'doc_id': doc_id, 'filename': url[:255], 'content_type': '',
+        **source_row_key(project_id, doc_id, workspace=workspace), 'doc_id': doc_id, 'filename': url[:255],
+        'content_type': '',
         'size_bytes': 0, 's3_raw_key': None, 's3_extracted_key': None, 'status': 'extracting', 'error': None,
         'extracted_chars': 0, 'created_at': now, 'source_kind': 'url', 'url': url,
         'created_by': actor_from_event(app.current_event.raw_event), 'extract_token': token, 'claimed_at': now,
     }
-    put_source(table, project_id, row, workspace=None, link=True)
-    _hand_to_the_twin(table, project_id, doc_id, token)
-    return json_response(201, {'doc': _fresh(table, project_id, row)})
+    put_source(table, project_id, row, workspace=workspace, link=True)
+    _hand_to_the_twin(table, project_id, doc_id, token, scope)
+    return json_response(201, {'doc': _fresh(table, project_id, row, workspace=workspace)})
 
 
 def _answered(value: object) -> list[tuple[str, str, str]]:
@@ -296,5 +318,5 @@ def save_product_answers(project_id: str):
     text = _interview_text(_answered(body.get('answers')))
     doc = save_interview_source(project_id, InterviewAnswers(
         text=text, mode='typed', created_by=actor_from_event(app.current_event.raw_event), proposal_id=proposal_id),
-        workspace=None)
+        workspace=_scope().workspace)
     return json_response(201, {'doc': doc})

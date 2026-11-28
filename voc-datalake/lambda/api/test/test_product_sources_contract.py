@@ -14,8 +14,8 @@ import pytest
 from shared import product_proposal_routes, product_source_worker, product_sources
 from shared.project_keys import (
     PRODUCT_DOC_SK_PREFIX,
+    PRODUCT_EXTRACT_STORE,
     PRODUCT_PROPOSAL_SK_PREFIX,
-    PRODUCT_SOURCES_STORE,
     NotPerWorkspaceError,
     require_deployment,
 )
@@ -74,7 +74,8 @@ class TestTheKeys:
         assert PRODUCT_PROPOSAL_SK_PREFIX == 'PRODUCT_PROPOSAL#'
         assert not PRODUCT_PROPOSAL_SK_PREFIX.startswith(PRODUCT_DOC_SK_PREFIX)
 
-    def test_the_sources_refuse_a_workspace_until_the_switch(self):
-        require_deployment(None, PRODUCT_SOURCES_STORE)
-        with pytest.raises(NotPerWorkspaceError, match=r'^Product sources is not per workspace yet$'):
-            require_deployment(WorkspaceScope('ws_01JC3Q8ZK6V7W9X2Y4A5B6C7D8'), PRODUCT_SOURCES_STORE)
+    def test_the_extract_refuses_a_workspace_until_its_job_moves(self):
+        """Since 7.106.00 (3h-S3b) the sources take the workspace; the extract's own stores refuse one (3h-S8)."""
+        require_deployment(None, PRODUCT_EXTRACT_STORE)
+        with pytest.raises(NotPerWorkspaceError, match=r'^The product extract is not per workspace yet$'):
+            require_deployment(WorkspaceScope('ws_01JC3Q8ZK6V7W9X2Y4A5B6C7D8'), PRODUCT_EXTRACT_STORE)

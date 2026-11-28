@@ -59,7 +59,7 @@ import * as kms from 'aws-cdk-lib/aws-kms';
 import * as cdk from 'aws-cdk-lib';
 import * as cr from 'aws-cdk-lib/custom-resources';
 
-import { AUDIT_DENY_WRITE_SID } from '../utils/audit-row-guard';
+import { AUDIT_DENY_WRITE_SID, AUDIT_ROW_PARTITION_PATTERNS } from '../utils/audit-row-guard';
 import { appVersion } from '../utils/connector-version';
 import { acknowledgeNag } from '../utils/nag-ack';
 import { cdkCustomResourceSuppressions, suppressAwsCustomResourceProvider } from '../utils/nag-suppressions';
@@ -105,7 +105,7 @@ export function resetReviewRegistriesMarker(
         effect: iam.Effect.DENY,
         actions: ['dynamodb:DeleteItem', 'dynamodb:UpdateItem', 'dynamodb:BatchWriteItem', 'dynamodb:PutItem'],
         resources: [projectsTable.tableArn],
-        conditions: { 'ForAnyValue:StringLike': { 'dynamodb:LeadingKeys': ['AUDIT#*'] } },
+        conditions: { 'ForAnyValue:StringLike': { 'dynamodb:LeadingKeys': [...AUDIT_ROW_PARTITION_PATTERNS] } },
       }),
     ]),
     installLatestAwsSdk: false,

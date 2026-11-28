@@ -39,6 +39,7 @@ from shared.onboarding import FEEDBACK_FORM_PK
 from shared.participants_keys import list_partition, participants_index_key, person_key
 from shared.participants_store import create_person
 from shared.platform_costs import cost_partition
+from shared.product_proposals import audit_pk
 from shared.project_keys import (
     job_status_pk,
     project_pk,
@@ -364,6 +365,11 @@ SEEDS: dict[str, Callable[[World], Probe] | None] = {
     'DOCSHARE_IDS': lambda w: _review_link(w, 'registry'),
     'review_link_key': lambda w: _review_link(w, 'link'),
     'reviewer_rate_pk': None,
+    # A product proposal accept's audit row in the workspace (7.106.00): kept.
+    'audit_pk': lambda w: _put(w, 'projects', {'pk': audit_pk(workspace=SCOPE), 'sk': '2026-11-28T09:00:00#fam',
+                                               'kind': 'product_proposal_accepted', 'project_id': _FAM_PROJECT}),
+    # The Product tab's counters (7.106.00): a count each, expiring two days after their day (TTL).
+    'link_reads_key': None, 'link_read_counters': None, 'file_read_counters': None, 'extract_counter_keys': None,
     # A workspace's person (its META, guard and index rows), and an index row naming a list with no rows left.
     'participants_partition': _participant,
     'PARTICIPANTS': lambda w: _put(w, 'participants', participants_index_key(

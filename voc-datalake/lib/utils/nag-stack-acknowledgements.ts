@@ -15,7 +15,7 @@ import type { VocIngestionStack } from '../stacks/ingestion-stack';
 import type { VocProcessingStack } from '../stacks/processing-stack-consolidated';
 import {
   WORKSPACE_EXPORTS_PREFIX, WORKSPACE_LIBRARY_PREFIX, WORKSPACE_MEMORY_IMPORTS_PREFIX, WORKSPACE_OBJECTS_PREFIX,
-  WORKSPACE_RAW_LAYER_PREFIX, WORKSPACE_SILVER_HISTORY_PREFIX,
+  WORKSPACE_PRODUCT_DOCS_OBJECTS, WORKSPACE_RAW_LAYER_PREFIX, WORKSPACE_SILVER_HISTORY_PREFIX,
 } from '../stacks/core-buckets';
 import { DEPLOYMENT_PRODUCT_DOC_READS, LIBRARY_TEXT_READS, WORKSPACE_PRODUCT_DOC_READS } from '../stacks/retention-worker';
 import { acknowledgeNag } from './nag-ack';
@@ -95,6 +95,10 @@ export function acknowledgeStackFindings({ core, ingestion, processing, api }: C
       // ws/{one id}/library/*: a workspace's Documents Library, as library/* below for the deployment's (7.62.00: the
       // projects API's presigned uploads and downloads, extracted text and deletes; lambda/shared/library_objects.py).
       raw.arnForObjects(`${WORKSPACE_LIBRARY_PREFIX}*`),
+      // ws/{one id}/projects/*/product_docs/*: a workspace's projects' product documents, as projects/*/product_docs/*
+      // below for the deployment's (7.106.00, 3h-S3b: the projects API's presigned uploads, the twin's reading and
+      // text, the deletes; lambda/shared/product_sources.py).
+      raw.arnForObjects(WORKSPACE_PRODUCT_DOCS_OBJECTS),
       ingestion.s3ImportBucket.arnForObjects('*'),
       core.websiteBucket.arnForObjects('*'),
     ]),

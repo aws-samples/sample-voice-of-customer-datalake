@@ -352,7 +352,10 @@ describe('cdk-nag acknowledgements', () => {
       // 150 -> 152 (7.104.00, review round 1, S6): the generator's read narrowed to `…/product_docs/extracted/*` and
       // `…/product_docs/raw/*` (one statement, GetObject only, never `source/`), each a finding of the raw prefixes'
       // acknowledgement.
-      expect({ declared: declared.size, used: used.size }).toStrictEqual({ declared: 152, used: 152 });
+      // 152 -> 153 (7.106.00, 3h-S3b): the projects API's read, write and version delete of one workspace id's
+      // `ws/{one id}/projects/*/product_docs/*` (its projects' product documents), a finding of VocApiStack's objects'
+      // acknowledgement.
+      expect({ declared: declared.size, used: used.size }).toStrictEqual({ declared: 153, used: 153 });
       expect(unusedOf({ declared, used })).toStrictEqual([]);
     });
   });

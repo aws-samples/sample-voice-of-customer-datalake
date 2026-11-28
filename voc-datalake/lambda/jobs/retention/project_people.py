@@ -60,9 +60,10 @@ finds the row already clean. A record names the workspace, the kind and the ids 
 project id, or the project and a digest of the link's id): never the address, and never a link's id, the secret its
 URL carries.
 
-A project's product documents (``ws/{ws}/projects/{id}/product_docs/``): in a workspace an upload is a ``.md`` or
-``.txt`` file or an image (the extractor's rules take no PDF there, 3f) and an image is never extracted (it is marked
-failed, 3f). Since 7.104.00 the deployment's product sources also hold PDF, Word and PowerPoint files (their upload
+A project's product documents (``ws/{ws}/projects/{id}/product_docs/``): through the extractor a workspace's
+upload is a ``.md`` or ``.txt`` file (its rules take no PDF there, 3f; an image is refused at upload since 7.106.00
+and was never extracted). Since 7.104.00 the deployment's product sources, and since 7.106.00 a workspace's (once
+the seam is on), also hold PDF, Word and PowerPoint files (their upload
 under ``source/``, read on the projects API's twin), links and typed or voice answers (no upload: their record holds
 only their text's key, ``extracted/{doc}.txt``, and a link's ``filename`` is its address); each is judged by its
 extracted text as any other kind. Each record (``PRODUCT_DOC#``, ``DOCS_PAGE`` a step) is judged, and lands on one of

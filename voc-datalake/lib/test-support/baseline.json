@@ -2,7 +2,7 @@
   "description": "Fingerprint of the no-prefix synth. Regenerate with npx ts-node scripts/generate-baseline.ts ONLY for a change intended to alter the default templates — see the script header.",
   "stacks": {
     "VocApiStack": {
-      "templateSha256": "a81faee20347756e18c4f94020277d631c35550a37fd7b9344ec4ea4925d8f01",
+      "templateSha256": "a4456edbf608046c1719d45f44881b1ad282d5920fa50f7fe64771c925f73251",
       "names": {
         "physicalNames": [
           "AWS::ApiGateway::Authorizer Name = voc-board-authorizer",
@@ -188,7 +188,7 @@
       }
     },
     "VocCoreStack": {
-      "templateSha256": "668269b427d70f5ec2e7d525c3d4a40123fb8353e3ee6df8544d84f652be38bd",
+      "templateSha256": "73c527bcb145342325eb87f1b3fc7bf7987503bc958271c6e45a75c2b8aa3d65",
       "names": {
         "physicalNames": [
           "AWS::AppSync::Api Name = voc-events-<AWS::AccountId>-<AWS::Region>",
@@ -288,7 +288,7 @@
       }
     },
     "VocIngestionStack": {
-      "templateSha256": "5d12d3f851d2b6322c26243495ce2cdf7ebefd482febf8855e522257201d6563",
+      "templateSha256": "ff3e711cced22e1232f534f8928dac44068606064e3f20136f832cb8e0f9cfeb",
       "names": {
         "physicalNames": [
           "AWS::BedrockAgentCore::BrowserCustom Name = voc_web_reviews",
@@ -359,7 +359,7 @@
       }
     },
     "VocProcessingStack": {
-      "templateSha256": "88d21bce72e29a24e54e11d938a264f7476b9809fc46c2b1c2bf9aa717d4ac43",
+      "templateSha256": "42f6911acf3f1022584eb1bdd03b4d487723e945b2ddf99a9b5399aaf0e6939d",
       "names": {
         "physicalNames": [
           "AWS::Events::Rule Name = voc-adoption-rollup-schedule-<AWS::AccountId>-<AWS::Region>",

@@ -6,7 +6,6 @@ import base64
 from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Any
-from unittest.mock import patch
 
 import pytest
 from botocore.exceptions import ClientError
@@ -35,7 +34,6 @@ from shared.product_sources import (
     settle,
     source_row_key,
 )
-from shared.project_keys import NotPerWorkspaceError
 from shared.test.product_source_fixtures import PROJECT, sources_world
 from shared.ws_repo import WorkspaceScope
 
@@ -179,11 +177,11 @@ class TestPutSource:
 class TestTheReadCounters:
     def test_a_link_read_counts_the_project_and_the_person_together(self):
         now = datetime(2026, 11, 26, 12, tzinfo=UTC)
-        project, person = link_read_counters(PROJECT, 'sub-ada', now)
+        project, person = link_read_counters(PROJECT, 'sub-ada', now, workspace=None)
         assert (project.key, project.limit, person.key, person.limit) == (
             {'pk': f'PRODUCTURL#PROJECT#{PROJECT}#2026-11-26', 'sk': 'COUNT'}, 30,
             {'pk': 'PRODUCTURL#USER#sub-ada#2026-11-26', 'sk': 'COUNT'}, MAX_PERSON_LINK_READS_PER_DAY)
-        [files] = file_read_counters('sub-ada', now)
+        [files] = file_read_counters('sub-ada', now, workspace=None)
         assert (files.key, files.limit, files.code) == (
             {'pk': 'PRODUCTFILE#USER#sub-ada#2026-11-26', 'sk': 'COUNT'}, MAX_PERSON_FILE_READS_PER_DAY, 'rate_limited')
 
@@ -269,11 +267,25 @@ class TestSaveInterviewSource:
                                                                   session_id='vs_1', past_the_cap=True), workspace=None)
             assert (len(world.sources()), world.text(doc['doc_id'])) == (MAX_DOCS_PER_PROJECT + 1, '**Q** A')
 
-    def test_a_workspace_is_refused_before_anything_is_read(self):
-        with sources_world() as world, patch.object(world.projects, 'query') as query:
-            with pytest.raises(NotPerWorkspaceError, match=r'^Product sources is not per workspace yet$'):
+    def test_a_workspaces_answers_are_its_projects_source_and_its_text_under_its_prefix(self):
+        """Since 7.106.00 (3h-S3b): the row in the workspace's project partition, the text under ``ws/{ws}/``; the
+        deployment's project of the same id is left as it was."""
+        with sources_world() as world:
+            world.projects.put_item(Item={'pk': f'WS#{WS.ws}#PROJECT#{PROJECT}', 'sk': 'META', 'project_id': PROJECT,
+                                          'status': 'active'})
+            doc = save_interview_source(PROJECT, ANSWERS, workspace=WS)
+            row = world.projects.get_item(Key={'pk': f'WS#{WS.ws}#PROJECT#{PROJECT}',
+                                               'sk': f'PRODUCT_DOC#{doc["doc_id"]}'})['Item']
+            assert row['s3_extracted_key'] == f'ws/{WS.ws}/projects/{PROJECT}/product_docs/extracted/{doc["doc_id"]}.txt'
+            assert world.s3.get_object(Bucket='test-raw-data-bucket', Key=row['s3_extracted_key'])['Body'].read()
+            assert world.sources() == []
+
+    def test_a_workspace_without_the_project_is_refused_and_its_text_taken_back(self):
+        with sources_world() as world:
+            with pytest.raises(ClientError):
                 save_interview_source(PROJECT, ANSWERS, workspace=WS)
-            query.assert_not_called()
+            listed = world.s3.list_object_versions(Bucket='test-raw-data-bucket', Prefix=f'ws/{WS.ws}/')
+            assert listed.get('Versions', []) == []
 
     @pytest.mark.parametrize('text', ['', '   \n', None])
     def test_no_answers_is_a_400(self, text: Any):

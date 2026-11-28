@@ -251,13 +251,13 @@ class TestGetContext:
     @pytest.mark.usefixtures('no_table')
     def test_an_unconfigured_table_is_a_configuration_error(self):
         with pytest.raises(ConfigurationError) as exc:
-            pc.get_context('p1')
+            pc.get_context('p1', workspace=None)
         assert str(exc.value) == 'Projects table not configured'
 
     def test_it_reads_the_context_item_by_its_exact_key_strongly(self, table):
         # Through shared/product_proposals.py context_state, the row's one reader (review F1, 7.104.00 round 1).
         table.get_item.return_value = {}
-        assert pc.get_context('p1') == {'context': EMPTY_CONTEXT}
+        assert pc.get_context('p1', workspace=None) == {'context': EMPTY_CONTEXT}
         table.get_item.assert_called_once_with(Key={'pk': 'PROJECT#p1', 'sk': 'PRODUCT_CONTEXT'}, ConsistentRead=True)
 
     def test_stored_fields_are_returned_with_updated_at_and_nothing_else(self, table):
@@ -265,26 +265,26 @@ class TestGetContext:
             'pk': 'PROJECT#p1', 'sk': 'PRODUCT_CONTEXT', 'product_name': 'Acme',
             'current_state': 'beta', 'updated_at': FROZEN_ISO, 'stray': 'x',
         }}
-        assert pc.get_context('p1') == {'context': {
+        assert pc.get_context('p1', workspace=None) == {'context': {
             **EMPTY_CONTEXT, 'product_name': 'Acme', 'current_state': 'beta',
             'updated_at': FROZEN_ISO,
         }}
 
     def test_a_legacy_list_value_is_joined_into_lines(self, table):
         table.get_item.return_value = {'Item': {'key_features': [' fast', '', None, 'cheap ']}}
-        assert pc.get_context('p1')['context']['key_features'] == 'fast\ncheap'
+        assert pc.get_context('p1', workspace=None)['context']['key_features'] == 'fast\ncheap'
 
     def test_a_non_list_non_string_value_reads_as_empty(self, table):
         table.get_item.return_value = {'Item': {'product_name': 5}}
-        assert pc.get_context('p1')['context']['product_name'] == ''
+        assert pc.get_context('p1', workspace=None)['context']['product_name'] == ''
 
     def test_a_list_current_state_reads_as_its_lines_as_every_field_does(self, table):
         table.get_item.return_value = {'Item': {'current_state': ['mvp']}}
-        assert pc.get_context('p1')['context']['current_state'] == 'mvp'
+        assert pc.get_context('p1', workspace=None)['context']['current_state'] == 'mvp'
 
     def test_an_item_without_updated_at_reports_none(self, table):
         table.get_item.return_value = {'Item': {'product_name': 'Acme'}}
-        assert pc.get_context('p1')['context']['updated_at'] is None
+        assert pc.get_context('p1', workspace=None)['context']['updated_at'] is None
 
 
 # ── update_context ───────────────────────────────────────────────────────────
@@ -303,7 +303,7 @@ class TestUpdateContext:
     @pytest.mark.usefixtures('no_table')
     def test_an_unconfigured_table_is_a_configuration_error(self):
         with pytest.raises(ConfigurationError) as exc:
-            pc.update_context('p1', {'product_name': 'Acme'}, actor=ACTOR)
+            pc.update_context('p1', {'product_name': 'Acme'}, actor=ACTOR, workspace=None)
         assert str(exc.value) == 'Projects table not configured'
 
     @pytest.mark.parametrize(('body', 'patch_out'), [
@@ -312,7 +312,7 @@ class TestUpdateContext:
     def test_the_validated_patch_and_the_caller_go_to_the_one_writer(self, table, body, patch_out):
         table.get_item.return_value = {'Item': {'product_name': 'Acme', 'updated_at': FROZEN_ISO}}
         with patch.object(pc, 'write_context', return_value=[]) as write:
-            result = pc.update_context('p1', body, actor=ACTOR)
+            result = pc.update_context('p1', body, actor=ACTOR, workspace=None)
         write.assert_called_once_with(table, 'p1', patch_out, ACTOR, workspace=None)
         assert result == {'context': {**EMPTY_CONTEXT, 'product_name': 'Acme', 'updated_at': FROZEN_ISO}}
 
@@ -320,7 +320,7 @@ class TestUpdateContext:
         table.get_item.return_value = {}
         conflicts = [{'field': 'product_name', 'reason': 'person_value'}]
         with patch.object(pc, 'write_context', return_value=conflicts):
-            assert pc.update_context('p1', {'product_name': 'x'}, actor=ACTOR) == {
+            assert pc.update_context('p1', {'product_name': 'x'}, actor=ACTOR, workspace=None) == {
                 'context': EMPTY_CONTEXT, 'conflicts': conflicts}
 
 
@@ -369,7 +369,7 @@ class TestDocIdsAndSizes:
 class TestListDocItems:
     @pytest.mark.usefixtures('no_table')
     def test_an_unconfigured_table_lists_nothing(self):
-        assert pc._list_doc_items('p1') == []
+        assert pc._list_doc_items('p1', workspace=None) == []
 
     def test_every_page_is_read_strongly_with_the_exact_key_condition(self, table):
         # shared/product_sources.py list_sources, the rows' one reader (review F2, 7.104.00 round 1).
@@ -377,7 +377,7 @@ class TestListDocItems:
             {'Items': [{'doc_id': 'a'}], 'LastEvaluatedKey': {'pk': 'k1'}},
             {'Items': [{'doc_id': 'b'}]},
         ]
-        assert pc._list_doc_items('p1') == [{'doc_id': 'a'}, {'doc_id': 'b'}]
+        assert pc._list_doc_items('p1', workspace=None) == [{'doc_id': 'a'}, {'doc_id': 'b'}]
         condition = Key('pk').eq('PROJECT#p1') & Key('sk').begins_with('PRODUCT_DOC#')
         first, second = table.query.call_args_list
         assert first.kwargs == {'KeyConditionExpression': condition, 'ConsistentRead': True}
@@ -386,7 +386,7 @@ class TestListDocItems:
 
     def test_a_page_without_items_adds_nothing(self, table):
         table.query.side_effect = [{}]
-        assert pc._list_doc_items('p1') == []
+        assert pc._list_doc_items('p1', workspace=None) == []
 
 
 #: The nine source fields every ProductDoc carries since 7.104.00, as a record written before it reads.
@@ -439,7 +439,7 @@ class TestFailIfStalled:
     def test_one_second_past_the_window_is_failed_and_persisted(self, table, status):
         doc = self._doc(status)
         with patch.object(pc, '_age_seconds', return_value=301.0):
-            result = pc._fail_if_stalled('p1', doc)
+            result = pc._fail_if_stalled('p1', doc, workspace=None)
         assert result == {**doc, 'status': 'failed', 'error': STALL_MESSAGE}
         table.update_item.assert_called_once_with(
             Key={'pk': 'PROJECT#p1', 'sk': 'PRODUCT_DOC#d1'},
@@ -453,27 +453,27 @@ class TestFailIfStalled:
     def test_inside_the_window_or_unreadable_is_left_alone(self, table, age):
         doc = self._doc()
         with patch.object(pc, '_age_seconds', return_value=age):
-            assert pc._fail_if_stalled('p1', doc) is doc
+            assert pc._fail_if_stalled('p1', doc, workspace=None) is doc
         table.update_item.assert_not_called()
 
     @pytest.mark.parametrize('status', ['ready', 'failed', None])
     def test_a_settled_status_is_never_touched(self, table, status):
         doc = {'doc_id': 'd1', 'status': status, 'created_at': '2000-01-01T00:00:00+00:00'}
-        assert pc._fail_if_stalled('p1', doc) is doc
+        assert pc._fail_if_stalled('p1', doc, workspace=None) is doc
         table.update_item.assert_not_called()
 
     @pytest.mark.usefixtures('no_table')
     def test_an_unconfigured_table_is_a_configuration_error(self):
         with patch.object(pc, '_age_seconds', return_value=301.0), \
              pytest.raises(ConfigurationError) as exc:
-            pc._fail_if_stalled('p1', self._doc())
+            pc._fail_if_stalled('p1', self._doc(), workspace=None)
         assert str(exc.value) == 'Projects table not configured'
 
     def test_a_refused_write_is_logged_and_the_record_returned_unchanged(self, table):
         table.update_item.side_effect = RuntimeError('conditional')
         doc = self._doc()
         with patch.object(pc, '_age_seconds', return_value=301.0), patch.object(pc, 'logger') as log:
-            assert pc._fail_if_stalled('p1', doc) is doc
+            assert pc._fail_if_stalled('p1', doc, workspace=None) is doc
         log.warning.assert_called_once_with('Stalled-doc transition skipped for d1: conditional')
 
 
@@ -484,14 +484,14 @@ class TestListDocs:
             {'doc_id': 'undated', 'status': 'ready'},
             {'doc_id': 'new', 'status': 'ready', 'created_at': '2026-02-01'},
         ]}]
-        assert [d['doc_id'] for d in pc.list_docs('p1')['docs']] == ['new', 'old', 'undated']
+        assert [d['doc_id'] for d in pc.list_docs('p1', workspace=None)['docs']] == ['new', 'old', 'undated']
 
     def test_each_record_passes_through_the_stall_check(self, table):
         table.query.side_effect = [{'Items': [{'doc_id': 'a', 'status': 'pending'}]}]
         stalled = MagicMock(return_value={'doc_id': 'a', 'status': 'failed'})
         with patch.object(pc, '_fail_if_stalled', stalled):
-            docs = pc.list_docs('p1')['docs']
-        stalled.assert_called_once_with('p1', {'doc_id': 'a', 'status': 'pending'})
+            docs = pc.list_docs('p1', workspace=None)['docs']
+        stalled.assert_called_once_with('p1', {'doc_id': 'a', 'status': 'pending'}, workspace=None)
         assert docs[0]['status'] == 'failed'
 
 
@@ -512,7 +512,7 @@ def _upload(table: MagicMock, body: dict, *, existing: int = 0,
     with patch.object(pc, '_s3', return_value=s3), \
          patch.object(pc, 'put_source', put), \
          patch.object(pc, 'new_doc_id', return_value='abc123'):
-        result = pc.create_upload_url('p1', body, actor=actor)
+        result = pc.create_upload_url('p1', body, actor=actor, workspace=None)
     assert put.call_args.args[:2] == (table, 'p1')
     return result, put, s3
 
@@ -531,14 +531,14 @@ class TestCreateUploadUrl:
     @pytest.mark.usefixtures('no_table')
     def test_an_unconfigured_table_is_a_configuration_error(self):
         with pytest.raises(ConfigurationError) as exc:
-            pc.create_upload_url('p1', TEXT_UPLOAD)
+            pc.create_upload_url('p1', TEXT_UPLOAD, workspace=None)
         assert str(exc.value) == 'Projects table not configured'
 
     @pytest.mark.usefixtures('table')
     def test_an_unconfigured_bucket_is_a_configuration_error(self, monkeypatch):
         monkeypatch.delenv('RAW_DATA_BUCKET')
         with pytest.raises(ConfigurationError) as exc:
-            pc.create_upload_url('p1', TEXT_UPLOAD)
+            pc.create_upload_url('p1', TEXT_UPLOAD, workspace=None)
         assert str(exc.value) == 'RAW_DATA_BUCKET not configured'
 
     def test_the_record_and_the_signed_put(self, table):
@@ -648,13 +648,13 @@ class TestDeleteDoc:
     @pytest.mark.usefixtures('no_table')
     def test_an_unconfigured_table_is_a_configuration_error(self):
         with pytest.raises(ConfigurationError) as exc:
-            pc.delete_doc('p1', 'd1')
+            pc.delete_doc('p1', 'd1', workspace=None)
         assert str(exc.value) == 'Projects table not configured'
 
     def test_an_unknown_document_is_not_found(self, table):
         table.get_item.return_value = {}
         with pytest.raises(NotFoundError) as exc:
-            pc.delete_doc('p1', 'd1')
+            pc.delete_doc('p1', 'd1', workspace=None)
         assert str(exc.value) == 'document not found'
         table.get_item.assert_called_once_with(Key=DOC_KEY)
         table.delete_item.assert_not_called()
@@ -669,7 +669,7 @@ class TestDeleteDoc:
                 patch.object(pc, 'delete_every_version_of_keys', side_effect=lambda *a: order('objects', a) or 0), \
                 patch.object(pc, 'record_delete') as record, \
                 patch.object(pc, 'mark_citing_documents') as mark, patch.object(pc, 'forget_source') as forget:
-            assert pc.delete_doc('p1', 'd1', actor=actor) == {'success': True}
+            assert pc.delete_doc('p1', 'd1', actor=actor, workspace=None) == {'success': True}
         # The row first: an extraction that puts its text after the sweep finds the row gone and takes it back.
         assert order.call_args_list == [
             call('row', {'Key': DOC_KEY}),
@@ -689,7 +689,7 @@ class TestDeleteDoc:
                 patch.object(pc, 'delete_every_version_of_keys', return_value=0) as sweep, \
                 patch.object(pc, 'record_delete'), patch.object(pc, 'mark_citing_documents'), \
                 patch.object(pc, 'forget_source'):
-            pc.delete_doc('p1', 'd1')
+            pc.delete_doc('p1', 'd1', workspace=None)
         sweep.assert_called_once_with(s3, 'test-raw-data-bucket', [EXTRACTED_KEY])
         table.delete_item.assert_called_once_with(Key=DOC_KEY)
 
@@ -699,7 +699,7 @@ class TestDeleteDoc:
                 patch.object(pc, 'delete_every_version_of_keys', side_effect=BotoCoreError()), \
                 patch.object(pc, 'record_delete'), patch.object(pc, 'mark_citing_documents'), \
                 patch.object(pc, 'forget_source'):
-            pc.delete_doc('p1', 'd1')
+            pc.delete_doc('p1', 'd1', workspace=None)
         log.warning.assert_called_once_with('Failed to delete the objects of product doc d1: An unspecified error occurred')
         table.delete_item.assert_called_once_with(Key=DOC_KEY)
 
@@ -709,7 +709,7 @@ class TestDeleteDoc:
                 patch.object(pc, 'delete_every_version_of_keys', return_value=2), \
                 patch.object(pc, 'record_delete'), patch.object(pc, 'mark_citing_documents'), \
                 patch.object(pc, 'forget_source'):
-            pc.delete_doc('p1', 'd1')
+            pc.delete_doc('p1', 'd1', workspace=None)
         log.warning.assert_called_once_with('2 object version(s) of product doc d1 could not be deleted')
 
     def test_without_a_bucket_only_the_record_is_deleted(self, table, monkeypatch):
@@ -717,7 +717,7 @@ class TestDeleteDoc:
         table.get_item.return_value = {'Item': {'s3_raw_key': 'raw/k'}}
         with patch.object(pc, '_s3') as s3, patch.object(pc, 'record_delete') as record, \
                 patch.object(pc, 'mark_citing_documents'), patch.object(pc, 'forget_source'):
-            pc.delete_doc('p1', 'd1')
+            pc.delete_doc('p1', 'd1', workspace=None)
         s3.assert_not_called()
         table.delete_item.assert_called_once_with(Key=DOC_KEY)
         assert record.call_args.kwargs['actor'] is None
@@ -838,7 +838,7 @@ class TestGenerateReport:
         docs = [product_doc('d1', 'text/plain')]
         report = _Report({}, docs=docs)
         report.run({})
-        report.injectable.assert_called_once_with('p1')
+        report.injectable.assert_called_once_with('p1', workspace=None)
         report.block.assert_called_once_with('p1', docs=docs)
 
     @pytest.mark.usefixtures('table')

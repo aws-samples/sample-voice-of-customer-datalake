@@ -65,6 +65,21 @@ FAMILIES: Final = {
     'DOCSHARE_IDS': 'docshares', 'review_link_key': 'docshares',
     'reviewer_rate_pk': ("TTL: voc-projects WS#{ws}#DCRATE#{share}#{digest} counters hold a count only and expire two "
                          "days after their day; no reviewer route writes one in a workspace yet"),
+    # A product proposal accept's audit row in a workspace (7.106.00, shared/product_proposals.py audit_pk), written in
+    # the accept's own transaction: ids only, kept as the deployment's AUDIT#product_context rows are.
+    'audit_pk': ('KEPT: voc-projects WS#{ws}#AUDIT#product_context audit rows of accepted product fields hold ids only '
+                 '(the project, the proposal, the field names, the actor, the model id), for good, as the '
+                 "deployment's do"),
+    # The Product tab's counters in voc-aggregates (7.106.00, 3h-S3b, shared/product_sources.py and
+    # shared/product_proposals.py): a count only each, kept two days (shared/aws.py count_once's ttl).
+    'link_reads_key': ('TTL: voc-aggregates WS#{ws}#PRODUCTURL#PROJECT#{id}#{day} counters hold a count only and '
+                       'expire two days after their day'),
+    'link_read_counters': ('TTL: voc-aggregates WS#{ws}#PRODUCTURL#USER#{sub}#{day} counters hold a count only and '
+                           'expire two days after their day'),
+    'file_read_counters': ('TTL: voc-aggregates WS#{ws}#PRODUCTFILE#USER#{sub}#{day} counters hold a count only and '
+                           'expire two days after their day'),
+    'extract_counter_keys': ('TTL: voc-aggregates WS#{ws}#PRODUCTX#… counters hold a count only and expire two days '
+                             'after their day; no extract counts one in a workspace yet (3h-S8)'),
     # A workspace's people and lists in voc-participants (7.31.00, shared/participants_keys.py): every LIST#, PERSON#
     # and EMAIL# partition and the gsi1 LISTS and PEOPLE partitions (participants_partition), found through the
     # workspace's index WS#{ws}#PARTICIPANTS. A project's links to them are in its own partition (projects, above).

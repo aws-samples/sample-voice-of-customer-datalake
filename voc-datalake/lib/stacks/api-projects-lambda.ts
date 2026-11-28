@@ -14,7 +14,7 @@ import { TABLE_READS, grantKeyScopedWrites, grantReadAndWrites } from '../utils/
 import { embeddingModelArn } from '../utils/model-allowlist';
 import { grantWorkspaceObjects } from '../utils/workspace-object-deletes';
 import { grantWorkspaceResolution } from '../utils/workspace-resolution-grants';
-import { WORKSPACE_LIBRARY_PREFIX } from './core-buckets';
+import { WORKSPACE_LIBRARY_PREFIX, WORKSPACE_PRODUCT_DOCS_OBJECTS } from './core-buckets';
 import { grantVoiceSessions } from './api-voice-sessions';
 import {
   ASSIST_WORKER_ENV, PROJECTS_ASSIST_FUNCTION_BASE_NAME, assistWorkerName, createAssistWorker, grantAssistWorkerInvoke,
@@ -76,9 +76,12 @@ export function createProjectsLambda(ctx: ApiStackContext): ProjectsLambda {
   // presigned PUT and GET, the extracted text, every version of a deleted item; lambda/shared/library_objects.py).
   // With -c voicePersonas=true (7.69.00, api-voice-sessions.ts): a voice session's scratch files, and the relay's
   // presign and stop grants; nothing without it.
+  // A workspace's projects' product documents (7.106.00, 3h-S3b): one workspace id's ws/{id}/projects/*/product_docs/*,
+  // as the deployment's projects/*/product_docs/* (the upload's presigned PUT, the twin's reading and text, the
+  // delete; the twin shares this role).
   const voice = grantVoiceSessions(ctx, projectsRole);
   grantWorkspaceObjects(rawDataBucket, projectsRole, ['avatars/*', 'projects/*/product_docs/*', 'prototypes/*',
-    'library/*', `${WORKSPACE_LIBRARY_PREFIX}*`, ...voice.objectGlobs]);
+    'library/*', `${WORKSPACE_LIBRARY_PREFIX}*`, WORKSPACE_PRODUCT_DOCS_OBJECTS, ...voice.objectGlobs]);
   // Signs the avatar and prototype URLs returned by GET /projects/{id}.
   // Explicit statement rather than secret.grantRead(): that adds a KMS
   // key-policy entry naming this role, and the key lives in CoreStack, so it

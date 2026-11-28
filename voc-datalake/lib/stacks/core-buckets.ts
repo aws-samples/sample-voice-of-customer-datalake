@@ -77,6 +77,15 @@ export const WORKSPACE_MEMORY_IMPORTS_PREFIX = `${WORKSPACE_DATA_PREFIX}${WORKSP
  * extraction's text and the deletes, lambda/shared/library_objects.py): as `library/`.
  */
 export const WORKSPACE_LIBRARY_PREFIX = `${WORKSPACE_DATA_PREFIX}${WORKSPACE_ID_PATTERN}/library/`;
+/**
+ * A tenant workspace's projects' product documents, `ws/{ws}/projects/{id}/product_docs/` (7.106.00, 3h-S3b: the
+ * projects API's presigned uploads, the twin's reading and text, the deletes; lambda/shared/product_sources.py's keys
+ * through `scoped_object_key`): as `projects/*\/product_docs/*`, one workspace id per pattern. The 26 `?` of
+ * `WORKSPACE_ID_PATTERN` match exactly the 26 characters of one generated workspace id after `ws_` (never a run of any
+ * length, as `*` would), and the role writes only the keys the code builds from a resolved workspace and a project id
+ * (`product_doc_raw_key`, `product_doc_source_key`, `product_doc_extracted_key`), never a key a caller names.
+ */
+export const WORKSPACE_PRODUCT_DOCS_OBJECTS = `${WORKSPACE_DATA_PREFIX}${WORKSPACE_ID_PATTERN}/projects/*/product_docs/*`;
 /** A tenant workspace's Silver history, `ws/{ws}/silver/`: as `silver/` (the processor writes it for a workspace's messages, 7.00.00). */
 export const WORKSPACE_SILVER_HISTORY_PREFIX = `${WORKSPACE_DATA_PREFIX}${WORKSPACE_ID_PATTERN}/${SILVER_HISTORY_PREFIX}`;
 /**

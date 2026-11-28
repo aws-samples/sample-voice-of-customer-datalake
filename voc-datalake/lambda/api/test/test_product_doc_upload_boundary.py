@@ -51,7 +51,7 @@ def _create(body: dict, table: MagicMock | None = None):
     s3.generate_presigned_url.return_value = 'https://example-bucket.s3.amazonaws.com/signed'
     with patch.object(product_context, 'projects_table', table), \
          patch.object(product_context, '_s3', return_value=s3):
-        result = product_context.create_upload_url('proj-1', body)
+        result = product_context.create_upload_url('proj-1', body, workspace=None)
     return result, table, s3
 
 
@@ -65,7 +65,7 @@ def _reject(body: dict, table: MagicMock | None = None):
     with patch.object(product_context, 'projects_table', table), \
          patch.object(product_context, '_s3', return_value=s3), \
          pytest.raises(ValidationError) as exc:
-        product_context.create_upload_url('proj-1', body)
+        product_context.create_upload_url('proj-1', body, workspace=None)
     return exc.value, table
 
 
@@ -532,7 +532,7 @@ class TestRejectionHappensBeforeAnyWrite:
         with patch.object(product_context, 'projects_table', table), \
              patch.object(product_context, '_s3', return_value=s3), \
              pytest.raises(ApiError):
-            product_context.create_upload_url('proj-1', body)
+            product_context.create_upload_url('proj-1', body, workspace=None)
         table.put_item.assert_not_called()
         s3.generate_presigned_url.assert_not_called()
 
@@ -575,7 +575,7 @@ def _list(items: list[dict]):
 
     table = _table(items)
     with patch.object(product_context, 'projects_table', table):
-        result = product_context.list_docs('proj-1')
+        result = product_context.list_docs('proj-1', workspace=None)
     return result['docs'], table
 
 
@@ -656,7 +656,7 @@ class TestStalledExtractionsAreFailedOnRead:
         table = _table([_doc(created_at=_iso_ago(product_context.EXTRACTION_STALL_SECONDS + 60))])
         table.update_item.side_effect = RuntimeError('ConditionalCheckFailedException')
         with patch.object(product_context, 'projects_table', table):
-            result = product_context.list_docs('proj-1')
+            result = product_context.list_docs('proj-1', workspace=None)
         assert result['docs'][0]['status'] == 'pending'
 
 

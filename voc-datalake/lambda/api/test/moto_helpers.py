@@ -169,6 +169,14 @@ def rest_event(method, path, *, claims, body=None, path_params=None):
     }
 
 
+def seed_workspaces(workspaces: Any, members: dict[str, dict[str, str]]) -> None:
+    """Each workspace of ``members`` (ws → sub → role) active in a moto voc-workspaces, with its ``MEMBER#`` rows."""
+    for ws, roles in members.items():
+        workspaces.put_item(Item={'pk': f'WS#{ws}', 'sk': 'META', 'name': ws, 'slug': ws, 'status': 'active'})
+        for sub, role in roles.items():
+            workspaces.put_item(Item={'pk': f'WS#{ws}', 'sk': f'MEMBER#{sub}', 'role': role})
+
+
 def workspace_route_call(handler: Any, lambda_context: Any, method: str, path: str, *, claims: dict, ws: str | None,
                          body: Any = None, path_params: dict | None = None,
                          query: dict | None = None) -> tuple[int, Any]:
