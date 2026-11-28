@@ -51,6 +51,14 @@ Several changes merged together take ONE bump: the highest kind among them.
    directories: `npm version 2.10.0 --no-git-tag-version` (updates the lockfile too).
    `voc-datalake/lambda/stream/package.json` keeps its own version.
 3. Run `node scripts/check-version.mjs` (or `bash scripts/validate.sh`).
+4. **The roadmap gate** ([docs/feature-tests/README.md](../../docs/feature-tests/README.md)): run
+   `python3 scripts/feature_gate.py seed` to add the new release's registry item (its kind read from the section's
+   text; a kind below feature needs a reviewed decision), register and have accepted the tests that prove it, then
+   `python3 scripts/feature_gate.py check` (the `features` step of `bash scripts/validate.sh`). A release lands
+   proven: a gap the allowed list does not already hold fails the check. The gate takes the releases from
+   `package.json`'s history (every version bump is a release): write each one's heading exactly as
+   `## [X.YY.ZZ] - YYYY-MM-DD` at the start of its line, the only form it reads, or the check reports the release
+   as having no CHANGELOG section.
 
 ## Parallel work
 
@@ -63,3 +71,6 @@ Several changes merged together take ONE bump: the highest kind among them.
   own not-yet-merged section moves on top with the next free number. On a `package.json` version conflict take
   that number and re-run the check.
 - Never rewrite or renumber a released section; correct it with a new entry instead.
+- A pushed bump is never renumbered: the roadmap gate reads the line's releases from `package.json`'s first-parent
+  history and refuses a version that is not above the one before it. To take another number before you push, rebase
+  so the old number leaves the first-parent line; after the push, the number stands.

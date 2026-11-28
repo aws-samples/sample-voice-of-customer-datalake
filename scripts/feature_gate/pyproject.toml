@@ -1,0 +1,13 @@
+# pyright for the roadmap gate's program (scripts/feature_gate/), as scripts/audit/pyrightconfig.json is for the
+# detectors: `npx pyright --pythonpath "$PYTHON_BIN" -p scripts/feature_gate/pyproject.toml` (the `features` step).
+[tool.pyright]
+include = [".", "../feature_gate.py"]
+exclude = ["**/__pycache__"]
+pythonVersion = "3.12"
+extraPaths = ["..", "test"]
+typeCheckingMode = "standard"
+reportUnnecessaryIsInstance = "error"
+reportUnnecessaryComparison = "error"
+reportUnnecessaryContains = "error"
+reportUnnecessaryCast = "error"
+reportUnnecessaryTypeIgnoreComment = "error"

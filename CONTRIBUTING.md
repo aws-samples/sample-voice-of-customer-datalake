@@ -241,7 +241,12 @@ on with `nproc` (taskset's affinity counts; `getconf` counted every core of the 
 workers in both modes (`VALIDATE_PYTEST_WORKERS` still overrides), runs eslint on half the CPUs, at most 8 worker
 threads (`VALIDATE_ESLINT_CONCURRENCY`, not `--concurrency auto`, which took half of every core) and CodeQL on at most
 16 threads a language (`CODEQL_THREADS` overrides); the frontend's and the stream Lambda's vitest cap themselves at 32
-workers, and jscpd runs on one. On a machine of more than one NUMA node (`/sys/devices/system/node/node1` exists) a run not already pinned re-runs
+workers, and jscpd runs on one. The CodeQL step runs under `scripts/suite-lock.sh codeql` (one CodeQL run at a time on
+the machine; the waiters start in turn) and, before it starts, waits while the machine's 5-minute load average (the
+second field of `/proc/loadavg`) is at or over `VOC_CODEQL_MAX_LOAD` (default 0.85 x the CPUs of the node the run is
+pinned to): it prints one line saying so, checks every 30 s, and after `VOC_CODEQL_MAX_WAIT` minutes (60) starts
+anyway with a warning (`scripts/lib/load-wait.sh`; since 7.105.00). Without `/proc/loadavg` (macOS) and in CI it does
+not wait. On a machine of more than one NUMA node (`/sys/devices/system/node/node1` exists) a run not already pinned re-runs
 itself under `taskset -c <node 0's cpulist>` (`VALIDATE_PINNED=1` marks the re-run; a caller's own `taskset` that
 leaves fewer CPUs than the machine has counts as pinned), so the gate shares node 0's CPUs and leaves the other nodes'
 to the machine's other work (its memory is not bound to node 0); CI (`GITHUB_ACTIONS`) and a machine without `taskset` never re-run. A laptop and CI (one node, fewer than 32 CPUs) keep their worker counts but for small differences
@@ -296,6 +301,52 @@ that jscpd misses, re-implementations of helpers the platform already has, and t
 a `scripts/validate.sh` step (`validate-affected.sh` picks the ones whose inputs changed), so a new finding fails
 the gate: fix it, or allowlist it in `scripts/audit/allowlists/<tool>.json` with a reason. `npm run test:audit` runs
 their own tests and `npm run lint:audit` lints them (both gate steps too). See [docs/code-audit.md](docs/code-audit.md).
+
+### The roadmap gate
+Every release of this line is a roadmap item in `docs/feature-tests/` (one file per slice), mapped to the tests that
+prove it: a done feature needs an accepted unit test and an accepted end-to-end test, a fix an accepted regression
+test, plumbing an accepted unit test, a docs or tooling release a review; an item with no program that can check it
+carries a reviewed exemption. The `features` step of `scripts/validate.sh` (`bash scripts/validate.sh --only features`,
+also part of `repo`) runs `scripts/feature_gate.py check`: every release has an item, every named test exists and the
+gate runs it (no skip, only or fixme), every acceptance holds, and the allowed gaps
+(`docs/feature-tests/allowed-gaps.json`) only shrink. The schema and every rule: [docs/feature-tests/README.md](docs/feature-tests/README.md).
+
+A test counts only once an **independent evaluator** accepts it. Every command takes `--session <id>`, else
+`$FEATURE_GATE_SESSION`. Know what that proves: independence rests on these declared session ids and on the
+evaluator's written evidence, and nothing in the gate runs the tests yet (the run per build is to come); see the
+README's first section.
+
+1. **The author** writes the test (red first: break the feature in a scratch tree, see it fail), then registers it:
+   `bash scripts/pinned.sh python scripts/feature_gate.py register <item> <test id> --session <author session>`,
+   and stages the change (`git add`).
+2. **The evaluator**, a different session started fresh (never the author, never the author's own sub-agent: no
+   shared `<root>/` session prefix), reads only `python scripts/feature_gate.py brief <item> <test id>` (the item's
+   CHANGELOG section, the test, the exact pinned command), checks the six points of
+   [docs/test-verdicts/TEMPLATE.md](docs/test-verdicts/TEMPLATE.md) with evidence (it breaks the feature itself, sees
+   red, restores, sees green three times) on the staged tree, and writes the verdict at the place the brief names,
+   with `sha` the tree's HEAD and `tree` its `git write-tree`.
+3. It records it: `python scripts/feature_gate.py accept|reject <item> <test id> --verdict <file> --session <its
+   session>`. The program refuses the author's session and a verdict without its evidence. A REJECT goes back to the
+   author; a second one marks the test `needs_rewrite` (its `escalate:` line goes to `$FEATURE_GATE_ESCALATIONS` when
+   set), for a rewrite session that makes the code testable; `accept` then refuses it until a reviewed
+   `rewrite <test id>` record exists (`propose-change --rewrite`, another session's `review-change --rewrite`).
+4. `python scripts/feature_gate.py baseline --shrink` drops the gaps that closed (`check` asks for it), and the
+   change lands with its verdicts and the shrunk list, in one commit.
+
+An exemption takes the same two sessions: `exempt <item> --layer … --kind … --reason …` proposes it, another session
+writes `docs/test-verdicts/<item>/exemption.md` and runs `review-exemption`. A kind below the one the release's
+text gives, and, against the base branch (`--base <sha>` names one), a lower kind, a done item made planned, a removed
+item, changed rejections or a changed author, are refused unless a reviewed decision record
+(`docs/test-verdicts/<item>/decision.md`) allows it: one session runs `propose-change <item> --change "<the words
+check prints>" --reason …`, another `review-change <item> --sha <HEAD> --tree <git write-tree>`. Splitting an item
+into `<version>/<slice>` items is the refine path, which hands each slice the item's allowed gaps.
+
+A new release runs `python scripts/feature_gate.py seed` after its CHANGELOG section is written (it adds the item,
+with its kind read from the text) and lands proven: a gap that is not already allowed fails the check. `stats`
+counts items, proven ones, gaps, exemptions and checks done elsewhere per kind (`--section
+docs/feature-tests/<slice>.json`). On a shared machine, run a suite under `bash scripts/suite-lock.sh <name> --
+<command…>`, so one session at a time runs it. The full run of every registered test per build (`run --sha`) is not
+built yet.
 
 ### Code the SPA shares with the stream Lambda
 The assistant's wire contract, plan contract and several approval-card bounds live once, in the stream Lambda

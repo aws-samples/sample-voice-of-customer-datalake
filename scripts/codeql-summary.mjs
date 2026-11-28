@@ -88,6 +88,16 @@ const ACCEPTED = [
     prefix: 'voc-datalake/lambda/engineering/runtime/test/test_engineering_namespaces.py',
     reason: 'a temporary copy of the image\'s layout for the as-the-image namespace test: 0o755 as /, 0o2755 as /work (images/common/install-base.sh), so `unit` and `code` traverse it as in the image; skipped off the image',
   },
+  {
+    rule: 'py/overly-permissive-file',
+    prefix: 'scripts/feature_gate/registry.py',
+    reason: 'the roadmap gate writes tracked repository files (the registry slices, verdicts, decision records): 0o644 under the umask, as every other source file in a checkout; nothing secret is in them',
+  },
+  {
+    rule: 'py/file-not-closed',
+    prefix: 'scripts/feature_gate/test/test_lock.py',
+    reason: 'false positive: the flagged call is inside pytest.raises and is expected to raise before any descriptor exists (a planted link is refused by O_NOFOLLOW); the test asserts that nothing was opened or created',
+  },
 ];
 
 function acceptedBy(ruleId, file) {

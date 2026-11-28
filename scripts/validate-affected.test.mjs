@@ -100,9 +100,25 @@ describe('validate-affected path mapping (5.49.00 gates)', () => {
     }
   });
 
+  it('runs everything for the gate helpers in scripts/lib/ (pin.sh, load-wait.sh)', () => {
+    for (const path of ['scripts/lib/pin.sh', 'scripts/lib/load-wait.sh']) {
+      assert.deepEqual(groupsFor(path), ['audit', 'bridge', 'cdk', 'frontend', 'python', 'repo', 'stream'], path);
+    }
+  });
+
   it('still runs everything for a workflow change', () => {
     assert.deepEqual(groupsFor('.github/workflows/quality-gates.yml'),
       ['audit', 'bridge', 'cdk', 'frontend', 'python', 'repo', 'stream']);
+  });
+
+  it('runs the roadmap gate for its registry, its verdicts, the CHANGELOG and its program', () => {
+    for (const path of ['docs/feature-tests/phase1-2.json', 'docs/test-verdicts/TEMPLATE.md', 'CHANGELOG.md',
+      'scripts/suite-lock.sh']) {
+      assert.deepEqual(groupsFor(path), ['features', 'repo'], path);
+    }
+    for (const path of ['scripts/feature_gate/cli.py', 'scripts/feature_gate.py']) {
+      assert.deepEqual(groupsFor(path), ['audit-clones-py', 'features', 'repo'], path);
+    }
   });
 
   // `repo` is always selected (the script starts from it), so it appears beside the mapped group.

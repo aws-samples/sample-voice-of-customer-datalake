@@ -1,0 +1,736 @@
+{
+  "slice": "product-7.5x-7.7x",
+  "from": "7.50.00",
+  "until": "7.76.00",
+  "items": [
+    {
+      "id": "7.50.00",
+      "aliases": [
+        "7.50.0"
+      ],
+      "title": "The autonomous bug loop runs from templates kept in the repository: voc-datalake/templates/orchestration/ holds each engineering role's card and skill, the flows, the seeded automations, the gate pac…",
+      "source": {
+        "changelog": "7.50.00",
+        "doc": null
+      },
+      "kind": "feature",
+      "status": "done",
+      "unit": [],
+      "e2e": [],
+      "exemption": null
+    },
+    {
+      "id": "7.50.01",
+      "aliases": [
+        "7.50.1"
+      ],
+      "title": "Fixes from a live check of 7.50.00's engineering Set up dialog and readiness, two of which blocked a first real run: the Set up dialog was taller than the window and could not scroll (Save and Cancel…",
+      "source": {
+        "changelog": "7.50.01",
+        "doc": null
+      },
+      "kind": "fix",
+      "status": "done",
+      "unit": [],
+      "e2e": [],
+      "exemption": null
+    },
+    {
+      "id": "7.50.02",
+      "aliases": [
+        "7.50.2"
+      ],
+      "title": "The deployment's GitHub Issues source configures itself from Agents → Connections: connecting a repository through the deployment's GitHub App (the two-click Connect GitHub) is what makes its issues…",
+      "source": {
+        "changelog": "7.50.02",
+        "doc": null
+      },
+      "kind": "feature",
+      "status": "done",
+      "unit": [],
+      "e2e": [],
+      "exemption": null,
+      "uncertain": "a patch release that names no fix"
+    },
+    {
+      "id": "7.50.03",
+      "aliases": [
+        "7.50.3"
+      ],
+      "title": "The first real engineering run on the b- deployment found two problems, and both are fixed.",
+      "source": {
+        "changelog": "7.50.03",
+        "doc": null
+      },
+      "kind": "fix",
+      "status": "done",
+      "unit": [],
+      "e2e": [],
+      "exemption": null
+    },
+    {
+      "id": "7.51.00",
+      "aliases": [
+        "7.51.0"
+      ],
+      "title": "An engineering run's page is now its run workspace: one live, chat-like screen at /agents/engineering/<run> (and …/a/<agent> for one of its agents), with the flow drawn as lanes, each agent's thread…",
+      "source": {
+        "changelog": "7.51.00",
+        "doc": null
+      },
+      "kind": "feature",
+      "status": "done",
+      "unit": [],
+      "e2e": [],
+      "exemption": null
+    },
+    {
+      "id": "7.51.01",
+      "aliases": [
+        "7.51.1"
+      ],
+      "title": "Hover hints are instant: the app's one Tooltip replaces the native title, which waited for the browser's own 1–2 s delay and never showed on keyboard focus.",
+      "source": {
+        "changelog": "7.51.01",
+        "doc": null
+      },
+      "kind": "feature",
+      "status": "done",
+      "unit": [],
+      "e2e": [],
+      "exemption": null,
+      "uncertain": "a patch release that names no fix"
+    },
+    {
+      "id": "7.51.02",
+      "aliases": [
+        "7.51.2"
+      ],
+      "title": "A person's run controls now reach the agents.",
+      "source": {
+        "changelog": "7.51.02",
+        "doc": null
+      },
+      "kind": "fix",
+      "status": "done",
+      "unit": [],
+      "e2e": [],
+      "exemption": null
+    },
+    {
+      "id": "7.51.03",
+      "aliases": [
+        "7.51.3"
+      ],
+      "title": "The first real engineering run on AWS failed at its first command, the coordinator's checkout: fixed.",
+      "source": {
+        "changelog": "7.51.03",
+        "doc": null
+      },
+      "kind": "fix",
+      "status": "done",
+      "unit": [],
+      "e2e": [],
+      "exemption": null
+    },
+    {
+      "id": "7.51.04",
+      "aliases": [
+        "7.51.4"
+      ],
+      "title": "The run workspace now says when a run has stopped, and why.",
+      "source": {
+        "changelog": "7.51.04",
+        "doc": null
+      },
+      "kind": "feature",
+      "status": "done",
+      "unit": [],
+      "e2e": [],
+      "exemption": null,
+      "uncertain": "a patch release that names no fix"
+    },
+    {
+      "id": "7.52.00",
+      "aliases": [
+        "7.52.0"
+      ],
+      "title": "The engineering agents get their Registry (every role's card composed on the server, and cards made from an accepted skill), the quality gates' and the assertions' data, flows that call another flow…",
+      "source": {
+        "changelog": "7.52.00",
+        "doc": null
+      },
+      "kind": "feature",
+      "status": "done",
+      "unit": [],
+      "e2e": [],
+      "exemption": null
+    },
+    {
+      "id": "7.53.00",
+      "aliases": [
+        "7.53.0"
+      ],
+      "title": "Agents can run as Kiro CLI over ACP, for a whole deployment or for chosen roles, with the native harness still the default.",
+      "source": {
+        "changelog": "7.53.00",
+        "doc": null
+      },
+      "kind": "feature",
+      "status": "done",
+      "unit": [],
+      "e2e": [],
+      "exemption": null
+    },
+    {
+      "id": "7.54.00",
+      "aliases": [
+        "7.54.0"
+      ],
+      "title": "Administration is redesigned around what an administrator comes to do: it opens on a home with search and Needs attention, and its nine tabs are grouped by how often they come up (Everyday: People, D…",
+      "source": {
+        "changelog": "7.54.00",
+        "doc": null
+      },
+      "kind": "feature",
+      "status": "done",
+      "unit": [],
+      "e2e": [],
+      "exemption": null
+    },
+    {
+      "id": "7.55.00",
+      "aliases": [
+        "7.55.0"
+      ],
+      "title": "Feedback Forms become a form builder.",
+      "source": {
+        "changelog": "7.55.00",
+        "doc": null
+      },
+      "kind": "feature",
+      "status": "done",
+      "unit": [],
+      "e2e": [],
+      "exemption": null
+    },
+    {
+      "id": "7.55.01",
+      "aliases": [
+        "7.55.1"
+      ],
+      "title": "The Feedback Forms v2 UX audit (28 findings), fixed.",
+      "source": {
+        "changelog": "7.55.01",
+        "doc": null
+      },
+      "kind": "fix",
+      "status": "done",
+      "unit": [],
+      "e2e": [],
+      "exemption": null
+    },
+    {
+      "id": "7.56.00",
+      "aliases": [
+        "7.56.0"
+      ],
+      "title": "The engineering agents get a default skills library: 30 skills vendored from the ai-skill-factory plugin 2.0.0 (MIT) and adapted to these agents' tools and rules, each role's card naming the ones it…",
+      "source": {
+        "changelog": "7.56.00",
+        "doc": null
+      },
+      "kind": "feature",
+      "status": "done",
+      "unit": [],
+      "e2e": [],
+      "exemption": null
+    },
+    {
+      "id": "7.57.00",
+      "aliases": [
+        "7.57.0"
+      ],
+      "title": "The engineering agents work on any public GitHub repository, not only the deployment's own: read only, or, to contribute, on a fork whose run ends with a pull request on the upstream, one click away…",
+      "source": {
+        "changelog": "7.57.00",
+        "doc": "docs/autonomous-engineering.md"
+      },
+      "kind": "feature",
+      "status": "done",
+      "unit": [],
+      "e2e": [],
+      "exemption": null
+    },
+    {
+      "id": "7.58.00",
+      "aliases": [
+        "7.58.0"
+      ],
+      "title": "Choose the model an engineering agent runs on, for each harness: one choice per role.",
+      "source": {
+        "changelog": "7.58.00",
+        "doc": "docs/autonomous-engineering.md"
+      },
+      "kind": "feature",
+      "status": "done",
+      "unit": [],
+      "e2e": [],
+      "exemption": null
+    },
+    {
+      "id": "7.58.01",
+      "aliases": [
+        "7.58.1"
+      ],
+      "title": "The review gate's deferred findings on the 7.49–7.58 batch, fixed right after its push: a long model call no longer gets a native agent's task stopped as stalled; Improve with AI gives no question a…",
+      "source": {
+        "changelog": "7.58.01",
+        "doc": null
+      },
+      "kind": "fix",
+      "status": "done",
+      "unit": [],
+      "e2e": [],
+      "exemption": null
+    },
+    {
+      "id": "7.58.02",
+      "aliases": [
+        "7.58.2"
+      ],
+      "title": "The 7.58.00 deploy of VocApiStack failed at its change set (\"'null' values are not allowed in templates\"): the public submit model (FeedbackFormSubmission) declared its nullable language and channel…",
+      "source": {
+        "changelog": "7.58.02",
+        "doc": null
+      },
+      "kind": "fix",
+      "status": "done",
+      "unit": [],
+      "e2e": [],
+      "exemption": null
+    },
+    {
+      "id": "7.59.00",
+      "aliases": [
+        "7.59.0"
+      ],
+      "title": "Administration is back to main's tabbed layout, with everything voc-multiplayer added since put in the tab it belongs to: main's header, its tabs in main's order (General · Sources · Taxonomy · Priva…",
+      "source": {
+        "changelog": "7.59.00",
+        "doc": "docs/account-vs-admin.md"
+      },
+      "kind": "feature",
+      "status": "done",
+      "unit": [],
+      "e2e": [],
+      "exemption": null
+    },
+    {
+      "id": "7.60.00",
+      "aliases": [
+        "7.60.0"
+      ],
+      "title": "Connect a repository with a fine-grained token, this repository only, and the three-way Add a repository chooser.",
+      "source": {
+        "changelog": "7.60.00",
+        "doc": "docs/autonomous-engineering.md"
+      },
+      "kind": "feature",
+      "status": "done",
+      "unit": [],
+      "e2e": [],
+      "exemption": null
+    },
+    {
+      "id": "7.61.00",
+      "aliases": [
+        "7.61.0"
+      ],
+      "title": "Forms data quality: a matrix question that rates several rows on one scale, hidden fields and earlier answers recalled into a form's texts ({{id}}, {{id|fallback}}), link checks that say when a link…",
+      "source": {
+        "changelog": "7.61.00",
+        "doc": "docs/feedback-forms.md"
+      },
+      "kind": "feature",
+      "status": "done",
+      "unit": [],
+      "e2e": [],
+      "exemption": null
+    },
+    {
+      "id": "7.62.00",
+      "aliases": [
+        "7.62.0"
+      ],
+      "title": "The Documents Library: upload a market report, interview transcripts or a deck once, tag it, and mention it in any chat with #slug; the assistant reads the file itself when it fits, or searches it an…",
+      "source": {
+        "changelog": "7.62.00",
+        "doc": "docs/documents-library.md"
+      },
+      "kind": "feature",
+      "status": "done",
+      "unit": [],
+      "e2e": [],
+      "exemption": null
+    },
+    {
+      "id": "7.63.00",
+      "aliases": [
+        "7.63.0"
+      ],
+      "title": "Event feedback: an event or workshop feedback template whose forms can be compared, \"Ask why when the score is low\" with skip rates on Results, and a report for each form (KPIs, segments of at least…",
+      "source": {
+        "changelog": "7.63.00",
+        "doc": "docs/feedback-forms.md"
+      },
+      "kind": "feature",
+      "status": "done",
+      "unit": [],
+      "e2e": [],
+      "exemption": null
+    },
+    {
+      "id": "7.64.00",
+      "aliases": [
+        "7.64.0"
+      ],
+      "title": "Persona focus groups: put 2 to 6 of a project's personas in one panel, give them a topic and 1 to 3 rounds, and watch them answer and react to each other, each citing real feedback, ending in a synth…",
+      "source": {
+        "changelog": "7.64.00",
+        "doc": "docs/project-workspace.md"
+      },
+      "kind": "feature",
+      "status": "done",
+      "unit": [],
+      "e2e": [],
+      "exemption": null
+    },
+    {
+      "id": "7.65.00",
+      "aliases": [
+        "7.65.0"
+      ],
+      "title": "Bring your own model: a deployment can add up to four models of its own to the AI surfaces' picker, beside the built-in list, behind a deploy flag.",
+      "source": {
+        "changelog": "7.65.00",
+        "doc": "docs/deployment.md"
+      },
+      "kind": "feature",
+      "status": "done",
+      "unit": [],
+      "e2e": [],
+      "exemption": null
+    },
+    {
+      "id": "7.66.00",
+      "aliases": [
+        "7.66.0"
+      ],
+      "title": "Adoption: role playbooks on Home for Product, Scrum master, QA and Engineering (playbooks.md), and in-app micro-feedback after key actions, a thumb up or down and \"What's missing?\", sent to a normal…",
+      "source": {
+        "changelog": "7.66.00",
+        "doc": "docs/playbooks.md"
+      },
+      "kind": "feature",
+      "status": "done",
+      "unit": [],
+      "e2e": [],
+      "exemption": null
+    },
+    {
+      "id": "7.67.00",
+      "aliases": [
+        "7.67.0"
+      ],
+      "title": "The import wizard: bring your own signals in minutes (import-wizard.md).",
+      "source": {
+        "changelog": "7.67.00",
+        "doc": "docs/import-wizard.md"
+      },
+      "kind": "feature",
+      "status": "done",
+      "unit": [],
+      "e2e": [],
+      "exemption": null
+    },
+    {
+      "id": "7.68.00",
+      "aliases": [
+        "7.68.0"
+      ],
+      "title": "A real Validate phase: the methodology's last step (TENETS.md tenet 2's \"review\", labelled Validate) checks the prototype against the PRD's success criteria, first with your personas, then with real…",
+      "source": {
+        "changelog": "7.68.00",
+        "doc": "docs/project-workspace.md"
+      },
+      "kind": "feature",
+      "status": "done",
+      "unit": [],
+      "e2e": [],
+      "exemption": null
+    },
+    {
+      "id": "7.69.00",
+      "aliases": [
+        "7.69.0"
+      ],
+      "title": "Talk to the personas by voice (idea 15, behind -c voicePersonas=true, off by default): press Talk on a project persona and interview it out loud in your language through a speech-to-speech model.",
+      "source": {
+        "changelog": "7.69.00",
+        "doc": "docs/voice-personas.md"
+      },
+      "kind": "feature",
+      "status": "done",
+      "unit": [],
+      "e2e": [],
+      "exemption": null
+    },
+    {
+      "id": "7.70.00",
+      "aliases": [
+        "7.70.0"
+      ],
+      "title": "The leadership view: Insights → Leadership shows on one page how the teams use the method, by month or quarter: projects started and taken to a prototype, validations and validated decisions, decisio…",
+      "source": {
+        "changelog": "7.70.00",
+        "doc": "docs/leadership-view.md"
+      },
+      "kind": "feature",
+      "status": "done",
+      "unit": [],
+      "e2e": [],
+      "exemption": null
+    },
+    {
+      "id": "7.71.00",
+      "aliases": [
+        "7.71.0"
+      ],
+      "title": "A trial workspace, created at the end of the workshop (multi-workspace.md).",
+      "source": {
+        "changelog": "7.71.00",
+        "doc": "docs/multi-workspace.md"
+      },
+      "kind": "feature",
+      "status": "done",
+      "unit": [],
+      "e2e": [],
+      "exemption": null
+    },
+    {
+      "id": "7.71.01",
+      "aliases": [
+        "7.71.1"
+      ],
+      "title": "The findings the review gate deferred on 7.67.00–7.71.00, fixed before the release went to the b- test deployment: the hourly pause of a trial never undoes an extension's or a conversion's resume, an…",
+      "source": {
+        "changelog": "7.71.01",
+        "doc": null
+      },
+      "kind": "fix",
+      "status": "done",
+      "unit": [],
+      "e2e": [],
+      "exemption": null
+    },
+    {
+      "id": "7.71.02",
+      "aliases": [
+        "7.71.2"
+      ],
+      "title": "The non-blocking findings 7.71.01's review gate deferred, what the live test of the b- deployment found, and the engineering agents fixed from the first live Bug fixer run on b-: its committer and PR…",
+      "source": {
+        "changelog": "7.71.02",
+        "doc": null
+      },
+      "kind": "fix",
+      "status": "done",
+      "unit": [],
+      "e2e": [],
+      "exemption": null
+    },
+    {
+      "id": "7.71.03",
+      "aliases": [
+        "7.71.3"
+      ],
+      "title": "The non-blocking findings 7.71.02's review gate deferred, and what the Bug fixer rerun on b- with 7.71.02 found: the committer sent only its message and the push reached the broker, which refused it,…",
+      "source": {
+        "changelog": "7.71.03",
+        "doc": null
+      },
+      "kind": "fix",
+      "status": "done",
+      "unit": [],
+      "e2e": [],
+      "exemption": null
+    },
+    {
+      "id": "7.71.04",
+      "aliases": [
+        "7.71.4"
+      ],
+      "title": "The findings 7.71.03's review gate deferred, and what the live Bug fixer runs on b- with 7.71.03 showed: a fresh run went from its issue to a pull request ready for review in about ten minutes and en…",
+      "source": {
+        "changelog": "7.71.04",
+        "doc": null
+      },
+      "kind": "fix",
+      "status": "done",
+      "unit": [],
+      "e2e": [],
+      "exemption": null
+    },
+    {
+      "id": "7.72.00",
+      "aliases": [
+        "7.72.0",
+        "3g2"
+      ],
+      "title": "Multi-workspace, phase 3g2: an erasure by email reaches the participants.",
+      "source": {
+        "changelog": "7.72.00",
+        "doc": "docs/multi-workspace.md"
+      },
+      "kind": "feature",
+      "status": "done",
+      "unit": [],
+      "e2e": [],
+      "exemption": null
+    },
+    {
+      "id": "7.72.01",
+      "aliases": [
+        "7.72.1"
+      ],
+      "title": "Tests only: the feedback edits' two routes leave the cross-workspace suite's pending list with their two-workspace cases.",
+      "source": {
+        "changelog": "7.72.01",
+        "doc": null
+      },
+      "kind": "feature",
+      "status": "done",
+      "unit": [],
+      "e2e": [],
+      "exemption": null,
+      "uncertain": "the words \"tests only\" suggest no-behaviour: a reviewed decision lets it stand"
+    },
+    {
+      "id": "7.72.02",
+      "aliases": [
+        "7.72.2"
+      ],
+      "title": "Tests only: the feedback forms' 14 signed-in routes (lambda/api/feedback_form_handler.py, through _request_scope and the same RequestWorkspace object) leave the cross-workspace suite's pending list w…",
+      "source": {
+        "changelog": "7.72.02",
+        "doc": null
+      },
+      "kind": "feature",
+      "status": "done",
+      "unit": [],
+      "e2e": [],
+      "exemption": null,
+      "uncertain": "the words \"tests only\" suggest no-behaviour: a reviewed decision lets it stand"
+    },
+    {
+      "id": "7.72.03",
+      "aliases": [
+        "7.72.3"
+      ],
+      "title": "The follow-ups 7.72.00's review left open, all in the erasure by email: a job that skipped a malformed row in voc-participants no longer says it erased everyone; the boards' customer-contact pass jud…",
+      "source": {
+        "changelog": "7.72.03",
+        "doc": null
+      },
+      "kind": "fix",
+      "status": "done",
+      "unit": [],
+      "e2e": [],
+      "exemption": null
+    },
+    {
+      "id": "7.73.00",
+      "aliases": [
+        "7.73.0"
+      ],
+      "title": "Multi-workspace, phase 3: Radar per workspace.",
+      "source": {
+        "changelog": "7.73.00",
+        "doc": "docs/radar.md"
+      },
+      "kind": "feature",
+      "status": "done",
+      "unit": [],
+      "e2e": [],
+      "exemption": null
+    },
+    {
+      "id": "7.75.00",
+      "aliases": [
+        "7.75.0"
+      ],
+      "title": "Multi-workspace, phase 3: the logs per workspace.",
+      "source": {
+        "changelog": "7.75.00",
+        "doc": "docs/multi-workspace.md"
+      },
+      "kind": "feature",
+      "status": "done",
+      "unit": [],
+      "e2e": [],
+      "exemption": null
+    },
+    {
+      "id": "7.75.01",
+      "aliases": [
+        "7.75.1"
+      ],
+      "title": "Tests only: the manual import's 8 routes (lambda/api/manual_import_handler.py) leave the cross-workspace suite's pending list with their two-workspace cases.",
+      "source": {
+        "changelog": "7.75.01",
+        "doc": null
+      },
+      "kind": "feature",
+      "status": "done",
+      "unit": [],
+      "e2e": [],
+      "exemption": null,
+      "uncertain": "the words \"tests only\" suggest no-behaviour: a reviewed decision lets it stand"
+    },
+    {
+      "id": "7.75.02",
+      "aliases": [
+        "7.75.2"
+      ],
+      "title": "Tests only: the scrapers' 10 routes (lambda/api/scrapers_handler.py) leave the cross-workspace suite's pending list with their two-workspace cases; they resolve X-Workspace-Id in the module's Resolve…",
+      "source": {
+        "changelog": "7.75.02",
+        "doc": null
+      },
+      "kind": "feature",
+      "status": "done",
+      "unit": [],
+      "e2e": [],
+      "exemption": null,
+      "uncertain": "the words \"tests only\" suggest no-behaviour: a reviewed decision lets it stand"
+    },
+    {
+      "id": "7.75.03",
+      "aliases": [
+        "7.75.3"
+      ],
+      "title": "Tests only: the integrations' 13 routes (lambda/api/integrations_handler.py) leave the cross-workspace suite's pending list with their two-workspace cases; they resolve X-Workspace-Id in the module's…",
+      "source": {
+        "changelog": "7.75.03",
+        "doc": null
+      },
+      "kind": "feature",
+      "status": "done",
+      "unit": [],
+      "e2e": [],
+      "exemption": null,
+      "uncertain": "the words \"tests only\" suggest no-behaviour: a reviewed decision lets it stand"
+    }
+  ]
+}

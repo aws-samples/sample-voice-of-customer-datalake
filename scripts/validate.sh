@@ -22,7 +22,8 @@
 #
 # Groups (used by scripts/validate-affected.sh): python, frontend, cdk, stream = every step of that
 # package; <package>-static = its lint/type/dead-code steps; <package>-tests = its test suite
-# (cdk-tests includes the vite build it needs); bridge; repo (version, gitleaks, jscpd); codeql; tenets, commit (the
+# (cdk-tests includes the vite build it needs); bridge; repo (version, gitleaks, jscpd, the roadmap gate); features (the
+# roadmap gate alone: scripts/feature_gate.py check, its tests and lint; docs/feature-tests/README.md); codeql; tenets, commit (the
 # local AI reviews, scripts/ai-review/: against TENETS.md, and of the whole change; need kiro-cli or claude, else skipped);
 # audit = every code-audit detector step, or one family: audit-py-synth, audit-callers, audit-patterns,
 # audit-clones-py, audit-clones-ts, audit-ts, audit-unions, audit-locale, audit-tools (docs/code-audit.md).
@@ -30,7 +31,7 @@
 #      VALIDATE_ESLINT_CONCURRENCY (eslint's worker threads; default half the CPUs, 1-8), VALIDATE_CPUS (the CPU count; default
 #      `nproc`, the CPUs this run may use: taskset's affinity counts, `getconf` would count every core),
 #      VALIDATE_LOG_DIR (default $VALIDATE_LOG_ROOT/<timestamp>), PYTHON_BIN (default: voc-datalake/.venv, else the main checkout's, else python3),
-#      VALIDATE_SKIP_CODEQL=1 (skip the CodeQL step), CODEQL_THREADS (default: half the CPUs, at most 16),
+#      VALIDATE_SKIP_CODEQL=1 (skip the CodeQL step), CODEQL_THREADS (default: half the CPUs, at most 16), VOC_CODEQL_MAX_LOAD / VOC_CODEQL_MAX_WAIT (CodeQL waits while the 5-minute load is at or over it, default 0.85 x CPUs, at most that many minutes, default 60),
 #      AI_REVIEW=auto|kiro|claude|off (the AI reviews; scripts/ai-review/review.mjs),
 #      VALIDATE_LOG_ROOT (where runs are logged and --failed looks for the newest one; default .cache/validate/logs).
 # A big machine (one setting per machine, e.g. in its shell profile; unset on a laptop and in CI = the lanes above):
@@ -111,7 +112,7 @@ while [[ $# -gt 0 ]]; do
     --pytest-first) PYTEST_FIRST=1 ;;
     --dry-run) DRY_RUN=1 ;;
     --failed) FAILED_ONLY=1 ;;
-    -h|--help) sed -n '2,52p' "$0"; exit 0 ;;
+    -h|--help) awk 'NR > 1 && !/^#/ { exit } NR > 1 { print }' "$0"; exit 0 ;;   # the whole header comment
     *) printf 'validate: unknown option %s (see --help)\n' "$1" >&2; exit 2 ;;
   esac
   shift
@@ -197,7 +198,14 @@ def tsc  tenets                             "tenets: AI review"                 
 def lint commit                             "commit: AI review"                  'cd "$ROOT" && node scripts/ai-review/review.mjs --kind commit'
 def tsc  repo                               "node: dependency scripts tests"     'cd "$ROOT" && node --test scripts/dependency-audit.test.mjs scripts/dependency-freshness.test.mjs scripts/dependency-overrides.test.mjs scripts/scheduled-failure-watch.test.mjs'
 def tsc  repo                               "node: git hook tests"               'cd "$ROOT" && node --test scripts/git-hooks/*.test.mjs'
-def tsc  repo                               "node: validate.sh scheduling"      'cd "$ROOT" && node --test scripts/validate.test.mjs scripts/validate-ram.test.mjs scripts/codeql.test.mjs scripts/pinned.test.mjs'
+def tsc  repo                               "node: validate.sh scheduling"      'cd "$ROOT" && node --test scripts/validate.test.mjs scripts/validate-ram.test.mjs scripts/codeql.test.mjs scripts/pinned.test.mjs scripts/load-wait.test.mjs'
+# The roadmap gate (docs/feature-tests/README.md): every CHANGELOG release has a registry item, every named test
+# resolves and runs, every acceptance holds against its verdict, and the gaps only shrink (static, seconds); then the
+# program's own tests, ruff and pyright on it. In `repo` too, so validate-affected.sh runs it on every change: an
+# edited test can void its acceptance. The base is FEATURE_GATE_BASE_REF (default origin/voc-multiplayer; CI passes a PR's
+# base sha there; no CI workflow runs on pushes to this line): when that commit is here the check is strict (--strict-base), when it is not
+# fetched the check warns and runs without the base branch's registry.
+def tsc  repo,features                      "features: roadmap gate (check, tests, lint)" 'cd "$ROOT" && strict="" && if git rev-parse --verify --quiet --end-of-options "${FEATURE_GATE_BASE_REF:-origin/voc-multiplayer}^{commit}" >/dev/null 2>&1; then strict=--strict-base; fi && "$PYTHON_BIN" scripts/feature_gate.py check $strict && "$PYTHON_BIN" -m pytest -c scripts/feature_gate/pytest.ini scripts/feature_gate/test && cd "$CDK" && ruff check --config ruff.toml ../scripts/feature_gate ../scripts/feature_gate.py && cd "$ROOT" && npx pyright --pythonpath "$PYTHON_BIN" -p scripts/feature_gate/pyproject.toml'
 # Secrets in the working tree (.gitleaks.toml: default rules + the platform's token formats, build
 # output and dependencies allowlisted by path; .gitleaksignore for reviewed fingerprints).
 def lint repo                               "gitleaks: working tree"             'cd "$ROOT" && bash scripts/gitleaks-tree.sh'
@@ -205,7 +213,11 @@ def lint repo                               "gitleaks: working tree"            
 # accepted findings in scripts/codeql-summary.mjs). Its own lane: ~5 min on half the cores. Skipped on
 # GitHub Actions, where the repository's CodeQL code scanning runs the same analysis on every PR;
 # locally a missing CLI fails (brew install codeql). VALIDATE_SKIP_CODEQL=1 skips it on purpose.
-def sec  codeql                             "codeql: security and quality"       'cd "$ROOT" && if [ -n "${GITHUB_ACTIONS:-}" ] || [ "${VALIDATE_SKIP_CODEQL:-0}" = 1 ]; then echo "codeql: skipped (GitHub code scanning / VALIDATE_SKIP_CODEQL)"; else CODEQL_STRICT=1 CODEQL_THREADS="${CODEQL_THREADS:-$(( CPUS / 2 > 16 ? 16 : (CPUS / 2 > 1 ? CPUS / 2 : 1) ))}" bash scripts/codeql.sh; fi'
+# On a shared machine it runs under `suite-lock.sh codeql` (one CodeQL run at a time, the waiters in turn), and first
+# waits while the 5-minute load average is at or over VOC_CODEQL_MAX_LOAD (default 0.85 x the CPUs of the node it is
+# pinned to), checking every 30 s, at most VOC_CODEQL_MAX_WAIT minutes (60), then starts with a warning
+# (scripts/lib/load-wait.sh; no wait without /proc/loadavg, as on macOS, nor in CI).
+def sec  codeql                             "codeql: security and quality"       'cd "$ROOT" && if [ -n "${GITHUB_ACTIONS:-}" ] || [ "${VALIDATE_SKIP_CODEQL:-0}" = 1 ]; then echo "codeql: skipped (GitHub code scanning / VALIDATE_SKIP_CODEQL)"; else CODEQL_STRICT=1 CODEQL_THREADS="${CODEQL_THREADS:-$(( CPUS / 2 > 16 ? 16 : (CPUS / 2 > 1 ? CPUS / 2 : 1) ))}" bash scripts/suite-lock.sh codeql -- bash scripts/lib/load-wait.sh codeql "${VOC_CODEQL_MAX_LOAD:-}" "${VOC_CODEQL_MAX_WAIT:-60}" -- bash scripts/codeql.sh; fi'
 # TypeScript. `tsc -b` gets --force: its up-to-date check trusts the shared node_modules/.tmp buildinfo.
 def tsc  frontend,frontend-static           "tsc: frontend app + node configs"   'cd "$FRONTEND" && npx tsc -b --noEmit --force'
 def tsc  frontend,frontend-static           "tsc: frontend specs"                'cd "$FRONTEND" && npx tsc -p tsconfig.test.json --noEmit --incremental --tsBuildInfoFile "$TSC_CACHE/frontend-specs.tsbuildinfo"'
@@ -312,7 +324,7 @@ selected() {  # step index -> 0 when it runs in this invocation
 }
 if [[ -n "$ONLY" ]]; then
   for want in ${ONLY//,/ }; do
-    case "$want" in python|frontend|cdk|stream|tenets|commit|python-static|frontend-static|cdk-static|stream-static|python-tests|frontend-tests|cdk-tests|stream-tests|bridge|repo|codeql|audit|audit-py-synth|audit-callers|audit-patterns|audit-clones-py|audit-clones-ts|audit-ts|audit-unions|audit-locale|audit-tools) ;; *) printf 'validate: unknown group %s\n' "$want" >&2; exit 2 ;; esac
+    case "$want" in python|frontend|cdk|stream|tenets|commit|python-static|frontend-static|cdk-static|stream-static|python-tests|frontend-tests|cdk-tests|stream-tests|bridge|repo|features|codeql|audit|audit-py-synth|audit-callers|audit-patterns|audit-clones-py|audit-clones-ts|audit-ts|audit-unions|audit-locale|audit-tools) ;; *) printf 'validate: unknown group %s\n' "$want" >&2; exit 2 ;; esac
   done
 fi
 # --failed: the step names whose last status was not ok, from the newest earlier run's timings.tsv. That run's own

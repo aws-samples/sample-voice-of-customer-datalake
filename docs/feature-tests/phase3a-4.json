@@ -1,0 +1,629 @@
+{
+  "slice": "phase3a-4",
+  "from": "7.15.00",
+  "until": "7.50.00",
+  "items": [
+    {
+      "id": "7.15.00",
+      "aliases": [
+        "7.15.0"
+      ],
+      "title": "Multi-workspace: the voc-multiplayer-c track's assistant, logs and memory slices merged.",
+      "source": {
+        "changelog": "7.15.00",
+        "doc": "docs/multi-workspace.md"
+      },
+      "kind": "feature",
+      "status": "done",
+      "unit": [],
+      "e2e": [],
+      "exemption": null
+    },
+    {
+      "id": "7.16.00",
+      "aliases": [
+        "7.16.0"
+      ],
+      "title": "Multi-workspace: the voc-multiplayer-c track's memory-extraction slice merged.",
+      "source": {
+        "changelog": "7.16.00",
+        "doc": "docs/memory.md"
+      },
+      "kind": "feature",
+      "status": "done",
+      "unit": [],
+      "e2e": [],
+      "exemption": null
+    },
+    {
+      "id": "7.17.00",
+      "aliases": [
+        "7.17.0",
+        "4a"
+      ],
+      "title": "Multi-workspace, phase 4a: the voc-multiplayer-b track's export and config-history slices merged.",
+      "source": {
+        "changelog": "7.17.00",
+        "doc": "docs/multi-workspace.md"
+      },
+      "kind": "feature",
+      "status": "done",
+      "unit": [],
+      "e2e": [],
+      "exemption": null
+    },
+    {
+      "id": "7.18.00",
+      "aliases": [
+        "7.18.0"
+      ],
+      "title": "Multi-workspace: the voc-multiplayer-c track's company-context slice merged.",
+      "source": {
+        "changelog": "7.18.00",
+        "doc": "docs/multi-workspace.md"
+      },
+      "kind": "feature",
+      "status": "done",
+      "unit": [],
+      "e2e": [],
+      "exemption": null,
+      "uncertain": "the words \"internal only\" suggest plumbing: a reviewed decision lets it stand"
+    },
+    {
+      "id": "7.19.00",
+      "aliases": [
+        "7.19.0"
+      ],
+      "title": "Multi-workspace: each workspace keeps a list of who has conversations in it, so the workspace's export and its delete can find every member's conversations, a former member's too, from the workspace…",
+      "source": {
+        "changelog": "7.19.00",
+        "doc": "docs/multi-workspace.md"
+      },
+      "kind": "feature",
+      "status": "done",
+      "unit": [],
+      "e2e": [],
+      "exemption": null,
+      "uncertain": "the words \"nothing changes for anyone\" suggest plumbing: a reviewed decision lets it stand"
+    },
+    {
+      "id": "7.20.00",
+      "aliases": [
+        "7.20.0",
+        "4b"
+      ],
+      "title": "Multi-workspace, phase 4b: the voc-multiplayer-b track's export-objects slice merged.",
+      "source": {
+        "changelog": "7.20.00",
+        "doc": "docs/multi-workspace.md"
+      },
+      "kind": "feature",
+      "status": "done",
+      "unit": [],
+      "e2e": [],
+      "exemption": null
+    },
+    {
+      "id": "7.21.00",
+      "aliases": [
+        "7.21.0"
+      ],
+      "title": "Multi-workspace, phase 3 groundwork: the project stores can keep a workspace's project rows.",
+      "source": {
+        "changelog": "7.21.00",
+        "doc": "docs/multi-workspace.md"
+      },
+      "kind": "feature",
+      "status": "done",
+      "unit": [],
+      "e2e": [],
+      "exemption": null,
+      "uncertain": "the words \"internal only\" suggest plumbing: a reviewed decision lets it stand"
+    },
+    {
+      "id": "7.22.00",
+      "aliases": [
+        "7.22.0",
+        "4c"
+      ],
+      "title": "Multi-workspace, phase 4c: the voc-multiplayer-b track's export-memory slice merged.",
+      "source": {
+        "changelog": "7.22.00",
+        "doc": "docs/multi-workspace.md"
+      },
+      "kind": "feature",
+      "status": "done",
+      "unit": [],
+      "e2e": [],
+      "exemption": null
+    },
+    {
+      "id": "7.23.00",
+      "aliases": [
+        "7.23.0"
+      ],
+      "title": "The project branch takes main's releases since it started (6.04.08, 6.05.00, 7.00.00 and 7.00.01, listed below under their own numbers, as released on main, after this branch's sections: its own 6.04…",
+      "source": {
+        "changelog": "7.23.00",
+        "doc": null
+      },
+      "kind": "feature",
+      "status": "done",
+      "unit": [],
+      "e2e": [],
+      "exemption": null,
+      "uncertain": "a merge of main's releases: it may hold several features, fixes or none"
+    },
+    {
+      "id": "7.24.00",
+      "aliases": [
+        "7.24.0"
+      ],
+      "title": "Multi-workspace, phase 4: the members' conversations are not included in a workspace's export; its manifest says only how many people have any (docs/multi-workspace.md).",
+      "source": {
+        "changelog": "7.24.00",
+        "doc": "docs/multi-workspace.md"
+      },
+      "kind": "feature",
+      "status": "done",
+      "unit": [],
+      "e2e": [],
+      "exemption": null
+    },
+    {
+      "id": "7.25.00",
+      "aliases": [
+        "7.25.0"
+      ],
+      "title": "Multi-workspace, phase 4: a prerequisite of the workspace's hard delete.",
+      "source": {
+        "changelog": "7.25.00",
+        "doc": "docs/multi-workspace.md"
+      },
+      "kind": "feature",
+      "status": "done",
+      "unit": [],
+      "e2e": [],
+      "exemption": null
+    },
+    {
+      "id": "7.26.00",
+      "aliases": [
+        "7.26.0",
+        "3a"
+      ],
+      "title": "Multi-workspace, phase 3a: the project id claim and the workspace's registry of its projects.",
+      "source": {
+        "changelog": "7.26.00",
+        "doc": "docs/multi-workspace.md"
+      },
+      "kind": "feature",
+      "status": "done",
+      "unit": [],
+      "e2e": [],
+      "exemption": null,
+      "uncertain": "the words \"internal only\" suggest plumbing: a reviewed decision lets it stand"
+    },
+    {
+      "id": "7.27.00",
+      "aliases": [
+        "7.27.0",
+        "3b"
+      ],
+      "title": "Multi-workspace, phase 3b: a project's document versions and their history can be kept inside a workspace.",
+      "source": {
+        "changelog": "7.27.00",
+        "doc": "docs/multi-workspace.md"
+      },
+      "kind": "feature",
+      "status": "done",
+      "unit": [],
+      "e2e": [],
+      "exemption": null,
+      "uncertain": "the words \"internal only\" suggest plumbing: a reviewed decision lets it stand"
+    },
+    {
+      "id": "7.28.00",
+      "aliases": [
+        "7.28.0",
+        "4d"
+      ],
+      "title": "Multi-workspace, phase 4d: nothing writes into a workspace that is not active, and a workspace's hard delete is built but cannot be turned on yet: a synth with -c workspaceHardDelete=true fails until…",
+      "source": {
+        "changelog": "7.28.00",
+        "doc": "docs/multi-workspace.md"
+      },
+      "kind": "feature",
+      "status": "done",
+      "unit": [],
+      "e2e": [],
+      "exemption": null
+    },
+    {
+      "id": "7.29.00",
+      "aliases": [
+        "7.29.0",
+        "3c"
+      ],
+      "title": "Multi-workspace, phase 3c: a project's jobs can be kept inside a workspace, and every job's worker learns which workspace it runs in (docs/multi-workspace.md).",
+      "source": {
+        "changelog": "7.29.00",
+        "doc": "docs/multi-workspace.md"
+      },
+      "kind": "feature",
+      "status": "done",
+      "unit": [],
+      "e2e": [],
+      "exemption": null
+    },
+    {
+      "id": "7.30.00",
+      "aliases": [
+        "7.30.0"
+      ],
+      "title": "Multi-workspace, cost per workspace (slice B): the voc-multiplayer-b track's daily cost estimate per workspace merged, for the platform console (docs/multi-workspace.md).",
+      "source": {
+        "changelog": "7.30.00",
+        "doc": "docs/multi-workspace.md"
+      },
+      "kind": "feature",
+      "status": "done",
+      "unit": [],
+      "e2e": [],
+      "exemption": null
+    },
+    {
+      "id": "7.31.00",
+      "aliases": [
+        "7.31.0",
+        "3d"
+      ],
+      "title": "Multi-workspace, phase 3d: a team's participant lists and people can be kept inside a workspace, and persona copies stay inside one.",
+      "source": {
+        "changelog": "7.31.00",
+        "doc": "docs/multi-workspace.md"
+      },
+      "kind": "feature",
+      "status": "done",
+      "unit": [],
+      "e2e": [],
+      "exemption": null
+    },
+    {
+      "id": "7.32.00",
+      "aliases": [
+        "7.32.0"
+      ],
+      "title": "Merge of voc-multiplayer-mut: property tests of the workspace isolation layer and its jobs, and the retention worker's paged walk made testable and bounded.",
+      "source": {
+        "changelog": "7.32.00",
+        "doc": "docs/mutation-notes-mut-voc-mp.md"
+      },
+      "kind": "feature",
+      "status": "done",
+      "unit": [],
+      "e2e": [],
+      "exemption": null,
+      "uncertain": "open for a reviewed decision: proposed kind feature -> plumbing (property tests and a bounded walk; one visible limit); a merge of another branch: it may hold several features, fixes or none"
+    },
+    {
+      "id": "7.33.00",
+      "aliases": [
+        "7.33.0"
+      ],
+      "title": "Merge of voc-wiki into voc-multiplayer: the document canvas and \"Revise from comments\", a project's documents in sections, the Prototype builder (Back to vN, drafts from an instruction or from tester…",
+      "source": {
+        "changelog": "7.33.00",
+        "doc": "docs/document-canvas.md"
+      },
+      "kind": "feature",
+      "status": "done",
+      "unit": [],
+      "e2e": [],
+      "exemption": null,
+      "uncertain": "a merge of another branch: it may hold several features, fixes or none"
+    },
+    {
+      "id": "7.34.00",
+      "aliases": [
+        "7.34.0"
+      ],
+      "title": "Merge of voc-wiki-mut, the mutation and property-test hardening of voc-wiki's documents, prototypes and project export, which was never merged into voc-wiki itself: sections 7.01.04 to 7.01.01 marked…",
+      "source": {
+        "changelog": "7.34.00",
+        "doc": null
+      },
+      "kind": "feature",
+      "status": "done",
+      "unit": [],
+      "e2e": [],
+      "exemption": null,
+      "uncertain": "open for a reviewed decision: proposed kind feature -> fix (a merge of mutation hardening; what a deployment sees is under Fixed); a merge of another branch: it may hold several features, fixes or none"
+    },
+    {
+      "id": "7.35.00",
+      "aliases": [
+        "7.35.0"
+      ],
+      "title": "Merge of voc-autonomous into voc-multiplayer: the autonomous engineering agents (the repository broker and its GitHub and GitLab connectors, the run's task board, bus and conversation, the MicroVM an…",
+      "source": {
+        "changelog": "7.35.00",
+        "doc": "docs/autonomous-engineering.md"
+      },
+      "kind": "feature",
+      "status": "done",
+      "unit": [],
+      "e2e": [],
+      "exemption": null,
+      "uncertain": "a merge of another branch: it may hold several features, fixes or none"
+    },
+    {
+      "id": "7.36.00",
+      "aliases": [
+        "7.36.0"
+      ],
+      "title": "Merge of main's 7.01.00 (8 commits): a website design reference picks the company's logo with a small vision call over numbered candidates and the browser draws that element alone; the page's share i…",
+      "source": {
+        "changelog": "7.36.00",
+        "doc": null
+      },
+      "kind": "feature",
+      "status": "done",
+      "unit": [],
+      "e2e": [],
+      "exemption": null,
+      "uncertain": "a merge of another branch: it may hold several features, fixes or none"
+    },
+    {
+      "id": "7.37.00",
+      "aliases": [
+        "7.37.0",
+        "3e"
+      ],
+      "title": "Multi-workspace, phase 3e: a project's document comments, persona review, review links and stored objects can be kept inside a workspace.",
+      "source": {
+        "changelog": "7.37.00",
+        "doc": "docs/multi-workspace.md"
+      },
+      "kind": "feature",
+      "status": "done",
+      "unit": [],
+      "e2e": [],
+      "exemption": null,
+      "uncertain": "the words \"nothing changes for anyone\" suggest plumbing: a reviewed decision lets it stand"
+    },
+    {
+      "id": "7.38.00",
+      "aliases": [
+        "7.38.0",
+        "3f"
+      ],
+      "title": "Multi-workspace, phase 3f: the product-doc extractor can take a product document uploaded inside a workspace and extract it there.",
+      "source": {
+        "changelog": "7.38.00",
+        "doc": "docs/multi-workspace.md"
+      },
+      "kind": "feature",
+      "status": "done",
+      "unit": [],
+      "e2e": [],
+      "exemption": null,
+      "uncertain": "the words \"nothing changes for anyone\" suggest plumbing: a reviewed decision lets it stand"
+    },
+    {
+      "id": "7.39.00",
+      "aliases": [
+        "7.39.0",
+        "3g-a"
+      ],
+      "title": "Multi-workspace, phase 3g-a: a workspace's export holds its projects, their documents, personas, saved revisions, comment threads, jobs and list links, and the workspace's review links.",
+      "source": {
+        "changelog": "7.39.00",
+        "doc": "docs/multi-workspace.md"
+      },
+      "kind": "feature",
+      "status": "done",
+      "unit": [],
+      "e2e": [],
+      "exemption": null,
+      "uncertain": "the words \"nothing changes for anyone\" suggest plumbing: a reviewed decision lets it stand"
+    },
+    {
+      "id": "7.40.00",
+      "aliases": [
+        "7.40.0"
+      ],
+      "title": "A workspace can be renamed and, on a deployment that turns it on, deleted for good, both from Workspace settings.",
+      "source": {
+        "changelog": "7.40.00",
+        "doc": null
+      },
+      "kind": "feature",
+      "status": "done",
+      "unit": [],
+      "e2e": [],
+      "exemption": null
+    },
+    {
+      "id": "7.40.01",
+      "aliases": [
+        "7.40.1"
+      ],
+      "title": "validate.sh uses a big machine when it has one: with VOC_VALIDATE_JOBS=N (one line in that machine's shell profile) every step is a job of its own, its rebuildable caches and every step's temp files…",
+      "source": {
+        "changelog": "7.40.01",
+        "doc": null
+      },
+      "kind": "fix",
+      "status": "done",
+      "unit": [],
+      "e2e": [],
+      "exemption": null,
+      "uncertain": "open for a reviewed decision: proposed kind fix -> no-behaviour (validate.sh on a big machine)"
+    },
+    {
+      "id": "7.41.00",
+      "aliases": [
+        "7.41.0"
+      ],
+      "title": "Web Reviews reads more sites while identifying itself honestly: its browser signs every request with Web Bot Auth (Preview), keeps a browser profile between runs and recovers from a dropped connectio…",
+      "source": {
+        "changelog": "7.41.00",
+        "doc": null
+      },
+      "kind": "feature",
+      "status": "done",
+      "unit": [],
+      "e2e": [],
+      "exemption": null
+    },
+    {
+      "id": "7.42.00",
+      "aliases": [
+        "7.42.0"
+      ],
+      "title": "The model that reads a Web Reviews page from the Amazon Bedrock web search index is chosen in Administration → AI models like every other AI model, with its Test button and its capacity fallback, fro…",
+      "source": {
+        "changelog": "7.42.00",
+        "doc": null
+      },
+      "kind": "feature",
+      "status": "done",
+      "unit": [],
+      "e2e": [],
+      "exemption": null
+    },
+    {
+      "id": "7.43.00",
+      "aliases": [
+        "7.43.0",
+        "3g-b"
+      ],
+      "title": "Multi-workspace, phase 3g-b: an erasure reaches a workspace's projects.",
+      "source": {
+        "changelog": "7.43.00",
+        "doc": "docs/multi-workspace.md"
+      },
+      "kind": "feature",
+      "status": "done",
+      "unit": [],
+      "e2e": [],
+      "exemption": null
+    },
+    {
+      "id": "7.44.00",
+      "aliases": [
+        "7.44.0"
+      ],
+      "title": "Web Reviews pages read themselves the best way by default: Automatic tries the signed browser, then the Amazon Bedrock web index, then AgentCore web search snippets (stored as excerpts), and each wor…",
+      "source": {
+        "changelog": "7.44.00",
+        "doc": null
+      },
+      "kind": "feature",
+      "status": "done",
+      "unit": [],
+      "e2e": [],
+      "exemption": null
+    },
+    {
+      "id": "7.44.01",
+      "aliases": [
+        "7.44.1"
+      ],
+      "title": "A document's card in a project's Documents tab has a menu: a right-click, the ContextMenu key or Shift+F10, or its ⋯ opens Open, Rename and Delete (a viewer: Open only), the page's own actions withou…",
+      "source": {
+        "changelog": "7.44.01",
+        "doc": null
+      },
+      "kind": "fix",
+      "status": "done",
+      "unit": [],
+      "e2e": [],
+      "exemption": null,
+      "uncertain": "also adds the document card's menu (a feature): a candidate for 7.44.01/<slice> items"
+    },
+    {
+      "id": "7.45.00",
+      "aliases": [
+        "7.45.0"
+      ],
+      "title": "The in-app GitHub connect flow, on a GitHub App manifest (only with -c engineeringAgents=true).",
+      "source": {
+        "changelog": "7.45.00",
+        "doc": "docs/autonomous-engineering.md"
+      },
+      "kind": "feature",
+      "status": "done",
+      "unit": [],
+      "e2e": [],
+      "exemption": null
+    },
+    {
+      "id": "7.46.00",
+      "aliases": [
+        "7.46.0"
+      ],
+      "title": "The document page gets an icon toolbar beside its menus (versions, History, AI review, AI rewrite, Comments with its open count, Contents, Full width, Full screen, then Share), opens with the full wi…",
+      "source": {
+        "changelog": "7.46.00",
+        "doc": "docs/document-canvas.md"
+      },
+      "kind": "feature",
+      "status": "done",
+      "unit": [],
+      "e2e": [],
+      "exemption": null
+    },
+    {
+      "id": "7.47.00",
+      "aliases": [
+        "7.47.0",
+        "3g3"
+      ],
+      "title": "Engineering agents are autonomous agents: an agent with engineering settings runs an engineering flow on a repository connection, from its triggers or Run now, as the administrator who enabled it.",
+      "source": {
+        "changelog": "7.47.00",
+        "doc": "docs/autonomous-agents.md"
+      },
+      "kind": "feature",
+      "status": "done",
+      "unit": [],
+      "e2e": [],
+      "exemption": null
+    },
+    {
+      "id": "7.48.00",
+      "aliases": [
+        "7.48.0",
+        "3g-d"
+      ],
+      "title": "Multi-workspace, phase 3g-d: an erasure reaches the deployment's own projects, where every real reviewer address is today.",
+      "source": {
+        "changelog": "7.48.00",
+        "doc": "docs/multi-workspace.md"
+      },
+      "kind": "feature",
+      "status": "done",
+      "unit": [],
+      "e2e": [],
+      "exemption": null
+    },
+    {
+      "id": "7.49.00",
+      "aliases": [
+        "7.49.0"
+      ],
+      "title": "Every in-app place is a path, across the whole app: where a person is (a page, its tab and section, the item open on it, a sub-view, a mode) is the path, so Back and Forward walk tabs and sections, a…",
+      "source": {
+        "changelog": "7.49.00",
+        "doc": null
+      },
+      "kind": "feature",
+      "status": "done",
+      "unit": [],
+      "e2e": [],
+      "exemption": null
+    }
+  ]
+}

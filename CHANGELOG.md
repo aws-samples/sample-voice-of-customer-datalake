@@ -17,6 +17,159 @@ the platform package version.
 
 ## [Unreleased]
 
+## [7.105.00] - 2026-11-28
+
+Tooling only: the roadmap gate's program. Every release this line shipped since 6.05.00 is now a roadmap item in a
+registry, each mapped to the tests that prove it, and a test counts only once an independent evaluator (never its
+author, nor the author's own sub-agent) accepts it with written evidence: the feature broken on purpose, the test
+red, then green three times ([docs/feature-tests/README.md](docs/feature-tests/README.md)). No test is registered
+yet: the gaps of today are the allowed baseline, and it only shrinks. What it proves: independence rests on declared
+session ids and on the evaluator's written evidence, and nothing in the gate runs the tests yet (the run per build is
+to come). A minor bump although it is tooling: it adds a required gate step (`features`) that every contributor's
+`validate.sh` and every CI run now run.
+
+### Added
+
+- **The registry**, `docs/feature-tests/`: one file per slice of the roadmap (`phase1-2.json` 6.05.00 to 7.14.00,
+  `phase3a-4.json` 7.15.00 to 7.49.00, `product-7.5x-7.7x.json` 7.50.00 to 7.75.03, `phase3-switch.json` 7.76.00 on),
+  seeded with 143 items, one per release of this line (the unsuffixed CHANGELOG headings from the top down to the
+  first suffixed one, headings in code fences skipped: the merged branches' own sections are not this line's). Each
+  item's kind is read from its release's text, and only the explicit phrasings seed a kind below feature ("no
+  behaviour change": plumbing; "Tooling only:": no-behaviour): 118 features, 19 fixes, 3 plumbing, 3 with no
+  behaviour. 35 are marked `uncertain` with the reason: the merges, the patch releases that name no fix, and 19
+  releases whose words only suggest a lower kind ("tests only", "internal only", "nothing changes for anyone", "docs
+  and tenets only": 7.05.00, 7.07.00, 7.11.00, 7.18.00, 7.19.00, 7.21.00, 7.26.00, 7.27.00, 7.37.00, 7.38.00,
+  7.39.00, 7.72.01, 7.72.02, 7.75.01, 7.75.02, 7.75.03, 7.76.01, 7.76.02, 7.101.00), seeded as features with the lower
+  kind proposed. Every item keeps its seeded kind: a kind below it needs a reviewed decision. Six more lower kinds are
+  **open for a reviewed decision** (proposed, written in each item's `uncertain`, not applied): 6.06.01 fix -> no-behaviour (the review gate's tooling); 7.40.01 fix ->
+  no-behaviour (`validate.sh` on a big machine); 6.14.00 feature -> plumbing (a repository layer and guards); 7.01.00
+  feature -> plumbing (a row for the deployment's model); 7.32.00 feature -> plumbing (property tests and a bounded
+  walk); 7.34.00 feature -> fix (a merge whose visible part is its fixes). Three more keep their kind with a written
+  reason (6.06.03 fix, 7.23.00 feature, 7.44.01 fix).
+- **The verdicts**, `docs/test-verdicts/TEMPLATE.md` and `docs/test-verdicts/<item>/<runner>-<hash>.md`: the
+  evaluator's six checks, the exact command, the break (a diff whose every file is product code and changes a line
+  that is not a comment; tests, test support and fixtures excluded), the red run (naming the test, showing a
+  failure), three green runs (each 1 passed, 0 skipped; for vitest, whose `-t` reports the file's other tests as
+  skipped, exactly 1 passed, 0 failed and the test's own passing line; never a failed, error, flaky or rerun count),
+  the `sha` it was evaluated on (HEAD or an ancestor) and the staged `tree` (`git write-tree`, informational). The
+  break is read file by file, a plain `diff -u` of several files too.
+- **The program**, `scripts/feature_gate.py` and `scripts/feature_gate/`: `check` (static, seconds, no test
+  imported: every release has an item; every named test resolves under the suites' own collection rules (pytest.ini's
+  testpaths, norecursedirs, ignores, class and function patterns, one binding of the name per scope, no
+  `__test__ = False`; the mock Playwright list; skips on the test, a describe or the file) and nothing in its source
+  skips it; every acceptance holds against its verdict, its sha and its digest (the test's file, its conftest.py chain
+  and configs, and its non-product imports and helpers; product files are left out); and the gaps only shrink, also
+  against the base branch's list), `seed`, `baseline --init|--shrink`, `stats`, `register`, `brief`, `accept`, `reject` (a second REJECT marks the test for a
+  rewrite and records the `escalate:` line), `exempt` and `review-exemption`, `propose-change` and `review-change`,
+  and `run --sha`, the full run per
+  build, a stub with its interface written down. A session id comes from `--session` or `$FEATURE_GATE_SESSION`; the
+  registry's writes hold one lock. Its own tests are `scripts/feature_gate/test/`.
+- **The seeded kind is a floor**: `check` reads each item's release section again (a `<version>/<slice>` item its
+  version's; a version headed twice is a problem, and only its first copy is read), and a kind below the one its text
+  gives needs a reviewed decision record naming `kind <seeded> -> <now>`, with or without a base branch. A record's
+  sha descends from where HEAD's history left the base branch (their merge-base), for decisions and exemptions alike.
+- **Releases come from package.json's history; a feature never released through a version bump is outside the
+  gate.** The line's releases are every version the root `package.json` held on this line (its first-parent git
+  history from the line's bootstrap commit, the one that added the allowed list, on) or holds now; a skipped version
+  never existed. The releases before the bootstrap commit are judged by their sections only. The CHANGELOG is only where each release's
+  text lives: every release needs exactly one section the reader finds (`## [X.YY.ZZ] - <date>` at the start of a line,
+  above the merged branches' sections; fences read as CommonMark reads them), or it is a problem, so no Markdown form
+  can hide a release. `package.json`'s version must also be the newest section's; a bracketed heading whose version is
+  not a release number is a problem line.
+- **A new item's floor is feature** once the base branch has a registry (7.105.00 itself is the bootstrap, whose base
+  has none), and **every item after 7.105.00 has the feature floor and never holds an allowed gap, whatever the base
+  holds**: the rules are keyed on the version, so a base from before the gate opens no door. A base with a registry but
+  no allowed list is a problem, and the line's bootstrap commit must be the base's. A rejected test leaves the registry only with a reviewed `retire <test id>` record or its item's
+  removed / refine decision; a PR's base is its `pull_request.base.sha`, its fork taken from the merge ref's second
+  parent in a pull_request run only (against HEAD anywhere else); all zeros means no base only on a CI push; a base with no registry while HEAD's parent has one is compared
+  through that parent. The `features` step checks strictly whenever the base commit is here (`FEATURE_GATE_BASE_REF`
+  or `--base <sha>` sets it) and warns when it is not fetched.
+- **Tests are named one way**: canonical paths only (no `./`, `//`, `..`), one entry per test in an item, an accepted
+  entry's digest equal to the test's current one (vitest's setup files are among its configs); `{ skip: true }` options, `ctx.skip()` and a skipping chain bound to a name are seen; every
+  file of a break must exist at the verdict's sha. The registry, the allowed list and the records are never written
+  through a link.
+- **Against the base branch** (`$FEATURE_GATE_BASE_REF`, default origin/voc-multiplayer, or `--base <sha>`; a base that is HEAD itself is compared through HEAD's first parent): `check` refuses a lower kind, a
+  done item made planned, a removed item, rejections that are not the base branch's followed by new ones (a refined
+  item's looked for in its slices) and a changed `written_by`, unless a reviewed decision record
+  (`docs/test-verdicts/<item>/decision.md`, another session than the proposer's, its sha descending from the base
+  branch's commit, so it never carries over to a later change of the same words) allows it; `propose-change` and
+  `review-change` write it. A released version is never planned. The refine path replaces an item by its
+  `<version>/<slice>` items, its words naming each slice's kind, and hands them its allowed gaps. A missing base ref
+  warns, and fails under CI or `--strict-base`; a base branch without a registry is no error only as the bootstrap
+  (no `docs/feature-tests/`, a `package.json` before 7.105.0, and not descending from the line's bootstrap commit).
+- **Rejections** keep a verdict file each (`<runner>-<hash>.reject-<n>.md`, as many as recorded, each saying REJECT and
+  naming its rejection's evaluator, sha and digest; nothing is hashed from a break's paths); each rejection's `by` is a session and its `at` a commit HEAD descends from.
+- **Exemptions** go through the same flow: proposed by one session, reviewed by another (`exemption.md`, whose words
+  hold a hash of the reason). A `platform-only` or `live-only` exemption is "checked elsewhere": listed by `stats`, it
+  closes no gap. A plumbing item may close with a reviewed `no-behaviour` exemption.
+- **`scripts/suite-lock.sh <name> -- <command…>`**: one holder per suite on a shared machine (an `flock` in the
+  user's own folder: `$VOC_SUITE_LOCK_DIR`, else `$XDG_RUNTIME_DIR/voc-suite-locks`, else
+  `/tmp/voc-suite-locks-<uid>`, mode 0700 and checked; the lock file opened without following links, 0600); a waiter
+  is told who holds it (its pid, start, the lock's name and the command's program, never its arguments). As flock(1)
+  does, it execs the command, so the lock lives exactly as long as the command; it needs Python 3.8 or newer as
+  `python3` and refuses below it.
+- **The `features` gate step** (`validate.sh --only features`, also in `repo`): the check, the program's tests, ruff
+  and pyright on it. The allowed gaps: 261 (`docs/feature-tests/allowed-gaps.json`: every done item, since no test
+  is registered yet: 236 for the features' two layers, 19 fixes, 3 plumbing units, 3 reviews).
+- **CI** (`.github/workflows/quality-gates.yml`): the tsc lane checks out the full history and passes the roadmap
+  gate's base in `FEATURE_GATE_BASE_REF` (a PR's `pull_request.base.sha` as the event reports it; a push's `before`
+  commit, fetched first when the clone does not hold it, with a warning when it cannot be; all zeros on a new branch's
+  first push, which has no base), and in CI a base it cannot read, or a base at HEAD with no parent, fails. CI's push
+  trigger is `main` only: a push to this line is checked by the local gate before the push, and no CI workflow runs on
+  it (a follow-up below); a PR is checked by CI.
+- **Releases are bounded to the line**: the history starts at the line's bootstrap commit (the one that added the
+  allowed list) and, in a pull_request run, follows the PR's own head, so a PR into `main` never takes `main`'s bumps;
+  each version is read as JSON from `git show <commit>:package.json`, and every walk of the line diffs a merge
+  against its first parent and follows no rename, whatever the settings. A pushed bump is never renumbered: each one
+  after the bootstrap commit is above the one before (the first not before 7.105.00), and the working tree's version
+  never goes below the line's last release. A release number is in its one two-digit form (`7.105.000` and
+  `07.105.00` are problem lines), and a line with no bootstrap commit under a base that has one is a problem. A planned item takes a plan id, never a release
+  number, and an item the base held as planned takes the new item's feature floor when it lands done. The digest
+  covers the test's file, its conftest.py chain and configs, and its non-product imports and helpers; product files
+  are left out, so a product edit no longer voids an acceptance. Record words take no
+  control characters, and a reviewed decision record is never overwritten.
+- **Bootstrap mode** (seeded kinds taken as they are) holds only for a base with no `docs/feature-tests/`, a
+  `package.json` before 7.105.0, and no descent from the line's bootstrap commit.
+- **Rewrites take a reviewed record**: after two REJECTs, only a reviewed `rewrite <test id>` record
+  (`propose-change --rewrite`, another session's `review-change --rewrite`) clears the bar, whatever the digests say.
+  A test bound only under an always-false `if` is refused; verdicts, records, test files, configs and imports are
+  never read through a link or from outside the repository.
+- `scripts/validate-affected.sh` maps the registry, the verdicts, `CHANGELOG.md` and the program to `features`.
+
+### Changed
+
+- `validate.sh`'s CodeQL step runs under `suite-lock.sh codeql` (one CodeQL run at a time on the machine, the waiters
+  in turn) and, before it starts, waits while the 5-minute load average (the second field of `/proc/loadavg`) is at
+  or over `VOC_CODEQL_MAX_LOAD` (default 0.85 x the CPUs of the node the run is pinned to), printing one line that
+  says so, checking every 30 s, and after `VOC_CODEQL_MAX_WAIT` minutes (60) starting anyway with a warning
+  (`scripts/lib/load-wait.sh`, tested on a fake load file by `scripts/load-wait.test.mjs`, in the
+  `node: validate.sh scheduling` step). On a large shared machine a rerun of it had taken several cores while the
+  machine was already overloaded. No wait without `/proc/loadavg` (macOS) or in CI (`GITHUB_ACTIONS`).
+
+### Follow-up
+
+- **Blocking before the gate is made a required check:** CI runs the base branch's copy of `scripts/feature_gate/` on
+  HEAD's data, so a change to the program cannot judge itself. Today `check` runs HEAD's own program, and its changes
+  go only through the repository's review gate.
+- **No CI on pushes to this line:** the quality-gates workflow's push trigger is `main` only, so a push to
+  voc-multiplayer is checked only by the local gate before the push. A push trigger for this line (or a scheduled run
+  with `--base <last green sha>`) is to come.
+
+### Open questions for the maintainers
+
+- **How many layers a fix needs.** This release asks a fix for one accepted regression test, of either layer; a fix
+  could instead need a unit and an end-to-end test like a feature (the seeded gaps would then grow by 19).
+- **Plumbing and no-behaviour releases.** Plumbing needs an accepted unit test and no end-to-end test (a release with
+  no behaviour change has no user flow to drive), and a no-behaviour release only a review; the other reading is that
+  every kind needs both layers.
+- **A red item in the run per build:** whether it blocks the release, and who may waive it.
+
+### Upgrade notes
+
+- Nothing to deploy: scripts, docs and the registry only. The CDK baseline's template hashes of VocApiStack,
+  VocCoreStack and VocProcessingStack move with the release number alone (`APP_VERSION`, 7.105.0, in their Lambdas'
+  environment); its names inventory is unchanged.
+
 ## [7.104.00] - 2026-11-27
 
 Python 3.15 and aws-cdk-lib 2.278.0 under every Lambda, read-only Feedback Forms tools on `/mcp/global`, a

@@ -1,0 +1,486 @@
+{
+  "slice": "phase3-switch",
+  "from": "7.76.00",
+  "until": null,
+  "items": [
+    {
+      "id": "7.76.00",
+      "aliases": [
+        "7.76.0"
+      ],
+      "title": "Multi-workspace, a trust fix (TENETS.md D8): Administration → System → Logs holds a workspace's content back from the deployment's administrators (the one gap is below).",
+      "source": {
+        "changelog": "7.76.00",
+        "doc": "docs/deployment.md"
+      },
+      "kind": "fix",
+      "status": "done",
+      "unit": [],
+      "e2e": [],
+      "exemption": null
+    },
+    {
+      "id": "7.76.01",
+      "aliases": [
+        "7.76.1"
+      ],
+      "title": "Tests only: the metrics API's 18 routes (lambda/api/metrics_handler.py) leave the cross-workspace suite's pending list with their two-workspace cases.",
+      "source": {
+        "changelog": "7.76.01",
+        "doc": null
+      },
+      "kind": "feature",
+      "status": "done",
+      "unit": [],
+      "e2e": [],
+      "exemption": null,
+      "uncertain": "the words \"tests only\" suggest no-behaviour: a reviewed decision lets it stand"
+    },
+    {
+      "id": "7.76.02",
+      "aliases": [
+        "7.76.2"
+      ],
+      "title": "Tests only: the raw-access guard's allow list (lambda/shared/test/test_ws_raw_access.py ALLOWED) moves three modules from phase 2 to phase 0, the handle plumbing: phase 2 holds 31 modules and 96 acce…",
+      "source": {
+        "changelog": "7.76.02",
+        "doc": null
+      },
+      "kind": "feature",
+      "status": "done",
+      "unit": [],
+      "e2e": [],
+      "exemption": null,
+      "uncertain": "the words \"tests only\" suggest no-behaviour: a reviewed decision lets it stand"
+    },
+    {
+      "id": "7.77.00",
+      "aliases": [
+        "7.77.0"
+      ],
+      "title": "A trust fix (TENETS.md D4): clearing the deployment's validation failures (Administration → System → Logs → Validation failures → Clear, outside any workspace) is now recorded, as a workspace's clear…",
+      "source": {
+        "changelog": "7.77.00",
+        "doc": null
+      },
+      "kind": "fix",
+      "status": "done",
+      "unit": [],
+      "e2e": [],
+      "exemption": null
+    },
+    {
+      "id": "7.78.00",
+      "aliases": [
+        "7.78.0"
+      ],
+      "title": "Multi-workspace, phase 3: the read caching's settings counter per workspace.",
+      "source": {
+        "changelog": "7.78.00",
+        "doc": "docs/caching.md"
+      },
+      "kind": "feature",
+      "status": "done",
+      "unit": [],
+      "e2e": [],
+      "exemption": null
+    },
+    {
+      "id": "7.79.00",
+      "aliases": [
+        "7.79.0"
+      ],
+      "title": "Multi-workspace, phase 4: the cost estimate gets real prices.",
+      "source": {
+        "changelog": "7.79.00",
+        "doc": "docs/multi-workspace.md"
+      },
+      "kind": "feature",
+      "status": "done",
+      "unit": [],
+      "e2e": [],
+      "exemption": null
+    },
+    {
+      "id": "7.80.00",
+      "aliases": [
+        "7.80.0",
+        "3g3-a",
+        "3g3-ui-agents"
+      ],
+      "title": "Inside a workspace, the general agents and their workflows are that workspace's own: its agents, their pause and resume history, its workflows with every saved revision, the keys its runs will use (n…",
+      "source": {
+        "changelog": "7.80.00",
+        "doc": "docs/multi-workspace.md"
+      },
+      "kind": "feature",
+      "status": "done",
+      "unit": [],
+      "e2e": [],
+      "exemption": null
+    },
+    {
+      "id": "7.82.00",
+      "aliases": [
+        "7.82.0"
+      ],
+      "title": "Multi-workspace, phase 4: the assistant's model calls are counted in the cost estimate.",
+      "source": {
+        "changelog": "7.82.00",
+        "doc": "docs/multi-workspace.md"
+      },
+      "kind": "feature",
+      "status": "done",
+      "unit": [],
+      "e2e": [],
+      "exemption": null
+    },
+    {
+      "id": "7.82.01",
+      "aliases": [
+        "7.82.1"
+      ],
+      "title": "Tooling only: the gate keeps to its share of a big shared machine.",
+      "source": {
+        "changelog": "7.82.01",
+        "doc": null
+      },
+      "kind": "no-behaviour",
+      "status": "done",
+      "unit": [],
+      "e2e": [],
+      "exemption": null
+    },
+    {
+      "id": "7.83.00",
+      "aliases": [
+        "7.83.0"
+      ],
+      "title": "Multi-workspace, phase 4: the platform console shows the cost per workspace.",
+      "source": {
+        "changelog": "7.83.00",
+        "doc": "docs/multi-workspace.md"
+      },
+      "kind": "feature",
+      "status": "done",
+      "unit": [],
+      "e2e": [],
+      "exemption": null
+    },
+    {
+      "id": "7.84.00",
+      "aliases": [
+        "7.84.0",
+        "3g3-b"
+      ],
+      "title": "An erasure now reaches the engineering agents' rows (slice 3g3-b of docs/multi-workspace.md's project plan; TENETS.md D5 and D8), with -c engineeringAgents=true: an erased review's id leaves the engi…",
+      "source": {
+        "changelog": "7.84.00",
+        "doc": "docs/multi-workspace.md"
+      },
+      "kind": "feature",
+      "status": "done",
+      "unit": [],
+      "e2e": [],
+      "exemption": null
+    },
+    {
+      "id": "7.86.00",
+      "aliases": [
+        "7.86.0"
+      ],
+      "title": "Multi-workspace, phase 2: the S3 import works in a workspace.",
+      "source": {
+        "changelog": "7.86.00",
+        "doc": "docs/data-lake-structure.md"
+      },
+      "kind": "feature",
+      "status": "done",
+      "unit": [],
+      "e2e": [],
+      "exemption": null
+    },
+    {
+      "id": "7.88.00",
+      "aliases": [
+        "7.88.0"
+      ],
+      "title": "Multi-workspace, phase 2: the web app's S3 import works inside a workspace.",
+      "source": {
+        "changelog": "7.88.00",
+        "doc": "docs/data-lake-structure.md"
+      },
+      "kind": "feature",
+      "status": "done",
+      "unit": [],
+      "e2e": [],
+      "exemption": null
+    },
+    {
+      "id": "7.90.00",
+      "aliases": [
+        "7.90.0"
+      ],
+      "title": "Multi-workspace: the Data Explorer works per workspace, and the deployment's no longer reaches a workspace's objects.",
+      "source": {
+        "changelog": "7.90.00",
+        "doc": "docs/data-lake-structure.md"
+      },
+      "kind": "feature",
+      "status": "done",
+      "unit": [],
+      "e2e": [],
+      "exemption": null
+    },
+    {
+      "id": "7.90.01",
+      "aliases": [
+        "7.90.1"
+      ],
+      "title": "Tooling only: a test or lint run by hand keeps to its share of a big shared machine, as scripts/validate.sh does since 7.82.01, and a git worktree without its own virtualenv uses the main checkout's…",
+      "source": {
+        "changelog": "7.90.01",
+        "doc": null
+      },
+      "kind": "no-behaviour",
+      "status": "done",
+      "unit": [],
+      "e2e": [],
+      "exemption": null
+    },
+    {
+      "id": "7.92.00",
+      "aliases": [
+        "7.92.0"
+      ],
+      "title": "Multi-workspace: an account added to a workspace is told so.",
+      "source": {
+        "changelog": "7.92.00",
+        "doc": "docs/multi-workspace.md"
+      },
+      "kind": "feature",
+      "status": "done",
+      "unit": [],
+      "e2e": [],
+      "exemption": null
+    },
+    {
+      "id": "7.92.01",
+      "aliases": [
+        "7.92.1"
+      ],
+      "title": "Copy only: the page for a workspace address a person cannot open now names who can add them (docs/multi-workspace.md, \"Request flow\").",
+      "source": {
+        "changelog": "7.92.01",
+        "doc": "docs/multi-workspace.md"
+      },
+      "kind": "feature",
+      "status": "done",
+      "unit": [],
+      "e2e": [],
+      "exemption": null,
+      "uncertain": "a patch release that names no fix"
+    },
+    {
+      "id": "7.93.00",
+      "aliases": [
+        "7.93.0",
+        "3g-d2"
+      ],
+      "title": "The erasure no longer scans voc-projects (slice 3g-d2 of docs/multi-workspace.md's project plan; TENETS.md D5): the deployment's own projects, review links and commented series are found through thei…",
+      "source": {
+        "changelog": "7.93.00",
+        "doc": "docs/multi-workspace.md"
+      },
+      "kind": "feature",
+      "status": "done",
+      "unit": [],
+      "e2e": [],
+      "exemption": null
+    },
+    {
+      "id": "7.94.00",
+      "aliases": [
+        "7.94.0"
+      ],
+      "title": "Multi-workspace, scale: a workspace's category reprocess reads only its own reviews.",
+      "source": {
+        "changelog": "7.94.00",
+        "doc": "docs/multi-workspace.md"
+      },
+      "kind": "feature",
+      "status": "done",
+      "unit": [],
+      "e2e": [],
+      "exemption": null
+    },
+    {
+      "id": "7.96.00",
+      "aliases": [
+        "7.96.0"
+      ],
+      "title": "Multi-workspace, scale and erasure: a workspace's erasure no longer scans the whole feedback table.",
+      "source": {
+        "changelog": "7.96.00",
+        "doc": "docs/source-policies.md"
+      },
+      "kind": "feature",
+      "status": "done",
+      "unit": [],
+      "e2e": [],
+      "exemption": null
+    },
+    {
+      "id": "7.97.00",
+      "aliases": [
+        "7.97.0",
+        "3g-ui"
+      ],
+      "title": "Administration's erasure panels show what an erasure left for an admin to do (slice 3g-ui of docs/multi-workspace.md's project plan; TENETS.md D5): the files it kept for review by kind, the documents…",
+      "source": {
+        "changelog": "7.97.00",
+        "doc": "docs/multi-workspace.md"
+      },
+      "kind": "feature",
+      "status": "done",
+      "unit": [],
+      "e2e": [],
+      "exemption": null
+    },
+    {
+      "id": "7.98.00",
+      "aliases": [
+        "7.98.0",
+        "3g-pin"
+      ],
+      "title": "An erasure by email reaches the prototype pins' replies (slice 3g-pin of docs/multi-workspace.md's project plan; TENETS.md D5).",
+      "source": {
+        "changelog": "7.98.00",
+        "doc": "docs/multi-workspace.md"
+      },
+      "kind": "feature",
+      "status": "done",
+      "unit": [],
+      "e2e": [],
+      "exemption": null
+    },
+    {
+      "id": "7.99.00",
+      "aliases": [
+        "7.99.0",
+        "3h-S1"
+      ],
+      "title": "The project stores name their scope at every call (slice 3h-S1 of docs/multi-workspace.md's project plan, the first part of \"3h, the switch\"; plumbing, no behaviour change).",
+      "source": {
+        "changelog": "7.99.00",
+        "doc": "docs/multi-workspace.md"
+      },
+      "kind": "plumbing",
+      "status": "done",
+      "unit": [],
+      "e2e": [],
+      "exemption": null
+    },
+    {
+      "id": "7.100.00",
+      "aliases": [
+        "7.100.0",
+        "3h-S0"
+      ],
+      "title": "The switch's upgrade check (slice 3h-S0 of docs/multi-workspace.md's project plan, part of \"3h, the switch\"; TENETS.md D5 and D8).",
+      "source": {
+        "changelog": "7.100.00",
+        "doc": "docs/multi-workspace.md"
+      },
+      "kind": "feature",
+      "status": "done",
+      "unit": [],
+      "e2e": [],
+      "exemption": null
+    },
+    {
+      "id": "7.101.00",
+      "aliases": [
+        "7.101.0",
+        "3h-S2"
+      ],
+      "title": "The access gate decides a workspace's project from that workspace's own membership (slice 3h-S2 of docs/multi-workspace.md's project plan, part of \"3h, the switch\"; TENETS.md tenet 6).",
+      "source": {
+        "changelog": "7.101.00",
+        "doc": "docs/multi-workspace.md"
+      },
+      "kind": "feature",
+      "status": "done",
+      "unit": [],
+      "e2e": [],
+      "exemption": null,
+      "uncertain": "the words \"nothing changes for anyone\" suggest plumbing: a reviewed decision lets it stand"
+    },
+    {
+      "id": "7.102.00",
+      "aliases": [
+        "7.102.0",
+        "3h-S1b"
+      ],
+      "title": "The rest of the project-adjacent stores name their scope at every call (slice 3h-S1b of docs/multi-workspace.md's project plan, the follow-up of 3h-S1 in 7.99.00; plumbing, no behaviour change).",
+      "source": {
+        "changelog": "7.102.00",
+        "doc": "docs/multi-workspace.md"
+      },
+      "kind": "plumbing",
+      "status": "done",
+      "unit": [],
+      "e2e": [],
+      "exemption": null
+    },
+    {
+      "id": "7.103.00",
+      "aliases": [
+        "7.103.0",
+        "3h-S3a"
+      ],
+      "title": "The project core routes take their workspace from one seam (slice 3h-S3a of docs/multi-workspace.md's project plan; no production behaviour change).",
+      "source": {
+        "changelog": "7.103.00",
+        "doc": "docs/multi-workspace.md"
+      },
+      "kind": "plumbing",
+      "status": "done",
+      "unit": [],
+      "e2e": [],
+      "exemption": null
+    },
+    {
+      "id": "7.104.00",
+      "aliases": [
+        "7.104.0"
+      ],
+      "title": "Python 3.15 and aws-cdk-lib 2.278.0 under every Lambda, read-only Feedback Forms tools on /mcp/global, a project-pinned MCP token kept from the forms tools and from a feedback item's stored contact f…",
+      "source": {
+        "changelog": "7.104.00",
+        "doc": null
+      },
+      "kind": "feature",
+      "status": "done",
+      "unit": [],
+      "e2e": [],
+      "exemption": null
+    },
+    {
+      "id": "7.105.00",
+      "aliases": [
+        "7.105.0"
+      ],
+      "title": "Tooling only: the roadmap gate's program.",
+      "source": {
+        "changelog": "7.105.00",
+        "doc": "docs/feature-tests/README.md"
+      },
+      "kind": "no-behaviour",
+      "status": "done",
+      "unit": [],
+      "e2e": [],
+      "exemption": null
+    }
+  ]
+}

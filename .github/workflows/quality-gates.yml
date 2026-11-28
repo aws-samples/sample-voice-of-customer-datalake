@@ -37,6 +37,9 @@ jobs:
         with:
           # No step pushes, tags, or calls the API (same reason as the other workflows).
           persist-credentials: false
+          # The roadmap gate (the tsc lane's `features` step) compares the registry with the base branch's: it needs
+          # that commit, so this lane takes the full history (the others keep a shallow clone).
+          fetch-depth: ${{ matrix.lane == 'tsc' && '0' || '1' }}
 
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
@@ -112,12 +115,30 @@ jobs:
           echo "${ZIZMOR_SHA256}  /tmp/${zz}" | sha256sum --check --strict -
           tar -xzf "/tmp/${zz}" -C "$HOME/.local/bin" zizmor
 
+      # The roadmap gate (tsc lane) compares a push with the commit it started from: fetch that commit when the clone
+      # does not hold it, or say loudly that it could not (the gate's strict check then fails on it).
+      - name: Fetch the push's base for the roadmap gate
+        if: ${{ matrix.lane == 'tsc' && github.event_name == 'push' }}
+        env:
+          BEFORE: ${{ github.event.before }}
+        run: |
+          if [ "$BEFORE" = "0000000000000000000000000000000000000000" ] || git cat-file -e "${BEFORE}^{commit}" 2>/dev/null; then
+            exit 0
+          fi
+          git fetch --no-tags origin "$BEFORE" \
+            || echo "::warning::the push's base $BEFORE could not be fetched: the roadmap gate's strict check fails on it"
+
       # One lane per job: pytest has the py job's runner to itself (its lane runs one step at a time), which is
       # why --pytest-first is no longer needed here (docs/coverage-gate.md); so the py job gives it every vCPU.
       - name: Validate (one lane)
         env:
           LANE: ${{ matrix.lane }}
           VALIDATE_PYTEST_WORKERS: '4'
+          # The roadmap gate's base (scripts/feature_gate.py): the PR's base sha as the event reports it (GitHub may
+          # update it when the target branch moves), or the commit a push started from (all zeros on a new branch's
+          # first push: no base). The checkout is the PR's merge ref; the gate takes the fork from its second parent,
+          # the PR's own head. Strict in CI: a base it cannot read fails the step.
+          FEATURE_GATE_BASE_REF: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
         run: bash scripts/validate.sh --lane "$LANE"
 
       # The pending gates' counts (scripts/quality-baseline.sh), so a PR that raises one shows it in its

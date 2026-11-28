@@ -21,6 +21,8 @@
 #   - code-audit detectors (audit-* groups) by the source each reads: Python detectors for lambda/,
 #     plugins/ and the CDK app; TS detectors for the SPA, stream and CDK app; the locale detector for the SPA;
 #     patterns / clones for their scopes; every detector and its tests for scripts/audit/
+#   - the roadmap gate (features) for its registry, its verdicts, CHANGELOG.md and its program (its step is in repo
+#     too, so it runs on every change)
 #   - gate configuration (validate.sh, .gitleaks.toml, CI, root package files, eslint-rules) or an
 #     unknown top-level path → everything
 set -euo pipefail
@@ -98,12 +100,15 @@ while IFS= read -r path; do
   case "$path" in
     .github/PULL_REQUEST_TEMPLATE.md|.github/dependabot.yml|.github/dependency-review-config.yml|.github/dependency-audit-ignore.json|.github/ISSUE_TEMPLATE/*)
       add "repo" "$path (GitHub config read by its own workflow, not by a gate step)" ;;
-    scripts/validate.sh|scripts/lib/pin.sh|scripts/validate-affected.sh|scripts/gitleaks-tree.sh|.gitleaks.toml|.gitleaksignore|.jscpd.json|.github/*|package.json|package-lock.json|eslint-rules/*|.python-version|scripts/knip-production.mjs)
+    scripts/validate.sh|scripts/lib/pin.sh|scripts/lib/load-wait.sh|scripts/validate-affected.sh|scripts/gitleaks-tree.sh|.gitleaks.toml|.gitleaksignore|.jscpd.json|.github/*|package.json|package-lock.json|eslint-rules/*|.python-version|scripts/knip-production.mjs)
       add "$ALL" "$path configures the gate itself" ;;
     scripts/coverage/*)
       add "python-tests,frontend-tests,stream-tests,repo" "$path (the per-file coverage gate runs inside each suite's step)" ;;
     scripts/audit/*)
       add "audit" "$path (a code-audit detector, rule or allowlist: every detector and its own tests)" ;;
+    docs/feature-tests/*|docs/test-verdicts/*|CHANGELOG.md|scripts/feature_gate/*|scripts/feature_gate.py|scripts/suite-lock.sh)
+      add "features" "$path (the roadmap gate: its registry, verdicts, the releases it reads, its program)"
+      case "$path" in *.py) add "audit-clones-py" "$path (scanned by the Python clone detector)" ;; esac ;;
     voc-datalake/lambda/stream/*)
       add "stream,frontend-tests,cdk-tests" "$path (stream Lambda; the SPA mirrors its contract, the CDK app bundles it)"
       add "$AUDIT_TS,audit-callers,audit-patterns" "$path (stream: TS detectors, route callers and attribute readers, its Bedrock rule)" ;;

@@ -1,0 +1,526 @@
+{
+  "slice": "phase1-2",
+  "from": "6.05.00",
+  "until": "7.15.00",
+  "items": [
+    {
+      "id": "6.05.00",
+      "aliases": [
+        "6.5.0"
+      ],
+      "title": "Multi-workspace, phase 1: the platform admins' Cognito group, with the first admin in it.",
+      "source": {
+        "changelog": "6.05.00",
+        "doc": null
+      },
+      "kind": "feature",
+      "status": "done",
+      "unit": [],
+      "e2e": [],
+      "exemption": null
+    },
+    {
+      "id": "6.06.00",
+      "aliases": [
+        "6.6.0"
+      ],
+      "title": "Multi-workspace, phase 1: the control plane's table.",
+      "source": {
+        "changelog": "6.06.00",
+        "doc": null
+      },
+      "kind": "feature",
+      "status": "done",
+      "unit": [],
+      "e2e": [],
+      "exemption": null
+    },
+    {
+      "id": "6.06.01",
+      "aliases": [
+        "6.6.1"
+      ],
+      "title": "The review gate: a commit lands only with a GO record for exactly the tree it commits.",
+      "source": {
+        "changelog": "6.06.01",
+        "doc": null
+      },
+      "kind": "fix",
+      "status": "done",
+      "unit": [],
+      "e2e": [],
+      "exemption": null,
+      "uncertain": "open for a reviewed decision: proposed kind fix -> no-behaviour (the review gate's tooling)"
+    },
+    {
+      "id": "6.06.02",
+      "aliases": [
+        "6.6.2"
+      ],
+      "title": "The first platform admin comes from the bootstrap, so a deployment without the default admin user still updates.",
+      "source": {
+        "changelog": "6.06.02",
+        "doc": null
+      },
+      "kind": "fix",
+      "status": "done",
+      "unit": [],
+      "e2e": [],
+      "exemption": null
+    },
+    {
+      "id": "6.06.03",
+      "aliases": [
+        "6.6.3"
+      ],
+      "title": "The review gate run over 6.05.00 and 6.06.00, which landed before it existed: what it found.",
+      "source": {
+        "changelog": "6.06.03",
+        "doc": null
+      },
+      "kind": "fix",
+      "status": "done",
+      "unit": [],
+      "e2e": [],
+      "exemption": null,
+      "uncertain": "the review gate's findings: fixes to product code and to tooling together"
+    },
+    {
+      "id": "6.07.00",
+      "aliases": [
+        "6.7.0"
+      ],
+      "title": "Multi-workspace, phase 1: the workspace a request acts in, and the caller's own workspaces.",
+      "source": {
+        "changelog": "6.07.00",
+        "doc": null
+      },
+      "kind": "feature",
+      "status": "done",
+      "unit": [],
+      "e2e": [],
+      "exemption": null
+    },
+    {
+      "id": "6.08.00",
+      "aliases": [
+        "6.8.0"
+      ],
+      "title": "Multi-workspace, phase 1: platform-admin membership is managed and protected, server-side, before the group can grant anything.",
+      "source": {
+        "changelog": "6.08.00",
+        "doc": null
+      },
+      "kind": "feature",
+      "status": "done",
+      "unit": [],
+      "e2e": [],
+      "exemption": null
+    },
+    {
+      "id": "6.09.00",
+      "aliases": [
+        "6.9.0"
+      ],
+      "title": "Multi-workspace, phase 1: platform admins create and list workspaces; each new workspace gets its credentials secret.",
+      "source": {
+        "changelog": "6.09.00",
+        "doc": null
+      },
+      "kind": "feature",
+      "status": "done",
+      "unit": [],
+      "e2e": [],
+      "exemption": null
+    },
+    {
+      "id": "6.10.00",
+      "aliases": [
+        "6.10.0"
+      ],
+      "title": "Multi-workspace, phase 1: workspace admins manage their workspace's members.",
+      "source": {
+        "changelog": "6.10.00",
+        "doc": null
+      },
+      "kind": "feature",
+      "status": "done",
+      "unit": [],
+      "e2e": [],
+      "exemption": null
+    },
+    {
+      "id": "6.11.00",
+      "aliases": [
+        "6.11.0"
+      ],
+      "title": "Multi-workspace, phase 1: a deleted user leaves their workspaces, and an erasure by email reaches workspace members.",
+      "source": {
+        "changelog": "6.11.00",
+        "doc": null
+      },
+      "kind": "feature",
+      "status": "done",
+      "unit": [],
+      "e2e": [],
+      "exemption": null
+    },
+    {
+      "id": "6.12.00",
+      "aliases": [
+        "6.12.0"
+      ],
+      "title": "Multi-workspace, phase 1: the web app knows the caller's workspaces, works inside /w/{slug}/… and names the current workspace on every API call.",
+      "source": {
+        "changelog": "6.12.00",
+        "doc": null
+      },
+      "kind": "feature",
+      "status": "done",
+      "unit": [],
+      "e2e": [],
+      "exemption": null
+    },
+    {
+      "id": "6.13.00",
+      "aliases": [
+        "6.13.0"
+      ],
+      "title": "Multi-workspace, phase 1: the web app manages a workspace's members, and platform admins get the platform console.",
+      "source": {
+        "changelog": "6.13.00",
+        "doc": null
+      },
+      "kind": "feature",
+      "status": "done",
+      "unit": [],
+      "e2e": [],
+      "exemption": null
+    },
+    {
+      "id": "6.14.00",
+      "aliases": [
+        "6.14.0"
+      ],
+      "title": "Multi-workspace, phase 1: the workspace-scoped repository layer, and the three guards that keep workspaces apart from now on.",
+      "source": {
+        "changelog": "6.14.00",
+        "doc": null
+      },
+      "kind": "feature",
+      "status": "done",
+      "unit": [],
+      "e2e": [],
+      "exemption": null,
+      "uncertain": "open for a reviewed decision: proposed kind feature -> plumbing (a repository layer and three guards: no user flow of its own)"
+    },
+    {
+      "id": "6.15.00",
+      "aliases": [
+        "6.15.0"
+      ],
+      "title": "Multi-workspace, phase 1: what the browser saves stays in its workspace, and two follow-ups to the header menu and the members page.",
+      "source": {
+        "changelog": "6.15.00",
+        "doc": null
+      },
+      "kind": "feature",
+      "status": "done",
+      "unit": [],
+      "e2e": [],
+      "exemption": null
+    },
+    {
+      "id": "6.16.00",
+      "aliases": [
+        "6.16.0"
+      ],
+      "title": "Multi-workspace, phase 1: signing out in one browser tab now ends the session in the browser's other open tabs too.",
+      "source": {
+        "changelog": "6.16.00",
+        "doc": null
+      },
+      "kind": "feature",
+      "status": "done",
+      "unit": [],
+      "e2e": [],
+      "exemption": null
+    },
+    {
+      "id": "6.17.00",
+      "aliases": [
+        "6.17.0"
+      ],
+      "title": "Multi-workspace, phase 1: a follow-up to 6.16.00's sign-out in the browser's other tabs.",
+      "source": {
+        "changelog": "6.17.00",
+        "doc": null
+      },
+      "kind": "feature",
+      "status": "done",
+      "unit": [],
+      "e2e": [],
+      "exemption": null
+    },
+    {
+      "id": "6.18.00",
+      "aliases": [
+        "6.18.0"
+      ],
+      "title": "Multi-workspace, phase 1: the voc-multiplayer-c track merged: the cross-workspace suite over every API route, a workspace's own plugins, resolved problems and brand, the workspace carried by the assi…",
+      "source": {
+        "changelog": "6.18.00",
+        "doc": null
+      },
+      "kind": "feature",
+      "status": "done",
+      "unit": [],
+      "e2e": [],
+      "exemption": null
+    },
+    {
+      "id": "7.00.00",
+      "aliases": [
+        "7.0.0"
+      ],
+      "title": "Breaking (major): this release re-keys the feedback table's gsi4-by-feedback-id and gsi5-by-channel onto new attributes, a change to a stack that CloudFormation cannot apply to an existing deployment…",
+      "source": {
+        "changelog": "7.00.00",
+        "doc": null
+      },
+      "kind": "feature",
+      "status": "done",
+      "unit": [],
+      "e2e": [],
+      "exemption": null
+    },
+    {
+      "id": "7.01.00",
+      "aliases": [
+        "7.1.0"
+      ],
+      "title": "Multi-workspace, phase 2: the voc-multiplayer-c track's model slice merged: the model pinned at deploy gets a row of its own, the first step of the model picker per workspace.",
+      "source": {
+        "changelog": "7.01.00",
+        "doc": null
+      },
+      "kind": "feature",
+      "status": "done",
+      "unit": [],
+      "e2e": [],
+      "exemption": null,
+      "uncertain": "open for a reviewed decision: proposed kind feature -> plumbing (a row of its own for the deployment's model)"
+    },
+    {
+      "id": "7.02.00",
+      "aliases": [
+        "7.2.0"
+      ],
+      "title": "Multi-workspace: the web app's side of a workspace's brand and plugins, and an editor for the deployment's default brand in the platform console.",
+      "source": {
+        "changelog": "7.02.00",
+        "doc": "docs/multi-workspace.md"
+      },
+      "kind": "feature",
+      "status": "done",
+      "unit": [],
+      "e2e": [],
+      "exemption": null
+    },
+    {
+      "id": "7.03.00",
+      "aliases": [
+        "7.3.0"
+      ],
+      "title": "Multi-workspace, phase 2: the voc-multiplayer-b track's retention slice merged: an erasure by email and a retention window now reach every workspace's reviews and their copies, each tombstoned first.",
+      "source": {
+        "changelog": "7.03.00",
+        "doc": "docs/multi-workspace.md"
+      },
+      "kind": "feature",
+      "status": "done",
+      "unit": [],
+      "e2e": [],
+      "exemption": null
+    },
+    {
+      "id": "7.04.00",
+      "aliases": [
+        "7.4.0"
+      ],
+      "title": "Multi-workspace, phase 2: the voc-multiplayer-b track's aggregator, read-API and operator-route slices merged: a workspace's feedback is counted in its own counters and read back through the metrics…",
+      "source": {
+        "changelog": "7.04.00",
+        "doc": "docs/multi-workspace.md"
+      },
+      "kind": "feature",
+      "status": "done",
+      "unit": [],
+      "e2e": [],
+      "exemption": null
+    },
+    {
+      "id": "7.05.00",
+      "aliases": [
+        "7.5.0"
+      ],
+      "title": "Multi-workspace: the tenet questions the design left open are settled by the maintainers, and TENETS.md gains a data lake tenet, D8, \"Each workspace is its own boundary\" (docs/multi-workspace.md).",
+      "source": {
+        "changelog": "7.05.00",
+        "doc": "docs/multi-workspace.md"
+      },
+      "kind": "feature",
+      "status": "done",
+      "unit": [],
+      "e2e": [],
+      "exemption": null,
+      "uncertain": "the words \"docs and tenets only\" suggest no-behaviour: a reviewed decision lets it stand"
+    },
+    {
+      "id": "7.06.00",
+      "aliases": [
+        "7.6.0"
+      ],
+      "title": "Multi-workspace, phase 2: the voc-multiplayer-b track's public-routes slice merged: feedback forms and webhooks can belong to a workspace, routed by a server-side record, never by what the caller sen…",
+      "source": {
+        "changelog": "7.06.00",
+        "doc": "docs/multi-workspace.md"
+      },
+      "kind": "feature",
+      "status": "done",
+      "unit": [],
+      "e2e": [],
+      "exemption": null
+    },
+    {
+      "id": "7.07.00",
+      "aliases": [
+        "7.7.0"
+      ],
+      "title": "Multi-workspace, phase 2: the voc-multiplayer-c track's configuration-readers slice merged.",
+      "source": {
+        "changelog": "7.07.00",
+        "doc": "docs/multi-workspace.md"
+      },
+      "kind": "feature",
+      "status": "done",
+      "unit": [],
+      "e2e": [],
+      "exemption": null,
+      "uncertain": "the words \"nothing changes yet\" suggest plumbing: a reviewed decision lets it stand"
+    },
+    {
+      "id": "7.08.00",
+      "aliases": [
+        "7.8.0"
+      ],
+      "title": "Multi-workspace, phase 2: the configuration cut-over.",
+      "source": {
+        "changelog": "7.08.00",
+        "doc": "docs/multi-workspace.md"
+      },
+      "kind": "feature",
+      "status": "done",
+      "unit": [],
+      "e2e": [],
+      "exemption": null
+    },
+    {
+      "id": "7.09.00",
+      "aliases": [
+        "7.9.0"
+      ],
+      "title": "Multi-workspace, phase 2: the voc-multiplayer-b track's erasure-in-a-workspace slice and its follow-ups merged: a workspace's member admin can erase that workspace's reviews by author, source id, CSV…",
+      "source": {
+        "changelog": "7.09.00",
+        "doc": "docs/source-policies.md"
+      },
+      "kind": "feature",
+      "status": "done",
+      "unit": [],
+      "e2e": [],
+      "exemption": null
+    },
+    {
+      "id": "7.10.00",
+      "aliases": [
+        "7.10.0"
+      ],
+      "title": "Multi-workspace, phase 2: the voc-multiplayer-c track's MCP and Radar slices merged.",
+      "source": {
+        "changelog": "7.10.00",
+        "doc": "docs/multi-workspace.md"
+      },
+      "kind": "feature",
+      "status": "done",
+      "unit": [],
+      "e2e": [],
+      "exemption": null
+    },
+    {
+      "id": "7.11.00",
+      "aliases": [
+        "7.11.0"
+      ],
+      "title": "Multi-workspace, groundwork for phase 3: the voc-multiplayer-c track's project-keys slice merged.",
+      "source": {
+        "changelog": "7.11.00",
+        "doc": "docs/multi-workspace.md"
+      },
+      "kind": "feature",
+      "status": "done",
+      "unit": [],
+      "e2e": [],
+      "exemption": null,
+      "uncertain": "the words \"nothing changes for anyone\" suggest plumbing: a reviewed decision lets it stand"
+    },
+    {
+      "id": "7.12.00",
+      "aliases": [
+        "7.12.0"
+      ],
+      "title": "Multi-workspace, phase 2: the voc-multiplayer-b track's credentials-store and multi-item slices merged.",
+      "source": {
+        "changelog": "7.12.00",
+        "doc": "docs/multi-workspace.md"
+      },
+      "kind": "feature",
+      "status": "done",
+      "unit": [],
+      "e2e": [],
+      "exemption": null
+    },
+    {
+      "id": "7.13.00",
+      "aliases": [
+        "7.13.0"
+      ],
+      "title": "Multi-workspace, phase 2: a workspace's reviews can be replayed (TENETS.md D3).",
+      "source": {
+        "changelog": "7.13.00",
+        "doc": "docs/multi-workspace.md"
+      },
+      "kind": "feature",
+      "status": "done",
+      "unit": [],
+      "e2e": [],
+      "exemption": null
+    },
+    {
+      "id": "7.14.00",
+      "aliases": [
+        "7.14.0"
+      ],
+      "title": "Multi-workspace, phase 2's data path is done: a workspace's own ingestion runs.",
+      "source": {
+        "changelog": "7.14.00",
+        "doc": "docs/multi-workspace.md"
+      },
+      "kind": "feature",
+      "status": "done",
+      "unit": [],
+      "e2e": [],
+      "exemption": null
+    }
+  ]
+}
