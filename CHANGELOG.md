@@ -17,6 +17,175 @@ the platform package version.
 
 ## [Unreleased]
 
+## [7.107.00] - 2026-11-28
+
+The design of migrating an existing deployment into its `default` workspace (slice 3h-M0 of
+docs/multi-workspace.md's project plan), with 3h re-planned for the maintainers' default-workspace model. Docs and
+tenets only: no code, stack, route or stored data changes, and nothing in the design is built. A minor release
+because TENETS.md changes (D8 and tenet 6), as 7.05.00 was.
+
+### Changed
+
+- **docs/multi-workspace.md, "The slices of 3h, re-planned (2026-11-28)"** (new, in the project plan): there is no
+  deployment scope left once a deployment is on workspaces. A new deployment is born on them (3h-S12a); an existing
+  one turns on only through the migration's cut-over (3h-S12b). S0's upgrade check becomes the migration's
+  precondition; S1c, the other phases' stores, becomes its prerequisite; S9 moves each token and grant with its
+  project into default, its pin checked there and refused by name anywhere else, with no revoke; S11 drops the
+  read-only "Projects from before workspaces" list, lands a migrated deployment's people in default and has a new
+  deployment's first run create its first workspace; S12 splits in two. S2 to S8 and S10 are kept (S5, S6, S7 and S8
+  each gain what the migration needs of them).
+- **docs/multi-workspace.md, "The migration into `default` (3h-M0 to M4)"** (new): the model (`default` a normal
+  `ws_` id named "Default" with the reserved slug `default`; everything of the deployment's scope moved under
+  `WS#{default}#` and `ws/{default}/`; nothing into any other workspace); the slices (M1 the dry run, M2 the copy, M3
+  the cut-over, M4 the rollback, the cleanup and the discard), all through the operator's script, never a route; the
+  preconditions; every row family and S3 prefix to move, with its keys in the deployment and in default from the key
+  builders (`shared/project_keys.py`, `shared/ws_repo.py`, the workspace delete's families), the reader that must
+  already pass a workspace and its count check; what is not copied (the rows that expire), what is kept where it is
+  (the audit trails, tombstones and job records), and the families with no workspace form yet, which block the copy
+  while the deployment holds them; the members mapping (admins to admin, users to editor, a read-only person to
+  viewer; an account that belongs only to workspaces is not made a member); the counts, the per-partition digests
+  and the checkpoints; quiescence; the cut-over (a freeze, a delta copy, a verify, one conditional mark, then the
+  routes of review links, forms, tokens, plugins and the old webhook address written while default is read-only, an
+  optional bounded hold, then writes opened); a rollback only before writes open (during the freeze or the hold,
+  under the migration lock and with no erasure running), refused on any difference and then left frozen with an
+  alarm; after writes open the migration is forward-only, a problem fixed forward in default by a reviewed change;
+  the 30 read-only days, the reviewed cleanup and the reviewed
+  discard of an abandoned copy, their feedback, Radar and raw deletes through `voc-retention`; the three additions;
+  the load (one writer per family, rate-capped, no hot key); what waits for the maintainers; and the follow-ups
+  not designed here (a rollback after writes open, a late write found after writes open, a resume of a hold the
+  script died in, the families an owner may delete beyond the delta's list, the lock's lease, the interleaving test
+  per kind of erasure, and a workspace's own retention window).
+- **docs/multi-workspace.md, "The retention windows' platform home"** (new, slice M0c): today a source's retention
+  window and legal basis live only in the deployment's source profiles (`SETTINGS#sources`), which every workspace's
+  items take, and a workspace's profile refuses both fields (`shared/source_profiles.py`, `shared/retention.py`).
+  Copying that row into default and cleaning the old one up would leave no window enforced anywhere. So, before M2
+  and S12a, the windows and their bases become the platform's retention defaults, one platform row every workspace's
+  items take (default's included). M0c's upgrade step writes the row, then strips the window fields from
+  `SETTINGS#sources`, and the readers switch in the same release only once the row exists; an absent row (not
+  migrated yet) makes every reader refuse and alarm, unlike an empty one (no window), so there is no moment with no
+  window. The step strips the old fields only after the release is live everywhere and the older code has drained
+  (the longest function timeout plus the profiles' cache). Every reader is named: every caller of `archive_mode`
+  takes the window from the platform row (`shared/raw_copy.py` `source_archive_mode`, through the profile merge;
+  the manual import's `shared/ingest_archive.py` `upload_profile`, which reads `SETTINGS#sources` directly at the
+  deployment's scope; and the feedback-form import, through `prepare_messages`), and so do `_retention_setup`'s
+  legal bases and cutoffs, the profile merge, the Sources settings route and, in the web app, the Sources editor,
+  the Sources page, the default window and the API client. The callers that read no window are named too (the
+  processor's four reads, the users, Radar and briefing readers, the prompt labels, the inbox view and the
+  erasable sources, the restricted-sources gate, the PII-only readers of the profile, `useDimensions.ts`), from one
+  grep across the code, which a test in M0c pins. A bug in today's code is written down as a follow-up for its own
+  release, and in TENETS.md's D5 gaps row: a workspace's manual upload takes no window. The
+  window-setting route is the deployment's admins'
+  until the mark and the platform admins' after it; a new deployment is born with the row present and empty (no
+  window); the migration never moves or cleans the row up. A workspace's own window is a follow-up.
+- **What the design guards against** (each found in review before release): writes into default stay refused until
+  writes open, so a held rollback finds nothing written in default; the deployment's webhook address delivers into
+  default, with default's secret, for at least the 30 days, and M1 lists its senders; the Scan keeps out only
+  well-formed workspace ids, so the engineering agents' literal `WS#default#…` rows are a named blocker (3g3-c)
+  with their personal data counted; a migration lock the erasures take is a precondition and M2's own work item (no
+  deployment erasure lock exists today); Radar's reviews and the `SETTINGS#radar` rows a workspace refuses are
+  blockers; a claim naming a `migrating` default reaches nothing before the mark; the stream skip and the delta's
+  ownership rest on the migration's own writes and on digest equality; the freeze waits the longest function
+  timeout and the cache, and a late write is found by the verify (before step 3) or by the last deployment-side
+  check before writes open (after it), and after writes open by the cleanup's, which reports it; only current
+  object versions are copied, on purpose, by a GET and a conditional PUT; M3's record of the overwritten review
+  links is named as holding a secret and personal data. And: an erasure holds the migration lock from its first
+  step in either copy to its last, so no page of the copy can slip an item in between (its test names
+  that interleaving), and its walk takes a `migrating` default; the checkpoint and digest records are secret like
+  the links' record; the claim's active check is built for the links and pins in S5 and S9; a REMOVE is never
+  skipped; the rows that serve default are recorded after the routes and never cleaned up while they serve; the
+  failure queues, each named, must be empty of the deployment's messages; the hold is bounded by the senders'
+  shortest retry window and four hours, and the public intake's freeze named as a gap (the widget and the comment
+  box keep a submission only in the open page); the delta re-PUTs a changed object with `If-Match`; the rollback
+  exists only before writes open, under the migration lock, compares per item and on a refusal stays frozen and
+  alarms; the counters are rebuilt after the mark (the aggregator skips a workspace that is not active); each
+  scheduled job skips only the deployment's branch, and a retention run the freeze delays is deferred, not skipped;
+  `default` is reserved in a release before M1 (M0b). And: a workspace-only account that owns deployment rows is
+  counted and named, and M2 refuses until the operator invites it or leaves it out (a left-out account's rows are
+  not copied: they stay in the old keys, reached by an erasure and the person's own export, kept until resolved);
+  the cleanup and the discard take the migration lock per page, so an erasure waits at most one page, a cleanup
+  with a partition skipped has not ended, and addition 1's reach lasts until it has; the mirrored deletes and a
+  read-only audit reader for the platform admins are named exceptions to the old keys' reader guard; credential
+  fields are left out of every stored digest and compared in memory during M3 only; Radar's window reaches only
+  the deployment's Radar partitions today, so the slice giving Radar a workspace form moves it too; a delete in
+  default during the 30 days is mirrored to the old keys, and the cleanup has a latest date (30
+  days plus at most 30 for the review, then reported daily); "verified" is defined for the cleanup; every stored
+  digest is an HMAC under a key made only for this migration and destroyed with its records, credentials are never
+  stored as digests, and an erasure removes the digests of what it erased; objects are compared by a full-object
+  SHA-256; M3's automatic rollback at the hold's limit needs its script running.
+- **docs/multi-workspace.md, Decisions**: 23 (the deployment's `public` and workspace-only accounts) is settled,
+  dropped: after the migration `public` means default's members. New 24: the read-only "Projects from before
+  workspaces" list (the maintainers' 3h decision 3 of 2026-11-27) and the claim-or-deployment dual lookup ("switch
+  safety") are dropped. New 25: the default-workspace model, its four settled points (the id and slug; the roles,
+  with no admin bypass into a workspace; the operator's script only; 30 read-only days, then a reviewed cleanup), its
+  three additions, and what waits for the maintainers. Decisions 12 and 22 are marked superseded in part; decision 2
+  (a platform admin's audited entry into any workspace) is marked open under decision 25.
+- **docs/multi-workspace.md, the text that promised the old switch** is marked superseded where it stands, the
+  history rows unchanged: the project plan's dual lookup and "nothing is backfilled", 3h's "switch safety" and its
+  test, 3h's note that 3h moves no deployment project or pin, decision 23's "pending" in 3h, S1c's "not in 3h" and
+  S9's open choice; 3h's switch row and "the flip" turning the seam on with `projects_switched`. A 7.107.00 note
+  after the status table, and one in each of Conversations and Memory, point "nothing is migrated" at the migration
+  without rewriting the rows. The Upgrading section and phase 3 point to the migration; a 7.107.00 status row.
+- **docs/deployment.md**: the switch's upgrade check says it becomes the migration's precondition.
+- **TENETS.md D8** gains the belief: no access across workspaces unless explicitly granted, and every workspace by
+  invitation. **Tenet 6** gains one sentence: there is no admin bypass into a workspace, other than an explicit,
+  audited grant (D8); a deployment's administrators keep their operator powers and see a workspace's data only as
+  its members or through such a grant. The tenet text states the beliefs only; the gaps table (the tenet 6 and D8
+  rows) carries the status: an existing deployment's own data and its `admins` bypass on its own projects, until
+  its migration, after which its data lives in its `default` workspace, whose first members come from the
+  deployment's groups, then by invitation; and decision 2's audited platform-admin entry, open for the maintainers.
+
+### Upgrade notes
+
+- Nothing to do: no code changes. Running the migration's copy or cut-over on a real deployment, and its cleanup's
+  or a discard's deletes, wait for the maintainers and for a full rehearsal on a copy.
+
+### Tenet check
+
+Tenets touched: D8, 6, D1, D2, D4, D5, 1, 7 (TENETS.md).
+
+- **D8, each workspace is its own boundary** (advanced, as a plan): the line it gains settles who sees what after
+  a migration: default's members only, by invitation, with no access across workspaces unless explicitly granted.
+  Conflict, written down: decision 2's audited platform-admin entry is not an invitation. D8 is a data lake tenet,
+  non-negotiable, so the entry either stands as the explicit, audited grant D8 allows or goes; the maintainers
+  decide (decision 25).
+- **6, build it as if it is already a service** (advanced, as a plan): no admin bypass into a workspace; the
+  deployment's `admins` bypass on its own projects ends with the cut-over, as the gaps table says. The tenet's new
+  sentence leaves decision 2 open rather than deciding it (the gaps row says so).
+- **D1, immutable and append-only, and D5, customer data is never removed outside a legal obligation** (held for
+  M1 to M3, with a conflict written down for the cleanup and the discard): the copy writes Bronze objects with
+  `If-None-Match` and deletes nothing of the deployment's; M3's delta never deletes a feedback item, a Radar row or
+  a `ws/{d}/raw/` object (only `voc-retention` removes those, and an erasure or a window already removed both
+  copies: a difference there stops M3), and deletes in default only a copy whose owner deleted its source in the
+  seven families an owner may delete (a project and its children, a document, a conversation, a memory, a library
+  item, an agent, a form), with a tombstone; no rollback writes a deployment row back after writes open, so none
+  can restore an erased person's data; an erasure between the copy and the cleanup or discard reaches both copies
+  (addition 1). But the cleanup's `--apply` and a discard delete `raw/` objects, Silver feedback items and Radar
+  rows outside `voc-retention`, which D1 and D5 do not allow as written: the design routes all of those deletes
+  through a `voc-retention` job kind of its own, each verified copy recorded, or waits for a tenet change; the
+  first run of either waits for the maintainers. **The retention windows, fixed by the design and a precondition**:
+  as first written, the design would have copied the deployment's source profiles into default and cleaned the old
+  row up, leaving no window enforced anywhere, so personal data would be kept past its stated period and legal
+  basis. The windows now get a platform home (M0c, the platform's retention defaults, never cleaned up), a
+  precondition of M2 and of S12a; until M0c ships, the windows stay where they are, enforced as today. A deletion in
+  default during the 30 days is mirrored to the old keys, and the cleanup has a latest date, so the old copy never
+  outlives what its owner or a window removed.
+- **D2, three tiers, each with a contract** (held): Gold is not copied but rebuilt from default's Silver
+  (`rebuild_aggregates.py --workspace`, after the mark); Bronze objects keep their lineage (their `connector` and
+  `connector-version` metadata, their key's content digest) and each copied item names its source key.
+- **D4, full audit and lineage** (held): every audit trail and tombstone stays where it is, never moved or cleaned
+  up; each member add is audited; each copy names its source key; the delta's deletes in default are tombstoned.
+- **1, data first** (held, with its trade-off named): every family is checked by count and per-partition digest,
+  objects by digest with their metadata and key, and a rehearsal on a copy passes first. The trade-off: a verified
+  copy needs the deployment's writes stopped, so the public intake answers a retryable 503 for the freeze, bounded
+  by the hold's maximum; a webhook sender redelivers, but a form or a comment is kept only in the open page, so a
+  person who leaves it loses that submission. Named as a gap and a precondition for the maintainers (the window, or
+  the widget keeping and retrying a submission first).
+- **7, fully serverless** (held): an operator's script, pay per use, no new resource and no fixed cost; the old and
+  new copies are both stored for the 30 days.
+
+What it is not: nothing is built; not a merge of two workspaces, nothing moves into any workspace other than
+default; not a route and never automatic.
+
 ## [7.106.00] - 2026-11-28
 
 A project's product documents and the Product tab's sources take their workspace through 7.103.00's seam (slice

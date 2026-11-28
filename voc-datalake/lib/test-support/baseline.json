@@ -2,7 +2,7 @@
   "description": "Fingerprint of the no-prefix synth. Regenerate with npx ts-node scripts/generate-baseline.ts ONLY for a change intended to alter the default templates — see the script header.",
   "stacks": {
     "VocApiStack": {
-      "templateSha256": "a4456edbf608046c1719d45f44881b1ad282d5920fa50f7fe64771c925f73251",
+      "templateSha256": "67b0977f79162e3d1dd6c3890d30aacac2e14486c49203e85bfc4e7b7f9b5e78",
       "names": {
         "physicalNames": [
           "AWS::ApiGateway::Authorizer Name = voc-board-authorizer",
@@ -188,7 +188,7 @@
       }
     },
     "VocCoreStack": {
-      "templateSha256": "73c527bcb145342325eb87f1b3fc7bf7987503bc958271c6e45a75c2b8aa3d65",
+      "templateSha256": "6358b2101a11c787e78f29a34a113c30669419b77c10e21cc8653d4936e0899b",
       "names": {
         "physicalNames": [
           "AWS::AppSync::Api Name = voc-events-<AWS::AccountId>-<AWS::Region>",
@@ -359,7 +359,7 @@
       }
     },
     "VocProcessingStack": {
-      "templateSha256": "42f6911acf3f1022584eb1bdd03b4d487723e945b2ddf99a9b5399aaf0e6939d",
+      "templateSha256": "cbf05235baeb4335c41f16026de73223a84ebc1c52a343aa5409b5f882f6cbfb",
       "names": {
         "physicalNames": [
           "AWS::Events::Rule Name = voc-adoption-rollup-schedule-<AWS::AccountId>-<AWS::Region>",

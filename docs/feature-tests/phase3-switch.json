@@ -549,6 +549,31 @@
       ],
       "e2e": [],
       "exemption": null
+    },
+    {
+      "id": "7.107.00",
+      "aliases": [
+        "7.107.0",
+        "3h-M0"
+      ],
+      "title": "The design of migrating an existing deployment into its default workspace (slice 3h-M0 of docs/multi-workspace.md's project plan), with 3h re-planned for the maintainers' default-workspace model.",
+      "source": {
+        "changelog": "7.107.00",
+        "doc": "docs/multi-workspace.md"
+      },
+      "kind": "no-behaviour",
+      "status": "done",
+      "unit": [],
+      "e2e": [],
+      "exemption": {
+        "layer": "all",
+        "kind": "no-behaviour",
+        "reason": "Docs and tenets only: the migration into default is a design (3h-M0) with nothing built, so no code path exists for a unit test to run and no user flow for an end-to-end test. The release changes docs/multi-workspace.md, docs/deployment.md, TENETS.md, CHANGELOG.md, the version fields and the CDK baseline's hashes (APP_VERSION). Its review is the reading of the design against the code it names (the key builders, the workspace delete's families, the members store) and against TENETS.md; M1 to M4 bring their own tests and the rehearsal.",
+        "proposed_by": "voc-lead-3h/m0",
+        "reviewed_by": "eval-m0/1",
+        "reviewed_at": "5206884546132df2301d8e3a01f25df5e9b7ca03"
+      },
+      "uncertain": "the words \"docs and tenets only\" suggest no-behaviour: a reviewed decision lets it stand"
     }
   ]
 }

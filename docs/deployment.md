@@ -511,7 +511,11 @@ seen.
 
 **The switch's upgrade check (since 7.100.00).** Before the deployment's projects may work in a workspace (the
 switch, docs/multi-workspace.md's project plan, 3h; not built yet), its operator runs this check with their own
-credentials, as they run the backfill. It reads the backfill's marker, the switch row, the API stack's writers of
+credentials, as they run the backfill. (Re-planned in 7.107.00: 3h no longer ends in a switch but in the planned
+migration of the deployment into its `default` workspace, and this check becomes that migration's precondition, run
+by the migration itself; the check below is unchanged until then:
+[multi-workspace.md](multi-workspace.md#the-migration-into-default-3h-m0-to-m4).)
+It reads the backfill's marker, the switch row, the API stack's writers of
 links, threads and projects (as the backfill reads them), then walks every live project on `gsi1-by-type` and looks
 each up in `PROJECT_IDS`, to the end (at most 100,000 steps of 100 projects), then reads the writers again. A dry run
 by default; `--apply` writes the switch row (voc-projects `PROJECTS_SWITCH` / `MIGRATION#projects-switch`) when the
