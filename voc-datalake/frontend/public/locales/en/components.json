@@ -789,6 +789,7 @@
     },
     "lineageReplayed": "This run also made the lineage marks an earlier run owed.",
     "reviewDocuments": "Documents that hold the address (product documents, library items): {{files, number}}. Review them:",
+    "reviewProduct": "Product descriptions and proposals that hold the address: {{entries, number}}. Edit them on the project's Product tab:",
     "counters": {
       "participantsErased": "Participants erased: {{n, number}}",
       "participantsNotErased": "Participants not erased: {{n, number}}",

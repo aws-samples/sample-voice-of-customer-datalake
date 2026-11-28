@@ -818,6 +818,7 @@
     },
     "lineageReplayed": "Cette exécution a aussi posé les marques de lignage qu'une exécution précédente devait.",
     "reviewDocuments": "Documents qui contiennent l'adresse (documents produit, éléments de la bibliothèque) : {{files, number}}. Examinez-les :",
+    "reviewProduct": "Descriptions du produit et propositions qui contiennent l'adresse : {{entries, number}}. Modifiez-les dans l'onglet Produit du projet :",
     "counters": {
       "participantsErased": "Participants effacés : {{n, number}}",
       "participantsNotErased": "Participants non effacés : {{n, number}}",

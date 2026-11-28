@@ -315,6 +315,10 @@ NOT_YET: Final[dict[tuple[str, str], str]] = {
               ('PUT', f'{_P}/validation/criteria'), ('POST', f'{_P}/validation/plan'),
               ('POST', f'{_P}/validation/synthetic'), ('PUT', f'{_P}/validation/form'),
               ('POST', f'{_P}/validation/report'),
+              # The voice offers and a session's state are GETs that write (shared/voice_sessions.py `offer` saves the
+              # caller's sessions left without End, `status` ends a URL never used and saves an ended one): when 3h-S3c
+              # threads them, the persona's and the product interview's alike, they join `_FRESH_READS`, so a member
+              # removed a moment ago in another container is not let write from the warm cache (7.109.01).
               ('GET', f'{_PERSONA}/voice-sessions'), ('POST', f'{_PERSONA}/voice-sessions'),
               ('GET', f'{_PERSONA}/voice-sessions/<session_id>'),
               ('POST', f'{_PERSONA}/voice-sessions/<session_id>/end'), ('GET', '/projects/voice/usage'),

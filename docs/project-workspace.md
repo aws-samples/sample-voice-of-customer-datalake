@@ -172,7 +172,8 @@ Accept selected never writes over a value nobody chose to replace. A value you e
 as yours (`by: person`, the proposal and its sources kept), not the extract's. After an accept the form shows the new
 values at once, and the review says each field that was not written and why; a proposal replaced or dismissed
 meanwhile says so in words of its own, above the review (the answer reads the proposal again, which removes the
-review or shows the newer one), until the next accept or dismiss or another proposal arrives. A proposal that could
+review or shows the newer one: "replaced by the newer proposal below" when that one is open, else extract again),
+until the next accept or dismiss or another proposal arrives. A proposal that could
 not be read says so with **Try again**. A later Extract replaces an open proposal. Two accepts at once never lose
 each other's marks (each is conditional on the proposal as it read it, and read again once), and a race lost twice
 answers 503 `busy`.
@@ -206,8 +207,8 @@ block (`shared/prompt_safety.py`), never as prompt lines of their own: an accept
 
 ### Questions, and the assistant's interview
 
-The **Questions** card lists the questions for the fields the extract could not fill (one a field: the extract asks
-at most one per field, and of a proposal that holds two the card and the voice interviewer take the first), or,
+The **Questions** card lists the questions for the fields the extract could not fill (one a field: the extract keeps
+at most one per field, and a voice interview started with two for one field asks the first), or,
 before any extract, one default question for each empty field. Answer them by typing (**Type answers**, then **Save
 answers**: one `interview` source) or, with `-c voicePersonas=true`, by voice (**Talk it through**: an AI interviewer
 asks the same questions out loud, consent first, within the voice sessions' own limits and budget; at the end the
@@ -656,6 +657,16 @@ To copy a project to another deployment (owner and members remapped by email), s
 A workspace delete really deletes, and it is recorded (TENETS.md D4, D5; customer data itself is deleted only by `voc-retention`, [source-policies.md](source-policies.md)).
 
 - **Every S3 version goes.** The raw-data bucket is versioned, so a plain delete would only hide an object behind a delete marker. Deleting a persona (its avatars), a prototype document (its HTML), a product doc (its upload and extracted text), a project (every prototype, product doc and its own avatars), a superseded avatar and an archived design reference's logo preview and icon copies removes every version and delete marker (`lambda/shared/s3_versions.py`). The roles that do it hold `s3:ListBucketVersions` and `s3:DeleteObjectVersion` on those prefixes only.
+- **An admin still reads a deleted project's sub-routes.** The deployment's admins are decided without reading the
+  project (`lambda/shared/project_gate.py` `require_project_level`: an admin path costs no extra read), so after a
+  delete an admin's read of what the project held (`GET /projects/{id}/jobs`, `…/product-context`, `…/product-docs`,
+  `…/product-proposals/latest` and the like) answers 200 with what is left, nothing once the delete swept it, where
+  anyone else gets `404 Project not found`. `GET /projects/{id}` and every route that reads the project itself answer
+  404 to an admin too, and a write keyed to the project is held to its existence, by a read first
+  (`_require_project_exists` in `lambda/api/projects_handler.py`) or by the project's writable check in its own
+  transaction (`lambda/shared/project_writes.py`). This is by design. A workspace's admin is decided on the project's
+  `META` (`require_project_level` with the caller's membership), so in a workspace a deleted project's threaded
+  sub-routes (the product routes since 7.106.00, behind the projects seam) answer 404 to its admin as to anyone.
 - **Every delete leaves a record.** One row per deleted artifact, `pk AUDIT#delete` / `sk <iso time>#<uuid>`, in the table that held it (`lambda/shared/delete_audit.py`): `kind`, `target` (ids only, never content), `actor` (`{sub, kind}`, kind `user`, `admin`, `agent`, `mcp`, `plan` or `system`; never an email), an optional `reason` and `deleted_at`. The row has no `ttl` and is never overwritten. Kinds in the projects table: `project` (its tombstoned `META` row is kept as well), `persona`, `persona_replaced` (a replace-mode regeneration's deletes, recorded as the person who started it), `company_persona`, `document`, `document_revisions` (a research / custom document's saved revisions), `product_doc`, `document_comment`. Elsewhere: `conversation` (voc-conversations), `design_reference_copies` (voc-aggregates), the feedback-board and participant-list kinds ([feature-requests.md](feature-requests.md#deleting), [participants.md](participants.md#data-model)). Recording never fails the delete: a failed write is logged.
 - **A document that cited a deleted source says so.** When a persona, a document or a product doc (a visual) is deleted, each document of the same project that was written from it (its `derivation` `persona_ids`, `sources`, `visual_document_ids`, or the older `source_documents` / `source_prd_id` / `source_prfaq_id`) gains a `deleted_sources` entry `{kind, id, deleted_at}`, plus `name` for a persona (a fictional archetype, not personal data); at most 50 are kept. The ids stay in `derivation` for lineage. The projects API returns the field with the document, and the document view shows "Written from a persona that was later deleted: <name>" (or a document / product document). One Query of the project partition per delete; best effort, a failure is logged.
 

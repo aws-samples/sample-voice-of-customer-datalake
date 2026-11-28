@@ -83,9 +83,12 @@ def unqualified_function_arn(function_arn: str) -> str:
 
 #: Two codes of a cancelled transaction's entries (a ``TransactionCanceledException``'s ``CancellationReasons``, read by
 #: ``cancellation_codes``): an entry whose condition did not hold, and one another transaction was writing at the same
-#: time (worth another try). Their one home: since 7.104.00 no module of ``lambda/`` outside its tests spells either
-#: (the tests' fake AWS answers spell the wire's codes). The error codes (``ConditionalCheckFailedException``,
-#: ``TransactionConflictException``) are other strings.
+#: time (worth another try). Their home: outside the tests (whose fake AWS answers spell the wire's codes), every module
+#: of ``lambda/`` that reads a cancellation's codes reads them from here but one. The known readers of their own
+#: (7.109.01): ``lambda/jobs/retention/boards_rekey.py`` (both, from a re-key's reasons) and, outside ``lambda/``,
+#: ``plugins/_shared/base_ingestor.py`` and the operator scripts ``scripts/projects/switch_projects.py`` and
+#: ``backfill_review_registries.py`` (``ConditionalCheckFailed``). The error codes
+#: (``ConditionalCheckFailedException``, ``TransactionConflictException``) are other strings.
 CONDITION_FAILED: Final = 'ConditionalCheckFailed'
 TRANSACTION_CONFLICT: Final = 'TransactionConflict'
 

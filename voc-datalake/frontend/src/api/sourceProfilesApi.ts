@@ -118,7 +118,8 @@ const optionalFlag = z.boolean().optional().catch(undefined)
 
 /** A list of keys a job kept (keys only, never content): at most the first 200, `more` when the job holds others
  *  (it keeps no count past them). `files_needing_review`: whole-file uploads that hold erased rows and others, S3
- *  import originals folders (a key ending in `/`), product documents and library items that hold the address;
+ *  import originals folders (a key ending in `/`), product documents and library items that hold the address, and
+ *  (since 7.104.00) a project's product description and proposals that do, by their routes;
  *  `files_not_checked` (since 7.97.00): the documents an erasure by email could not judge. */
 const KeptKeysSchema = z.object({
   count,

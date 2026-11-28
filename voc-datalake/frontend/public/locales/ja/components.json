@@ -789,6 +789,7 @@
     },
     "lineageReplayed": "この実行は、以前の実行が残した系統マークも付けました。",
     "reviewDocuments": "アドレスを含むドキュメント (製品ドキュメント、ライブラリ項目): {{files, number}}。確認してください:",
+    "reviewProduct": "アドレスを含む製品の説明と提案: {{entries, number}}。プロジェクトの「製品」タブで編集してください:",
     "counters": {
       "participantsErased": "消去した参加者: {{n, number}}",
       "participantsNotErased": "消去されなかった参加者: {{n, number}}",

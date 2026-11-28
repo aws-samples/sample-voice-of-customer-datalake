@@ -723,6 +723,7 @@
         "personValue": "{{field}} enthält einen von einer Person eingegebenen Wert und wurde nicht ersetzt.",
         "allChanged": "Jedes ausgewählte Feld wurde seit dem Auszug geändert, daher wurde nichts übernommen. Die Zeilen zeigen die neuen Werte.",
         "closed": "Dieser Vorschlag wurde durch eine neuere Extraktion ersetzt oder verworfen. Extrahieren Sie erneut, um einen neuen zu erhalten.",
+        "replaced": "Dieser Vorschlag wurde durch den neueren Vorschlag unten ersetzt.",
         "failed": "Der Vorschlag konnte nicht übernommen werden. Versuchen Sie es erneut.",
         "dismissFailed": "Der Vorschlag konnte nicht verworfen werden. Versuchen Sie es erneut."
       },

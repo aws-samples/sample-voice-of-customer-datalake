@@ -748,6 +748,7 @@
         "personValue": "{{field}} tem um valor digitado por uma pessoa e não foi substituído.",
         "allChanged": "Todos os campos selecionados mudaram desde a extração, então nada foi aplicado. As linhas mostram os novos valores.",
         "closed": "Esta proposta foi substituída por uma extração mais recente ou descartada. Extraia novamente para obter uma nova.",
+        "replaced": "Esta proposta foi substituída pela proposta mais recente abaixo.",
         "failed": "Não foi possível aceitar a proposta. Tente de novo.",
         "dismissFailed": "Não foi possível descartar a proposta. Tente novamente."
       },

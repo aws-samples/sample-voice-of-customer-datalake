@@ -17,6 +17,104 @@ the platform package version.
 
 ## [Unreleased]
 
+## [7.109.01] - 2026-11-28
+
+The product extract works on Bedrock (7.104.00's schema was refused on every model), and 7.104.00's deferred review
+findings: the erasure panel lists a project's product description and proposals apart, to edit on the Product tab; a
+product link is read in the charset its page declares; a fence marker in a product source is found however it is
+written; an erasure by email reads the names of the sources an extract left out; a malformed question or citation no
+longer fails an extract; and the Product tab no longer asks to extract again beside the newer proposal. With
+corrections to 7.104.00's notes.
+
+### Changed
+
+- **The Questions card shows the proposal's questions as the server keeps them**, one a field
+  (`shared/product_extract.py` keeps a field's first): the card's own filter is gone. A voice interview started with
+  two questions for one field still asks the first
+  ([project-workspace.md → Product tab](docs/project-workspace.md#questions-and-the-assistants-interview)).
+- Tests: the raw-access guard counts the extract limits' counter prefix (`PRODUCTX#`) among the key prefixes that name
+  no workspace, as it counts the link and file reads' (`PRODUCTURL#`, `PRODUCTFILE#`): only
+  `shared/product_proposals.py` spells it, three times, each through `scoped_pk` since 7.106.00
+  (`lambda/shared/test/test_ws_raw_access.py`).
+- Internal: an erasure reads the product description's text fields by the rule its one reader uses, a list field's
+  lines joined (`shared/product_proposals.py` `text_of`).
+- Docs: after a deployment project's delete, an admin's `GET …/product-docs` and `GET …/product-proposals/latest`
+  answer 200 with nothing, as every route that reads what a project held does for an admin (`…/jobs`,
+  `…/product-context`), while anyone else gets 404: the deployment's admins are decided without reading the project,
+  by design, and every write is held to the project's existence. A workspace's admin is decided on the project's
+  `META`, so in a workspace (these routes since 7.106.00, behind the projects seam) a deleted project is a 404 for
+  them too ([project-workspace.md → Deleting](docs/project-workspace.md#deleting)).
+- Docs: the verdict template (`docs/test-verdicts/TEMPLATE.md`) asks an evaluator to write a local path (a home,
+  scratch, worktree or venv folder) as `<home>`, `<scratch>`, `<worktree>` or `<venv>`.
+
+### Fixed
+
+- **The product extract works on Bedrock**: the first live extract on a deployment was refused before any token, on
+  every model ("The compiled grammar is too large, which would cause performance issues. Simplify your tool schemas
+  or reduce the number of strict tools."), because its JSON schema named 12 field objects with their citations. The
+  answer's `fields` is now an array of entries, each naming its field (`shared/product_extract.py`
+  `proposal_schema`, about 1.4k characters where it was 8.5k), and Claude Sonnet 5.5 at effort max with adaptive
+  thinking answers it as valid JSON. A field's first entry is kept, an unknown field is dropped and a field with no
+  entry is a gap, every other check as before (citations, verified quotes, conflicts, `current_state`'s states, now
+  held by the validation alone). That refusal also now drops the schema once and asks for the same JSON in the
+  prompt, which describes the array, where the job used to fail: the schema fallback did not recognize Bedrock's
+  wording (`shared/product_extract_model.py`). A proposal records `prompt_version` `product-extract@2`.
+- **The erasure panel lists a project's product description and proposals that hold the address apart**, under
+  "Product descriptions and proposals that hold the address: n. Edit them on the project's Product tab", the
+  deployment's and a workspace's (`ws/<ws>/…`) alike, in nine languages: 7.104.00 listed their routes
+  (`projects/<id>/product-context`, `projects/<id>/product-proposals/<proposal_id>`) among the uploaded files kept
+  ([source-policies.md → Retention and erasure](docs/source-policies.md#retention-and-erasure)).
+- **A product link whose Content-Type names no charset is read in the charset the page declares**: its own `<meta
+  charset>` or `http-equiv` Content-Type in its first 1,024 bytes, held to the same plain character sets as the
+  header's (never `punycode` and the like), none after a UTF-8 byte order mark, and UTF-16 or 32 named there read as
+  UTF-8, as a browser reads them. Such a page in windows-1252 lost its accents
+  ([source-policies.md → Product source links](docs/source-policies.md#product-source-links)).
+- **An extract whose answer names a question's field or a citation's source as a list or a map no longer fails**:
+  that question or citation is dropped, as one for an unknown field or source is.
+- **A proposal that closed under an accept or a dismiss, with the newer proposal under review below it, says "This
+  proposal was replaced by the newer proposal below."**, in nine languages, instead of asking to extract again. One
+  dismissed, applied, or replaced by a proposal that is not open either still says to extract again.
+- **Corrections to 7.104.00's notes** (its section stays as released):
+  - Of the Product tab's four stores in 7.104.00, only `shared/product_proposals.py` refused a workspace in every read
+    and write (`PRODUCT_SOURCES_STORE`). `shared/product_sources.py` refused one only in `save_interview_source` and
+    `shared/product_source_worker.py` only as an event's scope; their other functions, and `shared/product_extract.py`,
+    which had no refusal of its own, took the scope they were given. "Every one of those stores refuses a workspace"
+    (Changed) and "refuse one until then" (Upgrade notes) said more. Nothing reached a workspace's rows: every route
+    named the deployment and was refused by name in a workspace (`api/projects_handler.py` `NOT_YET`), and a project
+    job's work in a workspace was refused before it ran. So it stayed until 7.106.00 (3h-S3b).
+  - The cancelled transaction's entry codes (`ConditionalCheckFailed`, `TransactionConflict`) live in
+    `lambda/shared/aws.py`, but not every reader takes them from there: `lambda/jobs/retention/boards_rekey.py` reads
+    both itself, `plugins/_shared/base_ingestor.py` compares `ConditionalCheckFailed` itself, and the
+    operator scripts `scripts/projects/switch_projects.py` and `backfill_review_registries.py` read
+    `ConditionalCheckFailed`.
+
+### Security
+
+- **A fence marker in a product source is found in more of its spellings**, before its source reaches a PRD, PR/FAQ or
+  extract prompt: in any letter case, in compatibility forms (fullwidth, mathematical, circled or squared letters,
+  ligatures: NFKC), and split by whitespace (a tab and line breaks included), by any format character (Unicode's
+  category `Cf`, the isolates and the tag characters among them) or by another default-ignorable code point (the
+  variation selectors, the Hangul fillers, the combining grapheme joiner), where 7.104.00 knew 18 such characters.
+  Only the marker's own span is replaced, every other character of the source reaches the prompt as written, and the
+  search stays linear in the text's length. Not folded, so a marker spelled with them is kept as written: look-alike
+  letters from other scripts (a Cyrillic E, U+0415, for `E`), combining marks other than the default-ignorable ones
+  above, and control characters other than whitespace (U+0000 or U+001B, say). A random per-prompt fence that no
+  source can spell, the shape the engineering prompts already use (`lambda/engineering/quality_gate/text.py` `nonce()`
+  and `data_block`), is the follow-up.
+- **An erasure by email also reads the names of the sources an extract left out** (a proposal's `skipped_sources`)
+  and lists the proposal for review when one holds the address, as it does for the sources it read. The eraser reads
+  the deployment's projects and a workspace's alike; a workspace's project holds proposals only once the extract's
+  job moves there (3h-S8). The retention worker's deployment Query may also read `skipped_sources` (its workspace
+  Query has no attribute limit)
+  ([source-policies.md → Retention and erasure](docs/source-policies.md#retention-and-erasure)).
+
+### Upgrade notes
+
+- **Deploy as usual** (`npm run deploy:all`). VocProcessingStack's retention worker gains `skipped_sources` among the
+  attributes its deployment Query of voc-projects may read (`dynamodb:Attributes`), and the functions that bundle
+  `lambda/shared/` get new code (VocApiStack, VocCoreStack, VocProcessingStack): an in-place update, no replacement.
+  No new AWS resource, flag or fixed cost (tenet 7).
+
 ## [7.109.00] - 2026-11-28
 
 A fix: an erasure and a window's run list for review the whole file an erased item came from, in either scope: a

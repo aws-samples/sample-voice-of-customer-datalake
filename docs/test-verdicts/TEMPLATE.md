@@ -18,7 +18,8 @@ checks:
 
 <!-- The verdict of one independent evaluator on one test of one roadmap item (docs/feature-tests/README.md).
 Copy this file to the place `brief` names (docs/test-verdicts/<item>/<runner>-<hash>.md; a REJECT goes to
-<runner>-<hash>.reject-<n>.md, n its number among the test's REJECTs), fill every section from
+<runner>-<hash>.reject-<n>.md, n its number among the test's REJECTs), redact local paths (a home directory, scratch, worktree or venv path: write `<home>`, `<scratch>`,
+`<worktree>`, `<venv>`, in backticks outside code blocks), fill every section from
 what you ran yourself, then `python3 scripts/feature_gate.py accept|reject <item> <test> --verdict <file>
 --session <you>`. Start from the brief only: not from the author's explanation.
 

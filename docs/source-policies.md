@@ -157,7 +157,9 @@ on the projects API's assist twin (`lambda/shared/product_source_links.py`). The
   HTML, PDF or plain text is read; a text page is decoded in the charset it declares only when that is a plain
   character set (UTF-16 or 32, ASCII, the ISO 8859 and Windows code pages, Shift JIS and the like), else as UTF-8:
   never by a codec such as `punycode` (whose decode of 5 MB would outlast the twin), `idna`, `utf-7` or
-  `unicode_escape` (`_text_codec`);
+  `unicode_escape` (`_text_codec`). The charset it declares is its Content-Type's, else (since 7.109.01) an HTML
+  page's own `<meta charset>` or `http-equiv` Content-Type in its first 1,024 bytes, as a browser reads it: none after
+  a UTF-8 byte order mark, and UTF-16 or 32 named there read as UTF-8 (`_meta_charset`);
 - **one page**: nothing the page links to is fetched, and its `<title>` is kept for display only (a prompt names the
   link by its address).
 
@@ -246,7 +248,9 @@ How it works:
   the job keeps no count past them). Since 7.97.00 (slice 3g-ui) the job also shows `files_not_checked: {count, keys,
   more}`, the product documents an erasure could not judge (Workspace projects, below), and Administration's erasure
   panels list each kind apart (the uploads kept, the import originals folders, the product documents and library items
-  that hold the address, the documents not checked), say when a list is cut, show every counter the job holds, and
+  that hold the address, since 7.109.01 a project's product description and proposals that hold it, by their routes,
+  `projects/<id>/product-context` and `projects/<id>/product-proposals/<proposal_id>`, to edit on the project's
+  Product tab, and the documents not checked), say when a list is cut, show every counter the job holds, and
   read a completed job that needs the operator, must be submitted again, must be erased by an account's verified
   address, owes its lineage marks or left files to review as such, with the reason and what to do (the rerun rules
   under Workspace projects and participants, below; docs/multi-workspace.md, 3g-ui). Skipped malformed ids
@@ -464,7 +468,10 @@ How it works:
   (`ws/<ws>/projects/<id>/product_docs/`): one whose filename, text upload or extracted text holds the address is
   listed in `files_needing_review` (and closes the workspace's exports); one it cannot judge (an image, never
   extracted, its folder listed once; another kind of upload; text not readable or too large; a record pointing outside
-  its folder, its folder listed) is listed apart in `files_not_checked`, counted in `product_docs_not_checked`. Each
+  its folder, its folder listed) is listed apart in `files_not_checked`, counted in `product_docs_not_checked`. Its
+  product description and product proposals are judged as the deployment's are (below), the names of the sources an
+  extract left out included, and listed by their routes under `ws/<ws>/` (a workspace's project holds a product
+  description since 7.106.00, behind the projects seam, and proposals once the extract's job moves, 3h-S8). Each
   list keeps at most 200 keys and says `more` when there were others. Nothing there is changed. A document not
   checked does not close the workspace's exports: its copy in an export's zip stays until the zip expires (10 days).
   The rows are found by Query of each workspace's project and link registries, never a Scan
@@ -489,7 +496,8 @@ How it works:
   whose filename, text or (a link's, 7.104.00) address, final address or title holds the address is listed in
   `files_needing_review`, one with no text yet (pending, failed) in `files_not_checked`. A product proposal
   (7.104.00, an extract of the sources: `PRODUCT_PROPOSAL#` rows) holds its sources' words and names: one whose field
-  values, the form's values they were proposed against, notes, quotes, questions or source names hold the address is
+  values, the form's values they were proposed against, notes, quotes, questions or source names (since 7.109.01 those
+  of the sources it left out too) hold the address is
   listed in `files_needing_review` by its route, `projects/<id>/product-proposals/<proposal_id>` (nothing in it is
   changed: a person reviews it on the Product tab). The product description (`PRODUCT_CONTEXT`, 7.104.00) is judged by
   its text fields the same way, typed or accepted from a proposal alike, and listed by

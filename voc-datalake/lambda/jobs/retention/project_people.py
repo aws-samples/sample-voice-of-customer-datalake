@@ -19,7 +19,8 @@ workspace export carries (jobs/workspace_export/projects.py, project_fields.py),
   ``title`` (7.104.00; ``LISTED_FIELDS``: never rewritten, the document is listed for review instead, below);
 - a product proposal (``PRODUCT_PROPOSAL#``, 7.104.00: an extract of the product sources): each field's ``value``,
   ``seen`` (the form's value it was proposed against), ``note`` and its citations' ``quote`` (words copied from a
-  source), each question, each source's name (``_proposal_texts``: never rewritten, listed for review instead, below);
+  source), each question, each source's name, a source the extract left out (``skipped_sources``, 7.109.01) too
+  (``_proposal_texts``: never rewritten, listed for review instead, below);
 - the product context (``PRODUCT_CONTEXT``, 7.104.00 round 2): each text field (shared/product_fields.py
   ``STRING_FIELDS``), typed by a person or accepted from a proposal (never rewritten, listed for review instead,
   below).
@@ -175,6 +176,7 @@ from shared.library_keys import extracted_key as library_extracted_key
 from shared.library_keys import is_item_id, library_pk
 from shared.library_keys import original_key as library_original_key
 from shared.product_fields import STRING_FIELDS
+from shared.product_proposals import text_of
 from shared.project_keys import (
     COMMENT_SERIES_PREFIX,
     DEPLOYMENT_LINK_REGISTRY_PK,
@@ -984,27 +986,22 @@ def _texts_at(entries: object, name: str) -> list[str]:
 
 def _proposal_texts(row: Mapping[str, Any]) -> list[str]:
     """Every text of a proposal: each field's ``value``, ``seen``, ``note`` and citations' ``quote``, each question's
-    ``question``, each source's ``name`` (anything else, or not text, is left out)."""
+    ``question``, each source's ``name``, the sources read and those the extract left out (``skipped_sources``) alike
+    (anything else, or not text, is left out)."""
     fields = row.get('fields')
     entries = [entry for entry in fields.values() if isinstance(entry, Mapping)] if isinstance(fields, Mapping) else []
     texts = [str(entry[name]) for entry in entries for name in ('value', 'seen', 'note')
              if isinstance(entry.get(name), str)]
     for entry in entries:
         texts.extend(_texts_at(entry.get('citations'), 'quote'))
-    return [*texts, *_texts_at(row.get('questions'), 'question'), *_texts_at(row.get('sources'), 'name')]
+    return [*texts, *_texts_at(row.get('questions'), 'question'), *_texts_at(row.get('sources'), 'name'),
+            *_texts_at(row.get('skipped_sources'), 'name')]
 
 
 def _context_texts(row: Mapping[str, Any]) -> list[str]:
-    """Every text field of a product context (``STRING_FIELDS``): a value, or a list's lines (the schema before the
-    fields were text)."""
-    texts: list[str] = []
-    for name in STRING_FIELDS:
-        value = row.get(name)
-        if isinstance(value, str):
-            texts.append(value)
-        elif isinstance(value, list):
-            texts.extend(one for one in value if isinstance(one, str))
-    return texts
+    """Every text field of a product context (``STRING_FIELDS``) as its one reader reads it (shared/product_proposals.py
+    ``text_of``: a value, or a list's lines joined, the schema before the fields were text)."""
+    return [text for text in (text_of(row.get(name)) for name in STRING_FIELDS) if text]
 
 
 #: What a docs step reads of a product document record (a link's address, where it ended and its title too).
@@ -1023,9 +1020,9 @@ _CONTEXT_PROJECTION: Final = {
 #: What a proposals step reads of a product proposal (lib/stacks/retention-worker.ts holds the deployment's Query to
 #: these among DEPLOYMENT_QUERY_ATTRIBUTES).
 _PROPOSAL_PROJECTION: Final = {
-    'ProjectionExpression': '#pk, #sk, #pid, #fields, #questions, #sources',
+    'ProjectionExpression': '#pk, #sk, #pid, #fields, #questions, #sources, #skipped',
     'ExpressionAttributeNames': {'#pk': 'pk', '#sk': 'sk', '#pid': 'proposal_id', '#fields': 'fields',
-                                 '#questions': 'questions', '#sources': 'sources'},
+                                 '#questions': 'questions', '#sources': 'sources', '#skipped': 'skipped_sources'},
 }
 #: What the documents library step reads of an item (lib/stacks/retention-worker.ts holds the deployment's Query to
 #: these among DEPLOYMENT_QUERY_ATTRIBUTES): its key, status, the metadata a person typed and who made and changed it.

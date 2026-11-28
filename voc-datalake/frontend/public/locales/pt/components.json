@@ -818,6 +818,7 @@
     },
     "lineageReplayed": "Esta execução também fez as marcas de linhagem que uma execução anterior deixou pendentes.",
     "reviewDocuments": "Documentos que contêm o endereço (documentos de produto, itens da biblioteca): {{files, number}}. Revise-os:",
+    "reviewProduct": "Descrições do produto e propostas que contêm o endereço: {{entries, number}}. Edite-as na aba Produto do projeto:",
     "counters": {
       "participantsErased": "Participantes eliminados: {{n, number}}",
       "participantsNotErased": "Participantes não eliminados: {{n, number}}",

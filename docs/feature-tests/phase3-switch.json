@@ -1002,6 +1002,63 @@
       ],
       "e2e": [],
       "exemption": null
+    },
+    {
+      "id": "7.109.01",
+      "aliases": [
+        "7.109.1"
+      ],
+      "title": "The product extract works on Bedrock (7.104.00's schema was refused on every model), and 7.104.00's deferred review findings: the erasure panel lists a project's product description and proposals apa…",
+      "source": {
+        "changelog": "7.109.01",
+        "doc": null
+      },
+      "kind": "fix",
+      "status": "done",
+      "unit": [
+        {
+          "runner": "pytest",
+          "node": "voc-datalake/lambda/shared/test/test_product_extract.py::TestThePrompt::test_the_schema_stays_small_enough_for_bedrock_to_compile",
+          "written_by": "voc-p7109-01/author",
+          "accepted_by": "voc-e7109-01/evaluator",
+          "accepted_at": "b9208710c8f5cc70349503d564c7db398d5b2b77",
+          "digest": "27b5a1286bffb449cec6ec3d80b786b8c3980feac85fe97cb0f159d827b037b8",
+          "verdict": "docs/test-verdicts/7.109.01/pytest-ce04a572085c.md",
+          "rejections": []
+        },
+        {
+          "runner": "pytest",
+          "node": "voc-datalake/lambda/shared/test/test_product_extract_validation.py::TestTheArray::test_each_entry_is_read_as_its_fields_and_a_field_with_none_is_a_gap",
+          "written_by": "voc-p7109-01/author",
+          "accepted_by": "voc-e7109-01/evaluator",
+          "accepted_at": "b9208710c8f5cc70349503d564c7db398d5b2b77",
+          "digest": "2e51c649f9b1b703f0889736327a6b1ab20ee92d5b1e6b651202107e1c402d37",
+          "verdict": "docs/test-verdicts/7.109.01/pytest-39be80e1845d.md",
+          "rejections": []
+        },
+        {
+          "runner": "pytest",
+          "node": "voc-datalake/lambda/shared/test/test_product_extract_model.py::TestTheRequest::test_a_schema_bedrock_compiled_into_a_grammar_too_large_is_asked_again_without_it_once",
+          "written_by": "voc-p7109-01/author",
+          "accepted_by": "voc-e7109-01/evaluator",
+          "accepted_at": "b9208710c8f5cc70349503d564c7db398d5b2b77",
+          "digest": "ae4383f4f4522f6eea9800c6d01ec398fa29279746ef910df8e93177cbb633c3",
+          "verdict": "docs/test-verdicts/7.109.01/pytest-a2478dc39443.md",
+          "rejections": []
+        },
+        {
+          "runner": "pytest",
+          "node": "voc-datalake/lambda/jobs/retention/test/test_project_erasure.py::TestAnErasureByEmailReachesTheWorkspacesProjects::test_a_workspaces_product_context_and_a_proposals_left_out_source_are_judged_by_their_routes",
+          "written_by": "voc-p7109-01/author",
+          "accepted_by": "voc-e7109-01/evaluator",
+          "accepted_at": "b9208710c8f5cc70349503d564c7db398d5b2b77",
+          "digest": "ca9aa59bae4727525739fbcd8706ce98439b20c3e8b0b53efe9c323180e3ca0d",
+          "verdict": "docs/test-verdicts/7.109.01/pytest-abbbb2b0af6e.md",
+          "rejections": []
+        }
+      ],
+      "e2e": [],
+      "exemption": null
     }
   ]
 }

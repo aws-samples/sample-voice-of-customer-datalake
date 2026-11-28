@@ -723,6 +723,7 @@
         "personValue": "{{field}} holds a value a person typed and was not replaced.",
         "allChanged": "Every selected field changed since the extract, so nothing was applied. The rows show the new values.",
         "closed": "This proposal was replaced by a newer extract or dismissed. Extract again for a new one.",
+        "replaced": "This proposal was replaced by the newer proposal below.",
         "failed": "The proposal could not be accepted. Try again.",
         "dismissFailed": "The proposal could not be dismissed. Try again."
       },

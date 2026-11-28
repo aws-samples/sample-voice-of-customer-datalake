@@ -385,6 +385,36 @@ class TestAnErasureByEmailReachesTheWorkspacesProjects:
         assert result['deleted_export_objects'] == 1
         assert erasure_rows(aws, JOB_ID)[0]['files_needing_review']['keys'] == [f'{folder}raw/pd_1.txt']
 
+    def test_a_workspaces_product_context_and_a_proposals_left_out_source_are_judged_by_their_routes(
+            self, aws, worker_context):
+        # 7.109.01: since 7.106.00 (3h-S3b) a workspace's project holds its own product context, and its proposals once
+        # the extract's job moves (3h-S8). They are judged as the deployment's are (test_deployment_project_erasure.py):
+        # a list field by its one reader's rule (shared/product_proposals.py `text_of`) and the name of a source the
+        # extract left out (`skipped_sources`), each listed by its ws/ route, nothing rewritten, the exports closed.
+        _list_workspace(aws, WS, 'Alpha')
+        create_workspace_project(aws['projects'], {'pk': project_pk(LIVE, workspace=A), 'sk': 'META',
+                                                   'project_id': LIVE, 'created_at': STAMP}, workspace=A)
+        own = project_pk(LIVE, workspace=A)
+        context = {'pk': own, 'sk': 'PRODUCT_CONTEXT', 'product_name': 'Orbit',
+                   'key_features': ['Search', f'Mail {REVIEWER.upper()}']}
+        named = {'pk': own, 'sk': 'PRODUCT_PROPOSAL#20261126T120005000000Z#ffffffffffff',
+                 'proposal_id': 'pp_20261126T120005000000Z_ffffffffffff', 'status': 'open',
+                 'skipped_sources': [{'doc_id': 'doc6', 'name': f'{REVIEWER}.md', 'kind': 'file'}]}
+        clean = {**named, 'sk': 'PRODUCT_PROPOSAL#20261126T120006000000Z#aaaaaaaaaaaa',
+                 'proposal_id': 'pp_20261126T120006000000Z_aaaaaaaaaaaa',
+                 'skipped_sources': [{'doc_id': 'doc7', 'name': 'deck.md', 'kind': 'file'}]}
+        for item in (context, named, clean):
+            aws['projects'].put_item(Item=item)
+        aws['s3'].put_object(Bucket=BUCKET, Key=f'ws/{WS}/exports/exp_1/export.zip', Body=b'zip')
+
+        result = _erase_by_email(aws, worker_context)
+
+        assert erasure_rows(aws, JOB_ID)[0]['files_needing_review']['keys'] == [
+            f'ws/{WS}/projects/{LIVE}/product-context',
+            f'ws/{WS}/projects/{LIVE}/product-proposals/{named["proposal_id"]}']
+        assert result['deleted_export_objects'] == 1
+        assert [_row(aws, {'pk': own, 'sk': item['sk']}) for item in (context, named, clean)] == [context, named, clean]
+
     @pytest.mark.parametrize(('record', 'reviewed', 'unchecked'), [
         # A filename that holds the address: listed, whatever the file says.
         ({'filename': f'For {REVIEWER}.png', 'content_type': 'image/png', 's3_raw_key': 'raw/a.png'},

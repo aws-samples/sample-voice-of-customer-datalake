@@ -3,6 +3,7 @@ public address unless a test says otherwise; the GET is a fake, or the real shar
 over a fake session where a redirect is what is tested. No network."""
 from __future__ import annotations
 
+import codecs
 from collections.abc import Iterator
 from typing import Any, Self
 from unittest.mock import MagicMock, patch
@@ -13,6 +14,7 @@ import requests
 from shared.http_utils import MAX_PAGE_BYTES, RetryableHTTPError
 from shared.library_extract import Reading
 from shared.product_source_links import (
+    META_PRESCAN_BYTES,
     MIN_PAGE_CHARS,
     NEEDS_SIGN_IN,
     NOT_A_PAGE,
@@ -49,6 +51,12 @@ def _describe(*_args: Any) -> Reading:
 
 def _read(pages: Pages, url: str = URL):
     return read_page(url, _describe, pages)
+
+
+def _cafe_page(head: str, encoding: str) -> bytes:
+    """The page with ``head`` first in its ``<head>`` and an accented word in its text, in ``encoding``."""
+    return PAGE.replace('<head>', f'<head>{head}').replace('Acme Notes keeps', 'Acme Notes caf\u00e9 keeps').encode(
+        encoding)
 
 
 def _refused(pages: Pages, url: str = URL) -> str:
@@ -105,6 +113,45 @@ class TestAPublicPage:
         body = PAGE.replace('Acme Notes keeps', 'Acme Notes caf\u00e9 keeps').encode('utf-8')
         pages.serve(URL, body, content_type=f'text/html; charset={charset}')
         assert 'Acme Notes caf\u00e9 keeps' in _read(pages).extraction.text
+
+    # Review C1 (7.72.00 gate, round 3): a page whose Content-Type named no charset was read as UTF-8 even when the page
+    # declared its own, so a windows-1252 page lost its accents.
+    @pytest.mark.parametrize('meta', [
+        '<meta charset="windows-1252">', "<META CHARSET='Windows-1252' />",
+        '<meta http-equiv="Content-Type" content="text/html; charset=windows-1252">',
+        '<meta content="text/html; charset=windows-1252" http-equiv="content-type">',
+    ], ids=['charset', 'charset-upper-case', 'http-equiv', 'http-equiv-content-first'])
+    def test_a_page_whose_content_type_names_no_charset_is_read_in_the_charset_its_meta_declares(self, meta):
+        pages = Pages()
+        pages.serve(URL, _cafe_page(meta, 'cp1252'), content_type='text/html')
+        assert 'Acme Notes caf\u00e9 keeps' in _read(pages).extraction.text
+
+    def test_the_content_types_charset_wins_over_the_meta(self):
+        pages = Pages()
+        pages.serve(URL, _cafe_page('<meta charset="windows-1252">', 'utf-8'), content_type='text/html; charset=utf-8')
+        assert 'Acme Notes caf\u00e9 keeps' in _read(pages).extraction.text
+
+    @pytest.mark.parametrize('meta', [
+        '<meta charset="punycode">', '<meta charset="undefined">', '<meta charset="base64">',
+        '<meta charset="no-such-charset">', '<meta charset="utf-16">', '<meta charset="UTF-16LE">',
+        '<meta http-equiv="Content-Type" content="text/html; charset=utf-32">', '<meta charset="ut\u0000f-8">',
+        '<meta name="description" content="charset=windows-1252">', '<!-- <meta charset="windows-1252"> -->',
+    ], ids=['punycode', 'undefined', 'base64', 'unknown', 'utf-16', 'utf-16le', 'utf-32', 'nul',
+            'not-a-declaration', 'in-a-comment'])
+    def test_a_meta_that_declares_no_plain_ascii_compatible_charset_leaves_the_page_in_utf_8(self, meta):
+        # The same allowlist as the Content-Type's (_text_codec), and the HTML standard's prescan: bytes a <meta> was
+        # read from as ASCII are not UTF-16 or UTF-32.
+        pages = Pages()
+        pages.serve(URL, _cafe_page(meta, 'utf-8'), content_type='text/html')
+        assert 'Acme Notes caf\u00e9 keeps' in _read(pages).extraction.text
+
+    def test_a_meta_past_the_first_1024_bytes_or_after_a_utf_8_byte_order_mark_is_not_read(self):
+        late = _cafe_page(f'<!-- {"x" * META_PRESCAN_BYTES} --><meta charset="windows-1252">', 'utf-8')
+        marked = codecs.BOM_UTF8 + _cafe_page('<meta charset="windows-1252">', 'utf-8')
+        for body in (late, marked):
+            pages = Pages()
+            pages.serve(URL, body, content_type='text/html')
+            assert 'Acme Notes caf\u00e9 keeps' in _read(pages).extraction.text
 
     @pytest.mark.parametrize(('charset', 'codec'), [
         ('UTF-16', 'utf-16'), ('utf-32', 'utf-32'), ('us-ascii', 'ascii'), ('ISO-8859-15', 'iso8859-15'),

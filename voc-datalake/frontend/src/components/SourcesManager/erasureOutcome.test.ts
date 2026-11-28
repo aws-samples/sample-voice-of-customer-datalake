@@ -42,7 +42,24 @@ describe('reviewGroups', () => {
       folders: [`ws/${WS}/raw/s3_import/`],
       documents: [`ws/${WS}/projects/p_1/product_docs/brief.md`, 'projects/p_2/product_docs/notes.txt',
         `ws/${WS}/library/li_1/original`],
+      product: [],
     })
+  })
+
+  // Review S1 (7.104.00 gate): the erasure lists a project's product description and proposals by their routes
+  // (lambda/jobs/retention/project_people.py), which read as uploaded files kept.
+  it.each([
+    ['the deployment\'s product description', 'projects/proj_1/product-context'],
+    ['a workspace\'s product description', `ws/${WS}/projects/proj_1/product-context`],
+    ['the deployment\'s proposal', 'projects/proj_1/product-proposals/pp_20261126T120000000000Z_aaaaaaaaaaaa'],
+    ['a workspace\'s proposal', `ws/${WS}/projects/proj_1/product-proposals/pp_20261126T120000000000Z_aaaaaaaaaaaa`],
+  ])('reads %s as a product entry, never an upload', (_case, key) => {
+    expect(reviewGroups([key])).toStrictEqual({ uploads: [], folders: [], documents: [], product: [key] })
+  })
+
+  it('reads a key that only starts like a product entry as an upload', () => {
+    const keys = ['projects/proj_1/product-context/extra', 'projects/proj_1/product-proposals/', 'raw/projects/p/product-context']
+    expect(reviewGroups(keys)).toStrictEqual({ uploads: [keys[0], keys[2]], folders: [keys[1]], documents: [], product: [] })
   })
 
   it('reads a product documents folder (an image the erasure could not read) as a document, not an import folder', () => {

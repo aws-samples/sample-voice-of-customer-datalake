@@ -32,21 +32,28 @@
  */
 import type { ErasureJob } from '../../api/sourceProfilesApi'
 
-/** A kept key's kind: an upload kept, an import's originals folder, or a document (product document, library item). */
+/** A kept key's kind: an upload kept, an import's originals folder, a document (product document, library item), or
+ *  a project's product description or proposal (7.109.01: rows of the project, edited on its Product tab). */
 interface ReviewGroups {
   uploads: string[]
   folders: string[]
   documents: string[]
+  product: string[]
 }
 
 /** A project's product documents (`projects/<id>/product_docs/`, `ws/<ws>/…` in a workspace) or a library item
  *  (`library/<item>/…`), the keys lambda/jobs/retention/project_people.py lists. */
 const DOCUMENT_KEY = /^(ws\/[^/]+\/)?(projects\/[^/]+\/product_docs|library)\//
+/** A project's product description (`projects/<id>/product-context`) or one of its product proposals
+ *  (`projects/<id>/product-proposals/<proposal_id>`), `ws/<ws>/…` in a workspace: the routes
+ *  lambda/jobs/retention/project_people.py lists them by (7.104.00). No file: they are edited on the Product tab. */
+const PRODUCT_KEY = /^(ws\/[^/]+\/)?projects\/[^/]+\/(product-context|product-proposals\/[^/]+)$/
 
 export function reviewGroups(keys: readonly string[]): ReviewGroups {
-  const groups: ReviewGroups = { uploads: [], folders: [], documents: [] }
+  const groups: ReviewGroups = { uploads: [], folders: [], documents: [], product: [] }
   for (const key of keys) {
     if (DOCUMENT_KEY.test(key)) groups.documents.push(key)
+    else if (PRODUCT_KEY.test(key)) groups.product.push(key)
     else if (key.endsWith('/')) groups.folders.push(key)
     else groups.uploads.push(key)
   }

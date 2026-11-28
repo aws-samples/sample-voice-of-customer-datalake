@@ -134,13 +134,27 @@ class TestTheRequest:
         assert request['additionalModelResponseFieldPaths'] == ['/stop_details']
         assert request['additionalModelRequestFields']['output_config']['effort'] == 'max'
 
-    def test_a_refused_schema_is_asked_again_without_it_once(self):
-        client = FakeBedrock(_error('ValidationException', 'output_config.format: Extra inputs are not permitted'),
-                             FakeStream(_events()))
+    @staticmethod
+    def _asked_without_the_schema_after(message: str):
+        """The answer to a call whose first request Bedrock refused with ``message``: the requests' output configs
+        (with the schema, then without it) and the answer."""
+        client = FakeBedrock(_error('ValidationException', message), FakeStream(_events()))
         answer, _usage = _ask(client)
-        assert [call['additionalModelRequestFields']['output_config'] for call in client.calls] == [
-            {'effort': 'max', 'format': {'type': 'json_schema', 'schema': SCHEMA}}, {'effort': 'max'}]
+        return [call['additionalModelRequestFields']['output_config'] for call in client.calls], answer
+
+    def test_a_refused_schema_is_asked_again_without_it_once(self):
+        configs, answer = self._asked_without_the_schema_after('output_config.format: Extra inputs are not permitted')
+        assert configs == [{'effort': 'max', 'format': {'type': 'json_schema', 'schema': SCHEMA}}, {'effort': 'max'}]
         assert (answer.structured, answer.text) == (False, '{"fields": {}}')
+
+    def test_a_schema_bedrock_compiled_into_a_grammar_too_large_is_asked_again_without_it_once(self):
+        # The first live extract on a deployment (7.104.00): Bedrock refused the schema with this message, which named
+        # none of the format words, so the job failed instead of asking without the schema.
+        configs, answer = self._asked_without_the_schema_after(
+            'The model returned the following errors: The compiled grammar is too large, which would cause performance '
+            'issues. Simplify your tool schemas or reduce the number of strict tools.')
+        assert configs == [{'effort': 'max', 'format': {'type': 'json_schema', 'schema': SCHEMA}}, {'effort': 'max'}]
+        assert answer.structured is False
 
     def test_another_validation_error_is_not_retried(self):
         client = FakeBedrock(_error('ValidationException', 'Input is too long for requested model'))

@@ -205,10 +205,10 @@ describe('voc-retention worker', () => {
   });
 
   // And (7.104.00, review round 1) a product link's address and where it ended, and a product proposal's id, fields,
-  // questions and sources, and (round 2) the product context's text fields, for the address in them
-  // (lambda/jobs/retention/project_people.py).
+  // questions and sources, (7.109.01) the sources it left out, and (round 2) the product context's text fields, for
+  // the address in them (lambda/jobs/retention/project_people.py).
   const PRODUCT_ERASURE_ATTRIBUTES = ['url', 'final_url', 'proposal_id', 'fields', 'questions', 'sources',
-    'product_name', 'one_liner', 'product_summary', 'target_users', 'problem_solved', 'key_features', 'differentiators',
+    'skipped_sources', 'product_name', 'one_liner', 'product_summary', 'target_users', 'problem_solved', 'key_features', 'differentiators',
     'known_limitations', 'non_goals', 'success_metrics', 'free_form_notes'];
 
   it('queries exactly these project partitions: one workspace id\'s and the deployment\'s, its registries included', () => {

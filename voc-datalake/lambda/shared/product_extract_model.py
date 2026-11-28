@@ -13,9 +13,10 @@ The request (``build_blocks_request``, so the scoped invocation id and no ``temp
   which); the engineering harness has sent ``output_config.effort`` through Converse since 7.58.01;
 * ``output_config.format`` (``json_schema``, the proposal's schema). Whether Converse passes it to Claude is not
   documented (botocore's model has Converse's own ``outputConfig.textFormat`` and ``outputConfig.effort``, which the
-  Lambda runtime's boto3 may not know yet): a ValidationException at the stream's start that names it, before any
-  token is billed, is answered by the same request without it once (``structured`` False); the prompt asks for the
-  same JSON either way and shared/product_extract.py validates every answer.
+  Lambda runtime's boto3 may not know yet): a ValidationException at the stream's start that names it, or (7.109.01)
+  the grammar Bedrock compiles it into (``_FORMAT_WORDS``), before any token is billed, is answered by the same
+  request without it once (``structured`` False); the prompt describes the same JSON either way and
+  shared/product_extract.py validates every answer.
 
 ``additionalModelResponseFieldPaths`` asks for ``/stop_details``, so a refusal's category and explanation arrive in
 ``messageStop.additionalModelResponseFields`` where Bedrock forwards them. A refusal is a stop reason of
@@ -65,8 +66,10 @@ REFUSAL_STOP_REASONS: Final = frozenset({'refusal', 'content_filtered'})
 #: Claude's refusal details (category, explanation), asked for from the model's own response.
 STOP_DETAILS_PATH: Final = '/stop_details'
 _THINKING: Final = {'type': 'adaptive', 'display': 'summarized'}
-#: A ValidationException that names one of these refused the request's ``output_config.format``.
-_FORMAT_WORDS: Final = ('output_config', 'json_schema', 'format')
+#: A ValidationException that names one of these refused the request's ``output_config.format``: the field itself,
+#: or (7.109.01) the grammar Bedrock compiles a schema into, "The compiled grammar is too large, which would cause
+#: performance issues. Simplify your tool schemas or reduce the number of strict tools.", which names neither.
+_FORMAT_WORDS: Final = ('output_config', 'json_schema', 'format', 'grammar', 'tool schema')
 
 
 class ModelTimedOut(Exception):

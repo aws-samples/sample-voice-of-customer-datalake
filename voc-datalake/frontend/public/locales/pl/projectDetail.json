@@ -783,6 +783,7 @@
         "personValue": "Pole {{field}} zawiera wartość wpisaną przez osobę i nie zostało zastąpione.",
         "allChanged": "Każde zaznaczone pole zmieniło się od wyodrębniania, więc nic nie zastosowano. Wiersze pokazują nowe wartości.",
         "closed": "Ta propozycja została zastąpiona nowszą ekstrakcją lub odrzucona. Wyodrębnij ponownie, aby uzyskać nową.",
+        "replaced": "Ta propozycja została zastąpiona nowszą propozycją poniżej.",
         "failed": "Nie udało się zaakceptować propozycji. Spróbuj ponownie.",
         "dismissFailed": "Nie udało się odrzucić propozycji. Spróbuj ponownie."
       },

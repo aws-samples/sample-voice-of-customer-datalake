@@ -94,11 +94,18 @@ describe('ProductTab with a proposal', () => {
 
   // Review Q3 (7.104.00 round 2): the accept's answer reads the proposal again before its error reaches the review,
   // which that read removed (dismissed) or replaced (superseded, a new proposal id resets the mutation): the line
-  // never showed. The tab keeps it, outside the review.
+  // never showed. The tab keeps it, outside the review. Review Q1 (7.72.00 gate, round 3): beside the newer proposal
+  // under review it said "Extract again", which that proposal makes needless; it says so in its own words.
+  const CLOSED = 'This proposal was replaced by a newer extract or dismissed. Extract again for a new one.'
+  const REPLACED = 'This proposal was replaced by the newer proposal below.'
   it.each([
-    ['dismissed', () => latestOf(proposalOf({ product_name: NAME }, { status: 'dismissed' })), false],
-    ['superseded', () => latestOf(proposalOf({ product_name: NAME }, { proposal_id: 'pp-2', job_id: 'job-2' })), true],
-  ] as const)('says the proposal closed when the latest answer turned %s under an accept', async (_case, after, reviewed) => {
+    ['dismissed', () => latestOf(proposalOf({ product_name: NAME }, { status: 'dismissed' })), CLOSED, false],
+    ['superseded by a newer one under review',
+      () => latestOf(proposalOf({ product_name: NAME }, { proposal_id: 'pp-2', job_id: 'job-2' })), REPLACED, true],
+    ['superseded by a newer one dismissed too',
+      () => latestOf(proposalOf({ product_name: NAME }, { proposal_id: 'pp-2', job_id: 'job-2', status: 'dismissed' })),
+      CLOSED, false],
+  ] as const)('says the proposal closed when the latest answer turned %s under an accept', async (_case, after, line, reviewed) => {
     productTabMocks.getLatestProductProposal
       .mockResolvedValueOnce(latestOf(proposalOf({ product_name: NAME })))
       .mockResolvedValue(after())
@@ -106,8 +113,7 @@ describe('ProductTab with a proposal', () => {
     const user = userEvent.setup()
     renderWithQueryClient(<ProductTab canEdit projectId="proj-1" />)
     await user.click(await screen.findByRole('button', { name: 'Accept selected' }))
-    expect(await screen.findByRole('alert')).toHaveTextContent(
-      'This proposal was replaced by a newer extract or dismissed. Extract again for a new one.')
+    expect(await screen.findByRole('alert')).toHaveTextContent(line)
     expect(screen.getAllByRole('alert')).toHaveLength(1)
     expect(screen.queryByRole('region', { name: /proposed product description/i }) !== null).toBe(reviewed)
   })
@@ -121,11 +127,11 @@ describe('ProductTab with a proposal', () => {
     const user = userEvent.setup()
     renderWithQueryClient(<ProductTab canEdit projectId="proj-1" />, client)
     await user.click(await screen.findByRole('button', { name: 'Accept selected' }))
-    await screen.findByText(/This proposal was replaced by a newer extract or dismissed/)
+    await screen.findByText(REPLACED)
     productTabMocks.getLatestProductProposal.mockResolvedValue(
       latestOf(proposalOf({ product_name: NAME }, { proposal_id: 'pp-3', job_id: 'job-3' })))
     await act(() => client.invalidateQueries({ queryKey: productProposalKey('proj-1') }))
-    await waitFor(() => expect(screen.queryByText(/This proposal was replaced by a newer extract/)).not.toBeInTheDocument())
+    await waitFor(() => expect(screen.queryByText(REPLACED)).not.toBeInTheDocument())
   })
 
   it('says a failed read of the proposal, with Try again, instead of showing none', async () => {

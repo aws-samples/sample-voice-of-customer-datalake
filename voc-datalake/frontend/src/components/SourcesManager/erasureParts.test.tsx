@@ -62,6 +62,17 @@ describe('ErasureJobDetails', () => {
     expect(documents).toHaveAccessibleDescription('Only the first 2 items to review are listed: the job holds more. Check the rest by hand.')
   })
 
+  it('lists the product descriptions and proposals that hold the address apart, to edit on the Product tab', () => {
+    const proposal = 'ws/ws_1/projects/p_1/product-proposals/pp_20261126T120000000000Z_aaaaaaaaaaaa'
+    render(<Details job={jobWith({ files_needing_review: { count: 2, keys: ['projects/p_2/product-context', proposal] } })} />)
+    const product = screen.getByRole('list', {
+      name: "Product descriptions and proposals that hold the address: 2. Edit them on the project's Product tab:",
+    })
+    expect(within(product).getAllByRole('listitem').map((item) => item.textContent)).toStrictEqual(
+      ['projects/p_2/product-context', proposal])
+    expect(screen.queryByText(/^Uploaded files kept/)).not.toBeInTheDocument()
+  })
+
   it('lists the documents the erasure could not check with their total, and its own cut note', () => {
     render(<Details job={jobWith({
       product_docs_not_checked: 3,

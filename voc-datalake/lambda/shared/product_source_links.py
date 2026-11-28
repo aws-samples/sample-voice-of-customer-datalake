@@ -11,8 +11,12 @@ projects API's assist twin (shared/product_source_worker.py).
    host than the one named that holds a password field (a login form the link was sent to).
 5. HTML, PDF or plain text only, read by shared/library_extract.py (an HTML page's text without its scripts and
    styles), a text page in its declared charset when that is a plain character set, else as UTF-8 (``_text_codec``:
-   never a codec such as ``punycode``, whose decode of 5 MB would outlast the twin). A page with under ``MIN_PAGE_CHARS`` characters of text fails as rendered by scripts: a browser read of
-   such pages is for later (the owner's decision of 2026-11-26).
+   never a codec such as ``punycode``, whose decode of 5 MB would outlast the twin). The declared charset is the
+   Content-Type's, else (7.109.01) an HTML page's own ``<meta charset>`` or ``http-equiv`` Content-Type in its first
+   ``META_PRESCAN_BYTES`` (``_meta_charset``, the HTML standard's prescan: none after a UTF-8 byte order mark, and
+   UTF-16 or UTF-32 named there read as UTF-8, since bytes a ``<meta>`` was read from as ASCII are neither). A page
+   with under ``MIN_PAGE_CHARS`` characters of text fails as rendered by scripts: a browser read of such pages is for
+   later (the owner's decision of 2026-11-26).
 6. Its ``<title>``, kept for display only (a prompt never gets it, and gets the link's own address as its name).
 
 Every refusal is a ``LinkError`` whose message is the person's (the source's ``error``).
@@ -24,6 +28,7 @@ import html
 import re
 from collections.abc import Callable
 from dataclasses import dataclass
+from html.parser import HTMLParser
 from typing import Final
 from urllib.parse import urlparse
 
@@ -52,12 +57,17 @@ _SIGN_IN_SEGMENTS: Final = frozenset({'login', 'log-in', 'logon', 'signin', 'sig
                                       'sso'})
 _PASSWORD_FIELD: Final = re.compile(rb'<input\b[^>]*\btype\s*=\s*["\']?password', re.IGNORECASE)
 _TITLE: Final = re.compile(r'<title\b[^>]*>(.*?)</title\s*>', re.IGNORECASE | re.DOTALL)
-_CHARSET: Final = re.compile(r'charset\s*=\s*["\']?([\w.:-]+)', re.IGNORECASE)
+#: A charset's name as a page may declare it (a Content-Type's ``charset=``, a ``<meta>``'s): never a space or a NUL.
+_CHARSET_NAME: Final = re.compile(r'[\w.:-]+')
+_CHARSET: Final = re.compile(rf'charset\s*=\s*["\']?({_CHARSET_NAME.pattern})', re.IGNORECASE)
 #: Text codecs Python knows that are no page's character set (7.104.00 round 2), so a page naming one is read as
 #: UTF-8: ``punycode`` decodes in quadratic time (5 MB would take about 1,000 s, past the twin's 900 s), ``idna``,
 #: ``unicode-escape``, ``raw-unicode-escape`` and ``utf-7`` transform text rather than spell it, and ``undefined``
 #: refuses every byte. By ``codecs.lookup``'s name, with ``-`` for ``_``.
 _NOT_A_CHARSET: Final = frozenset({'punycode', 'idna', 'unicode-escape', 'raw-unicode-escape', 'utf-7', 'undefined'})
+#: How far into an HTML page its own ``<meta>`` charset is looked for, when the Content-Type names none: the HTML
+#: standard's prescan reads the first 1,024 bytes.
+META_PRESCAN_BYTES: Final = 1024
 
 NEEDS_SIGN_IN: Final = ('This page needs a sign-in, and only public pages can be read. Save the page as PDF and '
                         'upload it instead.')
@@ -145,6 +155,38 @@ def _text_codec(charset: str | None) -> str | None:
     return info.name
 
 
+class _MetaCharset(HTMLParser):
+    """The charset the first ``<meta>`` that names one declares: its ``charset``, or the ``content``'s ``charset=`` of
+    an ``http-equiv`` Content-Type (a comment's or another attribute's text is no declaration)."""
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=False)
+        self.charset: str | None = None
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        if tag != 'meta' or self.charset is not None:
+            return
+        found = {name: (value or '').strip() for name, value in attrs}
+        if 'charset' in found:
+            declared = _CHARSET_NAME.fullmatch(found['charset'])
+            self.charset = declared.group(0) if declared else None
+        elif found.get('http-equiv', '').lower() == 'content-type':
+            declared = _CHARSET.search(found.get('content', ''))
+            self.charset = declared.group(1) if declared else None
+
+
+def _meta_charset(data: bytes) -> str | None:
+    """An HTML page's own declared charset, for a Content-Type that names none (the module docstring, step 5): the
+    first ``<meta>`` declaration in its first ``META_PRESCAN_BYTES``, read as the ASCII it must be written in; None
+    after a UTF-8 byte order mark (it wins, as in a browser) and for UTF-16 or UTF-32, which those bytes are not."""
+    if data.startswith(codecs.BOM_UTF8):
+        return None
+    parser = _MetaCharset()
+    parser.feed(data[:META_PRESCAN_BYTES].decode('latin-1'))
+    codec = _text_codec(parser.charset)
+    return None if codec is None or codec.startswith(('utf-16', 'utf-32')) else parser.charset
+
+
 def _as_utf8(data: bytes, charset: str | None) -> bytes:
     """A text page's bytes in UTF-8 (library_extract decodes UTF-8, replacing what it cannot read): re-encoded from
     its declared charset when that is a plain character set (``_text_codec``), else left to be read as UTF-8."""
@@ -202,6 +244,8 @@ def read_page(url: str, describe: Describe, fetch: Fetch | None = None) -> PageR
     body = bytes(response.content or b'')
     if len(body) > MAX_PAGE_BYTES:
         raise LinkError(TOO_LARGE)
+    if charset is None and content_type == 'text/html':
+        charset = _meta_charset(body)
     data = body if content_type == 'application/pdf' else _as_utf8(body, charset)
     title = None
     if content_type == 'text/html':

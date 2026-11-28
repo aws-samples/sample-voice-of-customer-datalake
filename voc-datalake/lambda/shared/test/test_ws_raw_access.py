@@ -180,11 +180,13 @@ LAYER_MODULE: Final = 'shared.ws_repo'
 #: ``AGENT_REGISTRY`` is a workspace's registry of its agents' partitions (since 7.80.00): only the layer spells it
 #: (``agent_registry_pk``). ``PRODUCTURL#`` is a project's and a person's link reads a day, ``PRODUCTFILE#`` a
 #: person's file reads a day (since 7.104.00): only shared/product_sources.py spells them, and they move with projects.
+#: ``PRODUCTX#`` is a project's extracts a minute and a day and a person's a day (since 7.104.00): only
+#: shared/product_proposals.py spells it (``extract_counter_keys``, a workspace's under ``WS#{ws}#`` since 7.106.00).
 UNSCOPED_KEY_PREFIXES: Final = ('SOURCE#', 'METRIC#', 'DATE#', 'CATEGORY#', 'URGENCY#', 'CHANNEL#', 'SOURCE_RUN#',
                                 'raw/', 'silver/', 'PROJECT#', 'TYPE#PROJECT', 'PROJECT_ID#', 'DOCUMENT_VERSIONS#',
                                 'STATUS#', 'LIST#', 'PERSON#', 'EMAIL#', 'LISTS', 'PEOPLE', 'DCOMMENTS#', 'DCRATE#',
                                 'DOCSHARE#', 'LIBRARY', 'library/', 'VOICE#', 'VOICEUSE#', 'VOICEDAY#', 'VOICERATE#',
-                                'AGENT_REGISTRY', 'PRODUCTURL#', 'PRODUCTFILE#')
+                                'AGENT_REGISTRY', 'PRODUCTURL#', 'PRODUCTFILE#', 'PRODUCTX#')
 #: The layer's claim writer (``claim_project_id``) and the one module that may call it: the project create.
 CLAIM_WRITER: Final = ('claim_project_id', frozenset({'lambda/shared/project_writes.py'}))
 #: The layer's review link route writer (``route_share_id``, since 7.37.00) and the one module that may call it: the
@@ -541,9 +543,14 @@ ALLOWED: Final[dict[str, tuple[int, dict[str, int]]]] = {
                                              'put_object': 1}),
     'lambda/shared/product_source_routes.py': (3, {'get_aggregates_table': 1}),
     # The Product tab's extract and proposals (7.104.00): the routes' voc-projects handle (the project's proposals,
-    # its context and its lock) and the extract limits' counters in voc-aggregates, the deployment's until projects
-    # move (3h).
+    # its context and its lock) and the extract limits' counters in voc-aggregates, the request's scope's since
+    # 7.106.00 (3h-S3b).
     'lambda/shared/product_proposal_routes.py': (3, {'get_aggregates_table': 1, 'get_projects_table': 1}),
+    # Their store (7.104.00): the extract limits' counters' keys, a project's extracts a minute and a day and a
+    # person's a day (PRODUCTX#, 7.109.01: counted here since), kept 2 days; a workspace's under WS#{ws}# (scoped_pk,
+    # 7.106.00), counted only for the deployment until the extract's job moves (`count_extract` refuses a workspace,
+    # 3h-S8).
+    'lambda/shared/product_proposals.py': (3, {'PRODUCTX#': 3}),
     # The voice sessions (7.69.00, docs/voice-personas.md): their keys' one spelling (a session's own partition, the
     # month's usage, the live set, a person's day and minute: the deployment's until projects move), a session's
     # evidence put in scratch/, and the routes' handles (the project's persona and pointer rows, the deployment's

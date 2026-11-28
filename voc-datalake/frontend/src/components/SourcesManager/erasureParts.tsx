@@ -215,13 +215,14 @@ function ReviewLists({ job }: Readonly<{ job: ErasureJob }>) {
   const { t } = useTranslation('components', { keyPrefix: 'erasure' })
   const noteId = useId()
   const review = job.files_needing_review
-  const { uploads, folders, documents } = reviewGroups(review?.keys ?? [])
+  const { uploads, folders, documents, product } = reviewGroups(review?.keys ?? [])
   const cut = review?.more === true ? noteId : undefined
   return (
     <>
       {uploads.length > 0 && <ReviewList text={t('reviewFiles', { files: uploads.length })} keys={uploads} noteId={cut} />}
       {folders.length > 0 && <ReviewList text={t('reviewFolders', { folders: folders.length })} keys={folders} noteId={cut} />}
       {documents.length > 0 && <ReviewList text={t('reviewDocuments', { files: documents.length })} keys={documents} noteId={cut} />}
+      {product.length > 0 && <ReviewList text={t('reviewProduct', { entries: product.length })} keys={product} noteId={cut} />}
       {cut !== undefined && <CutNote id={cut} text={t('reviewMore', { count: review?.keys.length ?? 0 })} />}
     </>
   )
@@ -256,8 +257,9 @@ function NotCheckedList({ job }: Readonly<{ job: ErasureJob }>) {
  * needs (its `report`, computed once per row by the caller; alone, of the job by itself), and
  * what it kept for review (keys only; an admin reviews them): the uploaded files that also hold
  * rows it did not erase, the S3 import originals folders of the items it deleted (no row says
- * which file in them an item came from), the documents that hold the address, and those it could
- * not check.
+ * which file in them an item came from), the documents that hold the address, the product
+ * descriptions and proposals that do (edited on the project's Product tab), and the documents it
+ * could not check.
  */
 export function ErasureJobDetails({ job, report }: Readonly<{ job: ErasureJob; report: JobReport }>) {
   const { t } = useTranslation('components', { keyPrefix: 'erasure' })

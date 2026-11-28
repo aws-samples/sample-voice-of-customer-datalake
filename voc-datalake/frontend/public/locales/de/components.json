@@ -789,6 +789,7 @@
     },
     "lineageReplayed": "Dieser Lauf hat auch die Herkunftsmarkierungen gesetzt, die ein früherer Lauf schuldete.",
     "reviewDocuments": "Dokumente, die die Adresse enthalten (Produktdokumente, Bibliothekseinträge): {{files, number}}. Prüfe sie:",
+    "reviewProduct": "Produktbeschreibungen und Vorschläge, die die Adresse enthalten: {{entries, number}}. Bearbeiten Sie sie im Tab „Produkt“ des Projekts:",
     "counters": {
       "participantsErased": "Gelöschte Teilnehmer: {{n, number}}",
       "participantsNotErased": "Nicht gelöschte Teilnehmer: {{n, number}}",

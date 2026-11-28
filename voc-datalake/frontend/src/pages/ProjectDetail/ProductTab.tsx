@@ -8,8 +8,8 @@
  * panel (the questions for the fields no source filled) and the report. While an
  * extract's proposal is open it is reviewed full width above the form, and each
  * field it proposes shows a "Proposed" badge (7.104.00). Above it, a proposal that
- * closed under an accept or a dismiss says so, and a failed read of the proposal
- * says so with Try again.
+ * closed under an accept or a dismiss says so (replaced by the newer proposal below,
+ * or closed: extract again), and a failed read of the proposal says so with Try again.
  *
  * The context is the page's shared query (`productContextQuery`): this tab, the
  * Overview card and the assistant's `update_product_context` approval (which
@@ -124,7 +124,11 @@ function ProductTabBody({ projectId, canEdit, onJobStarted, context, savingField
       {proposalState.isError
         ? <LoadFailed message={t('product.review.loadFailed')} onRetry={proposalState.retry} retrying={proposalState.retrying} />
         : null}
-      {proposalState.closed ? <p role="alert" className="text-xs text-warn">{t('product.review.result.closed')}</p> : null}
+      {proposalState.closed !== null ? (
+        <p role="alert" className="text-xs text-warn">
+          {t(proposalState.closed === 'replaced' ? 'product.review.result.replaced' : 'product.review.result.closed')}
+        </p>
+      ) : null}
       {latest !== undefined && proposal !== null
         ? <ProductProposalReview latest={latest} proposal={proposal} state={proposalState} canEdit={canEdit} />
         : null}

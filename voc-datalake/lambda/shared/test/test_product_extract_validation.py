@@ -34,8 +34,14 @@ def _field(value: str = 'Orbit plans team trips', *, status: str = 'proposed', c
     return {'status': status, 'value': value, 'citations': cited, 'confidence': confidence, 'note': note}
 
 
+def _entries(fields: dict[str, Any]) -> list[Any]:
+    """The answer's ``fields`` array (7.109.01) of ``{name: entry}``: each entry naming its field, anything that is
+    not an entry as it is."""
+    return [{'field': name, **entry} if isinstance(entry, dict) else entry for name, entry in fields.items()]
+
+
 def _one(name: str, entry: Any, state: ContextState | None = None, sources=(DECK, SHOT)) -> dict[str, Any]:
-    fields, _questions = validated({'fields': {name: entry}}, sources, state or _state())
+    fields, _questions = validated({'fields': _entries({name: entry})}, sources, state or _state())
     return fields[name]
 
 
@@ -69,6 +75,16 @@ class TestCitations:
         entry = _one('product_name', _field('Orbit', citations=[{'source_id': 'S2', 'quote': 'Orbit', 'page': None}]))
         assert entry['citations'][0]['verified'] is False
         assert entry['confidence'] == 'low'
+
+    @pytest.mark.parametrize('source_id', [['S1'], {'id': 'S1'}, 1, None], ids=['a-list', 'a-map', 'a-number', 'none'])
+    def test_a_citation_whose_source_id_is_not_text_is_dropped(self, source_id):
+        # The sibling of a question's field (7.109.01): a list or a map raised TypeError (unhashable) in the
+        # membership test, which failed the whole extract.
+        entry = _one('one_liner', _field(citations=[{'source_id': source_id, 'quote': 'Orbit plans team trips',
+                                                     'page': None},
+                                                    {'source_id': 'S1', 'quote': 'Orbit plans team trips',
+                                                     'page': None}]))
+        assert [citation['source_id'] for citation in entry['citations']] == ['S1']
 
     def test_at_most_three_citations_with_capped_quotes_and_real_pages(self):
         cited = [{'source_id': 'S1', 'quote': 'x' * 400, 'page': page} for page in (0, True, 2, 3, 4)]
@@ -116,14 +132,45 @@ class TestValues:
                                             'note': '', 'seen': '', 'accepted': False}
 
     def test_an_unknown_field_is_dropped_and_every_field_is_answered(self):
-        fields, _questions = validated({'fields': {'pricing': _field()}}, (DECK,), _state())
+        fields, _questions = validated({'fields': _entries({'pricing': _field()})}, (DECK,), _state())
         assert list(fields) == list(FIELD_ORDER)
+        assert {entry['status'] for entry in fields.values()} == {'gap'}
+
+
+class TestTheArray:
+    """7.109.01: the answer's ``fields`` is an array of entries, each naming its field (``proposal_schema``)."""
+
+    def test_each_entry_is_read_as_its_fields_and_a_field_with_none_is_a_gap(self):
+        raw = {'fields': [{'field': 'one_liner', **_field()}, {'field': 'product_name', **_field('Orbit')}]}
+        fields, _questions = validated(raw, (DECK,), _state())
+        assert list(fields) == list(FIELD_ORDER)
+        assert (fields['one_liner']['value'], fields['product_name']['value']) == ('Orbit plans team trips', 'Orbit')
+        assert {fields[name]['status'] for name in FIELD_ORDER if name not in ('one_liner', 'product_name')} == {'gap'}
+
+    def test_a_fields_first_entry_is_kept_and_a_later_one_dropped(self):
+        raw = {'fields': [{'field': 'product_name', **_field('Orbit')}, {'field': 'product_name', **_field('Atlas')}]}
+        fields, _questions = validated(raw, (DECK,), _state())
+        assert fields['product_name']['value'] == 'Orbit'
+
+    @pytest.mark.parametrize('entry', [
+        {'field': 'pricing', **_field()}, {'field': ['one_liner'], **_field()}, {'field': None, **_field()},
+        {**_field()}, 'one_liner', None,
+    ], ids=['unknown-field', 'field-a-list', 'field-null', 'no-field', 'a-string', 'null'])
+    def test_an_entry_for_no_field_of_the_form_is_dropped(self, entry):
+        fields, _questions = validated({'fields': [entry, {'field': 'one_liner', **_field()}]}, (DECK,), _state())
+        assert fields['one_liner']['status'] == 'proposed'
+        assert {fields[name]['status'] for name in FIELD_ORDER if name != 'one_liner'} == {'gap'}
+
+    @pytest.mark.parametrize('answered', [{'one_liner': _field()}, 'Orbit', None],
+                             ids=['an-object', 'a-string', 'null'])
+    def test_fields_that_are_no_array_are_all_gaps(self, answered):
+        fields, _questions = validated({'fields': answered}, (DECK,), _state())
         assert {entry['status'] for entry in fields.values()} == {'gap'}
 
 
 class TestQuestions:
     def test_only_a_gap_or_a_low_field_keeps_its_question(self):
-        raw = {'fields': {'one_liner': _field(), 'target_users': _field(confidence='low')},
+        raw = {'fields': _entries({'one_liner': _field(), 'target_users': _field(confidence='low')}),
                'questions': [{'field': 'one_liner', 'question': 'Who is it for?'},
                              {'field': 'target_users', 'question': 'Which  teams?'},
                              {'field': 'non_goals', 'question': 'What is out of scope?'},
@@ -137,16 +184,26 @@ class TestQuestions:
         # field, and the voice start refused the proposal's questions ("One question per field").
         asked = [('differentiators', 'Who does it compete with?'), ('success_metrics', 'Which numbers show it works?'),
                  ('differentiators', 'What makes it different?'), ('success_metrics', 'What is a good month?')]
-        raw = {'fields': {'differentiators': _field(confidence='low')},
+        raw = {'fields': _entries({'differentiators': _field(confidence='low')}),
                'questions': [{'field': field, 'question': question} for field, question in asked]}
         _fields, questions = validated(raw, (DECK,), _state())
         assert [(one['field'], one['question']) for one in questions] == asked[:2]
+
+    @pytest.mark.parametrize('field', [['target_users'], {'name': 'target_users'}, 7, None],
+                             ids=['a-list', 'a-map', 'a-number', 'none'])
+    def test_a_question_whose_field_is_not_text_is_dropped(self, field):
+        # Review S3 / Q2 (7.72.00 gate, round 3): a list or a map as the field raised TypeError (unhashable) in the
+        # membership test, which failed the whole extract.
+        raw = {'fields': [], 'questions': [{'field': field, 'question': 'Who is it for?'},
+                                           {'field': 'non_goals', 'question': 'What is out of scope?'}]}
+        _fields, questions = validated(raw, (DECK,), _state())
+        assert questions == [{'field': 'non_goals', 'question': 'What is out of scope?'}]
 
     def test_the_prompt_asks_for_one_question_per_field(self):
         assert '- questions: at most 8, at most one per field,' in system_prompt(None)
 
     def test_at_most_eight_capped_questions(self):
-        raw = {'fields': {}, 'questions': [{'field': name, 'question': f'{name}? ' + 'q' * 300}
+        raw = {'fields': [], 'questions': [{'field': name, 'question': f'{name}? ' + 'q' * 300}
                                            for name in FIELD_ORDER]}
         _fields, questions = validated(raw, (DECK,), _state())
         assert len(questions) == MAX_QUESTIONS

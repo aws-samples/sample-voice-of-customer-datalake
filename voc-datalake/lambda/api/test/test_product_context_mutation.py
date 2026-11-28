@@ -504,8 +504,9 @@ class TestFence:
 
 def _upload(table: MagicMock, body: dict, *, existing: int = 0,
             actor: dict | None = None) -> tuple[dict, MagicMock, MagicMock]:
-    """create_upload_url with `existing` sources held, the write (shared/product_sources.py put_source, which counts
-    them: its race is test_product_sources.py's) and S3 mocked."""
+    """create_upload_url with `existing` sources held, the write (shared/product_sources.py put_source, which checks
+    the caps against them: test_product_sources.py's TestPutSource tests it, with no race to win, the caps being a
+    working-set limit) and S3 mocked."""
     s3 = MagicMock()
     s3.generate_presigned_url.return_value = 'https://signed'
     put = MagicMock(side_effect=lambda *_args, **_kwargs: require_room([{'doc_id': str(i)} for i in range(existing)]))

@@ -789,6 +789,7 @@
     },
     "lineageReplayed": "此次运行还完成了之前一次运行欠下的沿袭标记。",
     "reviewDocuments": "包含该地址的文档（产品文档、资料库条目）：{{files, number}}。请检查：",
+    "reviewProduct": "包含该地址的产品描述和提议：{{entries, number}}。请在项目的“产品”选项卡中编辑：",
     "counters": {
       "participantsErased": "已删除的参与者：{{n, number}}",
       "participantsNotErased": "未删除的参与者：{{n, number}}",

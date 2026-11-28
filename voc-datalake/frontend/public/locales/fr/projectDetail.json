@@ -748,6 +748,7 @@
         "personValue": "{{field}} contient une valeur saisie par une personne et n’a pas été remplacé.",
         "allChanged": "Chaque champ sélectionné a changé depuis l’extraction : rien n’a été appliqué. Les lignes montrent les nouvelles valeurs.",
         "closed": "Cette proposition a été remplacée par une extraction plus récente ou écartée. Relancez l’extraction pour en obtenir une nouvelle.",
+        "replaced": "Cette proposition a été remplacée par la proposition plus récente ci-dessous.",
         "failed": "La proposition n’a pas pu être acceptée. Réessayez.",
         "dismissFailed": "La proposition n’a pas pu être écartée. Réessayez."
       },

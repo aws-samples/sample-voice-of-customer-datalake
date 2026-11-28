@@ -62,7 +62,7 @@ from jobs.retention.test.test_project_erasure import (
 from jobs.retention.test.test_workspace_erasure import BASIS, JOB_ID, WS, _tombstones
 from shared import document_comments as comments
 from shared import document_share as ds
-from shared import project_walk
+from shared import product_proposals, project_walk
 from shared.project_keys import (
     comments_pk,
     deployment_link_registry_key,
@@ -269,6 +269,9 @@ class TestAnErasureByEmailReachesTheDeploymentsProjects:
             'pp_20261126T120003000000Z_dddddddddddd': {'sources': [{'source_id': 'S1', 'name': f'{REVIEWER}.pdf'}]},
             # Review S8 (round 2): the form's value a field was proposed against (`seen`) was not read.
             'pp_20261126T120004000000Z_eeeeeeeeeeee': {'fields': {'one_liner': {**gap, 'seen': f'Ask {REVIEWER}'}}},
+            # Review S2 (7.72.00 gate, round 3): the name of a source the extract left out was not read.
+            'pp_20261126T120005000000Z_ffffffffffff': {'skipped_sources': [{'doc_id': 'doc6', 'name': f'{REVIEWER}.md',
+                                                                            'kind': 'file'}]},
         }
         for proposal_id, fields in rows.items():
             stamp, suffix = proposal_id.removeprefix('pp_').split('_')
@@ -303,6 +306,13 @@ class TestAnErasureByEmailReachesTheDeploymentsProjects:
         keys = (job.get('files_needing_review') or {}).get('keys') or []
         assert (f'projects/{DEP_LIVE}/product-context' in keys) is listed
         assert aws['projects'].get_item(Key={'pk': project_pk(DEP_LIVE, workspace=None), 'sk': 'PRODUCT_CONTEXT'})['Item'] == row
+
+    def test_the_product_context_is_judged_as_its_one_reader_reads_it(self):
+        # Review F3 (7.72.00 gate, round 3): the eraser joined a list field (the schema before the fields were text)
+        # by a rule of its own, beside shared/product_proposals.py's.
+        assert project_people.text_of is product_proposals.text_of
+        row = {'one_liner': 'Trips', 'key_features': ['Search', f'Mail {REVIEWER}'], 'non_goals': ''}
+        assert project_people._context_texts(row) == ['Trips', f'Search\nMail {REVIEWER}']
 
     def test_an_upload_outside_raw_and_source_is_malformed(self, aws):
         eraser = project_people.ProjectPeopleEraser(_run(), _tables(aws), REVIEWER, aws['s3'], BUCKET)

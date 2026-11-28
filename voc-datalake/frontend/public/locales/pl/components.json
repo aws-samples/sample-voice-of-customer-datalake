@@ -847,6 +847,7 @@
     },
     "lineageReplayed": "To uruchomienie wykonało też oznaczenia pochodzenia zaległe po wcześniejszym uruchomieniu.",
     "reviewDocuments": "Dokumenty zawierające adres (dokumenty produktu, pozycje biblioteki): {{files, number}}. Przejrzyj je:",
+    "reviewProduct": "Opisy produktu i propozycje zawierające adres: {{entries, number}}. Edytuj je w zakładce Produkt projektu:",
     "counters": {
       "participantsErased": "Usunięci uczestnicy: {{n, number}}",
       "participantsNotErased": "Nieusunięci uczestnicy: {{n, number}}",

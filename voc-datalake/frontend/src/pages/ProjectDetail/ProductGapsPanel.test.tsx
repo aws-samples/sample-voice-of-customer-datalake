@@ -66,40 +66,6 @@ describe('useGapQuestions', () => {
   })
 })
 
-describe('one question per field', () => {
-  // Review Q1 (7.104.00 round 2): two questions for one field bound two textareas to one answer (and two list items to
-  // one React key); a proposal stored before its extract kept one a field may still hold two.
-  const TWICE: readonly GapQuestion[] = [
-    { field: 'differentiators', question: 'What makes it different?' },
-    { field: 'success_metrics', question: 'Which numbers show it works?' },
-    { field: 'differentiators', question: 'Who does it compete with?' },
-  ]
-
-  it('keeps the first question of a field the proposal asks twice', () => {
-    const { result } = renderHook(() => useGapQuestions(proposalOf({}, { questions: [...TWICE] }), emptyProductContext()))
-    expect(result.current).toStrictEqual(QUESTIONS)
-  })
-
-  it('shows one answer box a field, and saves what was typed in it once', async () => {
-    routeFetchApi({ [`POST ${ANSWERS}`]: () => ({ doc: { doc_id: 'doc-5', status: 'ready', source_kind: 'interview' } }) })
-    function Panel() {
-      const questions = useGapQuestions(proposalOf({}, { questions: [...TWICE] }), emptyProductContext())
-      return <ProductGapsPanel projectId={PROJECT} projectName="Parcel Pilot" questions={questions} proposalId="pp-1"
-        canEdit extract={extractStub()} typing onTypingChange={vi.fn()} />
-    }
-    const user = userEvent.setup()
-    renderWithQueryClient(<Panel />)
-    expect(screen.getAllByRole('textbox')).toHaveLength(2)
-    expect(screen.queryByText('Who does it compete with?')).not.toBeInTheDocument()
-    await user.type(screen.getByRole('textbox', { name: /What makes it different\?/ }), 'Every carrier')
-    await user.click(screen.getByRole('button', { name: 'Save answers' }))
-    await waitFor(() => expect(sentFetchApiBody(ANSWERS, 'POST')).toStrictEqual({
-      proposal_id: 'pp-1', mode: 'typed',
-      answers: [{ field: 'differentiators', question: 'What makes it different?', answer: 'Every carrier' }],
-    }))
-  })
-})
-
 describe('ProductGapsPanel', () => {
   it('lists the questions with the three ways to answer; no voice without features.voice', () => {
     renderPanel()

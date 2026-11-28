@@ -789,6 +789,7 @@
     },
     "lineageReplayed": "이 실행은 이전 실행이 남긴 계보 표시도 처리했습니다.",
     "reviewDocuments": "주소가 포함된 문서(제품 문서, 라이브러리 항목): {{files, number}}개. 검토하세요:",
+    "reviewProduct": "주소가 포함된 제품 설명 및 제안: {{entries, number}}개. 프로젝트의 제품 탭에서 수정하세요:",
     "counters": {
       "participantsErased": "삭제된 참여자: {{n, number}}",
       "participantsNotErased": "삭제되지 않은 참여자: {{n, number}}",

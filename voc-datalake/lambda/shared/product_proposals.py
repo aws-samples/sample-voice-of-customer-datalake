@@ -91,8 +91,8 @@ if TYPE_CHECKING:
 
 __all__ = [
     'EFFORTS', 'FIELD_ORDER', 'OPEN', 'Actor', 'ContextState', 'accept', 'context_state', 'count_extract', 'dismiss',
-    'forget_source', 'latest_row', 'mapping_at', 'new_proposal_key', 'note_lock_job', 'person_typed', 'proposal_dto',
-    'put_proposal', 'release_lock', 'take_lock', 'write_context', 'written_by',
+    'forget_source', 'latest_row', 'new_proposal_key', 'note_lock_job', 'person_typed', 'proposal_dto',
+    'put_proposal', 'release_lock', 'take_lock', 'text_of', 'write_context', 'written_by',
 ]
 
 #: The 12 fields in the form's PRD-block order (shared/product_fields.py).
@@ -183,8 +183,9 @@ class ContextState:
     updated_at: str | None
 
 
-def _text(value: object) -> str:
-    """A stored field as text: a list (the schema before the fields were text) joined by lines."""
+def text_of(value: object) -> str:
+    """A stored field as text: a list (the schema before the fields were text) joined by lines. The one rule, read by
+    ``context_state`` and by the erasure's judging of the product context (jobs/retention/project_people.py)."""
     if isinstance(value, list):
         return '\n'.join(str(entry) for entry in value if entry).strip()
     return value if isinstance(value, str) else ''
@@ -196,7 +197,7 @@ def context_state(table: Any, project_id: str, *, workspace: WorkspaceScope | No
     item = consistent_item(table, _context_key(project_id, workspace=workspace)) or {}
     meta = item.get('field_meta')
     return ContextState(
-        values={name: _text(item.get(name)) for name in FIELD_ORDER},
+        values={name: text_of(item.get(name)) for name in FIELD_ORDER},
         stored={name: item[name] for name in FIELD_ORDER if name in item},
         meta={name: dict(entry) for name, entry in meta.items() if name in ALL_FIELDS and isinstance(entry, Mapping)}
         if isinstance(meta, Mapping) else {},
@@ -262,7 +263,7 @@ def _plain(value: object) -> object:
     return value
 
 
-def mapping_at(row: Mapping[str, Any], key: str) -> Mapping[str, Any]:
+def _mapping_at(row: Mapping[str, Any], key: str) -> Mapping[str, Any]:
     """``row[key]`` when it is a map, else an empty one (a stored row read by a later release: never trusted)."""
     value = row.get(key)
     return value if isinstance(value, Mapping) else {}
@@ -272,17 +273,17 @@ def proposal_dto(row: Mapping[str, Any], state: ContextState, live_doc_ids: Iter
     """A proposal as GET …/product-proposals/latest answers it: each field with its ``current`` value and whether it
     changed since the extract, each source with whether it was deleted since."""
     live = set(live_doc_ids)
-    stored_fields = mapping_at(row, 'fields')
+    stored_fields = _mapping_at(row, 'fields')
     fields = {}
     for name in FIELD_ORDER:
-        plain = _plain(mapping_at(stored_fields, name))
+        plain = _plain(_mapping_at(stored_fields, name))
         entry: Mapping[str, Any] = plain if isinstance(plain, dict) else {}
         seen = str(entry.get('seen') or '')
         fields[name] = {'status': entry.get('status', 'gap'), 'value': str(entry.get('value') or ''),
                         'citations': entry.get('citations') or [], 'confidence': entry.get('confidence', 'low'),
                         'note': str(entry.get('note') or ''), 'seen': seen, 'accepted': bool(entry.get('accepted')),
                         'current': state.values[name], 'changed_since': state.values[name] != seen}
-    model = mapping_at(row, 'model')
+    model = _mapping_at(row, 'model')
     listed = _plain(row.get('sources') or [])
     sources = [{**source, 'deleted': source.get('doc_id') not in live}
                for source in (listed if isinstance(listed, list) else []) if isinstance(source, dict)]
@@ -344,7 +345,7 @@ def _requested(body: Mapping[str, Any], fields: Mapping[str, Any]) -> dict[str, 
     for name, entry in requested.items():
         if name not in ALL_FIELDS:
             raise ValidationError(f'Unknown field: {str(name)[:40]}')
-        proposed = mapping_at(fields, name)
+        proposed = _mapping_at(fields, name)
         if not isinstance(entry, Mapping) or not isinstance(entry.get('seen'), str):
             raise ValidationError(f'{name} needs the value it was seen at (seen)')
         if proposed.get('status') not in ACCEPTABLE:
@@ -512,7 +513,7 @@ def _audit_item(project_id: str, proposal: Mapping[str, Any], applied: list[str]
                 now: str, *, workspace: WorkspaceScope | None) -> dict[str, Any]:
     """The accept's audit row (ids only, never content) in ``audit_pk``'s partition, naming its workspace
     (``workspace``) when it is one's, as a deleted product document's ``AUDIT#delete`` row does."""
-    model = mapping_at(proposal, 'model')
+    model = _mapping_at(proposal, 'model')
     item = {'pk': audit_pk(workspace=workspace), 'sk': f'{now}#{secrets.token_hex(8)}', 'kind': AUDIT_KIND,
             'project_id': project_id, 'proposal_id': proposal.get('proposal_id'), 'fields': applied,
             'actor': {'sub': actor.sub, 'kind': actor.kind}, 'model_id': model.get('id'), 'at': now}
@@ -564,7 +565,7 @@ def _write_once(table: Any, project_id: str, key: Mapping[str, str], body: Mappi
         raise NotFoundError('Proposal not found')
     if proposal.get('status') not in OPEN_STATUSES:
         raise ConflictError(PROPOSAL_CLOSED_MESSAGE, code='proposal_closed')
-    fields = mapping_at(proposal, 'fields')
+    fields = _mapping_at(proposal, 'fields')
     requested = _requested(body, fields)
     state = context_state(table, project_id, workspace=workspace)
     conflicts = _conflicts(requested, state, actor)
@@ -576,9 +577,9 @@ def _write_once(table: Any, project_id: str, key: Mapping[str, str], body: Mappi
     now = now_iso()
     sources = proposal.get('sources') or []
     write = _Write({name: requested[name][1] for name in applied},
-                   {name: {**actor.meta(now, _by(actor, requested[name][1], mapping_at(fields, name))),
+                   {name: {**actor.meta(now, _by(actor, requested[name][1], _mapping_at(fields, name))),
                            'proposal_id': proposal.get('proposal_id'),
-                           'source_ids': _source_ids(mapping_at(fields, name), sources)} for name in applied}, now)
+                           'source_ids': _source_ids(_mapping_at(fields, name), sources)} for name in applied}, now)
     table_name = projects_table_name(table)
     try:
         transact_project_actions(table, project_id, [
@@ -630,7 +631,7 @@ def _forget_in(table: Any, key: Mapping[str, str], doc_id: str) -> bool:
         row = consistent_item(table, key) or {}
         cited = {str(source.get('source_id')) for source in row.get('sources') or []
                  if isinstance(source, Mapping) and source.get('doc_id') == doc_id}
-        changed = _without(mapping_at(row, 'fields'), cited) if cited else {}
+        changed = _without(_mapping_at(row, 'fields'), cited) if cited else {}
         if not changed:
             return True
         names = {'#fields': 'fields', '#citations': 'citations'}

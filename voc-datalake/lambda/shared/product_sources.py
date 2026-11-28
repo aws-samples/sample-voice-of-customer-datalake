@@ -39,10 +39,14 @@ import base64
 import os
 import re
 import secrets
+import unicodedata
+from bisect import bisect_right
 from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
+from functools import lru_cache
+from itertools import accumulate
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, Final, Literal
 
@@ -136,27 +140,67 @@ UNTRUSTED_DOC_NOTICE: Final = (
 )
 _MARKER_REMOVED: Final = '[fence marker removed]'
 _MAX_HEADING_CHARS: Final = 255
-#: What may sit between two characters of a fence marker and still read as one to a model: whitespace (a line break
-#: too) and the characters that render as nothing (soft hyphen, zero-width spaces and joiners, direction marks and
-#: embeddings, word joiner, invisible operators, byte order mark).
-_INVISIBLE: Final = r'[\s\u00ad\u180e\u200b-\u200f\u202a-\u202e\u2060-\u2064\ufeff]*'
+#: Unicode's default-ignorable code points (the Default_Ignorable_Code_Point property) outside category Cf (every format
+#: character is ignorable), by inclusive range, a range holding a format character or two as well: the combining
+#: grapheme joiner, the Hangul fillers, the Khmer inherent vowels, the Mongolian free variation selectors, the
+#: variation selectors, U+2065, U+FFF0..U+FFF8 and the tag block (U+E0000..U+E0FFF, its variation selectors and
+#: unassigned code points included).
+_IGNORABLE_RANGES: Final = ((0x034F, 0x034F), (0x115F, 0x1160), (0x17B4, 0x17B5), (0x180B, 0x180F), (0x2065, 0x2065),
+                            (0x3164, 0x3164), (0xFE00, 0xFE0F), (0xFFA0, 0xFFA0), (0xFFF0, 0xFFF8),
+                            (0xE0000, 0xE0FFF))
+#: A fence marker with its spaces left out, in any case: matched in a text's ``_folded`` copy.
+_FOLDED_MARKER: Final = re.compile('|'.join(re.escape(''.join(marker.split()))
+                                            for marker in (UNTRUSTED_DOC_BEGIN, UNTRUSTED_DOC_END)), re.IGNORECASE)
 
 
-def _loose(marker: str) -> str:
-    """A marker's pattern: its characters in order, any case, with ``_INVISIBLE`` between any two."""
-    return _INVISIBLE.join(re.escape(char) for char in marker if not char.isspace())
+def _ignorable(char: str) -> bool:
+    """Whether ``char`` may sit between two characters of a fence marker and still read as one to a model:
+    whitespace (a line break too), any format character (category ``Cf``: the soft hyphen, zero-width spaces and
+    joiners, direction marks, embeddings and isolates, invisible operators, the byte order mark, the tag characters
+    ...) and any other default-ignorable code point (``_IGNORABLE_RANGES``): each renders as nothing."""
+    if char.isspace() or unicodedata.category(char) == 'Cf':
+        return True
+    code = ord(char)
+    return any(low <= code <= high for low, high in _IGNORABLE_RANGES)
 
 
-_FENCE_MARKER: Final = re.compile('|'.join(_loose(marker) for marker in (UNTRUSTED_DOC_BEGIN, UNTRUSTED_DOC_END)),
-                                  re.IGNORECASE)
+@lru_cache(maxsize=65_536)
+def _folded(char: str) -> str:
+    """``char`` as a fence marker is matched (7.109.01): nothing for an ignorable character, else its compatibility
+    form (NFKC: a fullwidth, mathematical, circled or squared letter is the letter, U+FF1C is ``<``) without the
+    ignorable characters that form holds. A character on its own, so each folded character comes from one of the
+    text's."""
+    if _ignorable(char):
+        return ''
+    return ''.join(each for each in unicodedata.normalize('NFKC', char) if not _ignorable(each))
 
 
 def fenced(text: str) -> str:
     """Body text that cannot close its own fence, nor seem to open another: ``UNTRUSTED_DOC_END`` inside it would
     otherwise end the quoted region early and put the rest outside the fence, the injection's own delimiter, and an
-    ``UNTRUSTED_DOC_BEGIN`` would start what reads as the platform's next source. Matched as a model would read it
-    (7.104.00 round 2): in any case, and with any whitespace or invisible character between its characters."""
-    return _FENCE_MARKER.sub(_MARKER_REMOVED, text)
+    ``UNTRUSTED_DOC_BEGIN`` would start what reads as the platform's next source. Matched as a model would read it, in
+    a folded copy of the text (``_folded``): in any case (7.104.00 round 2), in compatibility forms (7.109.01), and with
+    any whitespace, format or other default-ignorable character between its characters (``_ignorable``). Each match's
+    span of the text, from its first character to its last, is replaced; every other character is kept as it was. In
+    linear time: one pass to fold, one search of two literals, a bisection a match. Never longer than ``text``
+    (api/product_context.py charges a body's characters before it is fenced): a marker takes at least 33 of the
+    text's characters, its replacement 22, since no character folds to more than two of a marker's characters and
+    only the ligatures U+FB05 and U+FB06 (``st``) and U+33CC (``in``) fold to two."""
+    pieces = [_folded(char) for char in text]
+    folded = ''.join(pieces)
+    if _FOLDED_MARKER.search(folded) is None:
+        return text
+    # ends[i]: where the folded copy's piece of text[i] ends, so the piece holding folded position p is
+    # bisect_right(ends, p) (an ignorable character's piece is empty and never holds one).
+    ends = list(accumulate(map(len, pieces)))
+    out: list[str] = []
+    kept_from = 0
+    for found in _FOLDED_MARKER.finditer(folded):
+        start = max(bisect_right(ends, found.start()), kept_from)
+        out.extend((text[kept_from:start], _MARKER_REMOVED))
+        kept_from = bisect_right(ends, found.end() - 1) + 1
+    out.append(text[kept_from:])
+    return ''.join(out)
 
 
 def heading_name(name: object) -> str:

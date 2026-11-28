@@ -40,7 +40,9 @@ class Ctx(JobContext):
 
 
 def _json(fields: dict[str, Any] | None = None, questions: list[dict[str, str]] | None = None) -> str:
-    return json.dumps({'fields': fields or {}, 'questions': questions or []})
+    """The model's answer of ``{name: entry}``: its ``fields`` an array of entries, each naming its field (7.109.01)."""
+    entries = [{'field': name, **entry} for name, entry in (fields or {}).items()]
+    return json.dumps({'fields': entries, 'questions': questions or []})
 
 
 def _answer(text: str = '', *, model: str = SONNET55, stop: str = 'end_turn', refusal: Refusal | None = None,
@@ -210,16 +212,38 @@ class TestThePrompt:
         assert system.endswith('IMPORTANT: You MUST respond entirely in Japanese (ja). All text, headings, labels, '
                                'and explanations must be in Japanese.')
 
-    def test_the_schema_requires_every_field_and_allows_nothing_else(self, world):
+    def test_the_schema_is_an_array_of_entries_each_naming_its_field_and_allowing_nothing_else(self, world):
         world.source('doc')
         _result, ask = _run(world)
         schema = _call(ask).schema
-        fields = schema['properties']['fields']
-        assert fields['required'] == list(extract.FIELD_ORDER)
-        assert fields['additionalProperties'] is False
-        assert fields['properties']['current_state']['properties']['value']['enum'] == [
-            'idea', 'mvp', 'beta', 'ga', 'mature', '']
+        assert schema == extract.proposal_schema()
+        assert (schema['required'], schema['additionalProperties']) == (['fields', 'questions'], False)
+        entry = schema['properties']['fields']['items']
+        assert schema['properties']['fields']['type'] == 'array'
+        assert entry['required'] == ['field', 'status', 'value', 'citations', 'confidence', 'note']
+        assert entry['additionalProperties'] is False
+        assert entry['properties']['field']['enum'] == list(extract.FIELD_ORDER)
+        assert entry['properties']['value'] == {'type': 'string'}
+        citation = entry['properties']['citations']['items']
+        assert citation['required'] == ['source_id', 'quote', 'page']
+        assert citation['properties']['page'] == {'anyOf': [{'type': 'integer'}, {'type': 'null'}]}
+        assert schema['properties']['questions']['items']['properties']['field']['enum'] == list(extract.FIELD_ORDER)
         assert 'maxLength' not in json.dumps(schema)
+
+    def test_the_schema_stays_small_enough_for_bedrock_to_compile(self):
+        # Bedrock compiles a JSON-outputs schema into a grammar and refused 7.104.00's on every model, Claude Haiku 5.5
+        # and Sonnet 5.5 alike: "ValidationException: The model returned the following errors: The compiled grammar
+        # is too large, which would cause performance issues. Simplify your tool schemas or reduce the number of
+        # strict tools." Measured 2026-11-28 through Converse's output_config.format: the 12 named field objects,
+        # 8.5k characters, refused (8.2k with an integer page, 7.2k with no enums, refused too); fields as an array
+        # of entries, about 1.4k, accepted, and Sonnet 5.5 at effort max with adaptive thinking answered valid JSON.
+        assert len(json.dumps(extract.proposal_schema())) < 2500
+
+    def test_the_prompt_describes_the_answer_as_the_schema_does_for_an_answer_without_it(self):
+        # The structured output's fallback asks for the same JSON in the prompt alone (shared/product_extract_model.py).
+        system = extract.system_prompt(None)
+        assert '{"fields": [...], "questions": [...]}' in system
+        assert '"fields" is an array of one entry for each of the 12 fields: {"field": the field\'s name,' in system
 
 
 class TestTheModel:
@@ -331,7 +355,7 @@ class TestTheProposal:
                                                                                'page': None}]}})))
         first, second = _proposals(world)
         assert first['status'] == 'superseded'
-        assert (second['status'], second['job_id'], second['prompt_version']) == ('open', 'job_1', 'product-extract@1')
+        assert (second['status'], second['job_id'], second['prompt_version']) == ('open', 'job_1', 'product-extract@2')
         assert second['model'] == {'id': SONNET55, 'requested_id': SONNET55, 'effort': 'max',
                                    'structured': True, 'usage': {'input_tokens': 1000, 'output_tokens': 200}}
         assert second['fields']['product_name']['value'] == 'Orbit'

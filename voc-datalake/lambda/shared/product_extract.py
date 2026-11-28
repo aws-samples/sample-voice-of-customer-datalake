@@ -23,14 +23,18 @@ refusal fails the job ``refused``. A deadline passed fails it ``timed_out`` (no 
 an answer cut at its output cap ``cut``, one that is not the schema's JSON ``unreadable``: each an ``ExtractFailed``,
 whose ``code`` shared/jobs.py records as the job's ``error_code``.
 
-THE ANSWER is untrusted too (``validated``): unknown keys dropped; values through ``clean_patch_value``; a citation to
-a source not sent dropped; a quote is ``verified`` when it is at least ``MIN_VERIFIED_QUOTE_CHARS`` characters or
-``MIN_VERIFIED_QUOTE_WORDS`` words (a shorter one is found almost anywhere) and its whitespace- and case-folded text is
-in that source's text as sent (an image's never is: nothing was sent to check it against); a proposed value without a
-verified citation is ``low`` and says ``No verified source``; a value equal to the current one is ``unchanged``; a
-proposal over a value a person typed (shared/product_proposals.py ``person_typed``, the one rule) is a ``conflict``; a
-question for a field that is neither a gap nor ``low`` is dropped, and so is a second question for a field (one per
-field: the gaps panel answers each field once, and a voice start takes one question a field).
+THE ANSWER is a JSON object whose ``fields`` is an ARRAY of entries, each naming its field (7.109.01: the 12 named
+objects of 7.104.00's schema compiled into a grammar Bedrock refused on every model, ``proposal_schema``). It is
+untrusted too (``validated``): a field's first entry kept, an unknown field or a later entry for the same field
+dropped, a field with no entry a gap; unknown keys dropped; values through ``clean_patch_value`` (``current_state``
+one of its states: the schema leaves it a string); a citation to a source not sent dropped; a quote is
+``verified`` when it is at least ``MIN_VERIFIED_QUOTE_CHARS`` characters or ``MIN_VERIFIED_QUOTE_WORDS`` words (a
+shorter one is found almost anywhere) and its whitespace- and case-folded text is in that source's text as sent (an
+image's never is: nothing was sent to check it against); a proposed value without a verified citation is ``low`` and
+says ``No verified source``; a value equal to the current one is ``unchanged``; a proposal over a value a person typed
+(shared/product_proposals.py ``person_typed``, the one rule) is a ``conflict``; a question for a field that is neither
+a gap nor ``low`` is dropped, and so is a second question for a field (one per field: the gaps panel answers each
+field once, and a voice start takes one question a field).
 
 A SOURCE DELETED while the model read it (the call can last about 12.5 minutes, and Delete stays offered) has its
 quotes taken out of the proposal once it is written (``_forget_deleted``), as a delete takes them out of every proposal
@@ -72,7 +76,6 @@ from shared.product_proposals import (
     ContextState,
     context_state,
     forget_source,
-    mapping_at,
     new_proposal_key,
     person_typed,
     put_proposal,
@@ -100,7 +103,8 @@ if TYPE_CHECKING:
 
 __all__ = ['run']
 
-PROMPT_VERSION: Final = 'product-extract@1'
+#: 2 since 7.109.01: the answer's ``fields`` an array of entries (``proposal_schema``).
+PROMPT_VERSION: Final = 'product-extract@2'
 MAX_SOURCE_CHARS: Final = 40_000
 MAX_TOTAL_CHARS: Final = 240_000
 #: A source that would fit only in part is sent cut when at least this much room is left, else skipped.
@@ -288,7 +292,11 @@ RULES: Final = (
     '- note: at most 300 characters, or "".\n'
     f'- questions: at most 8, at most one per field, each at most {MAX_QUESTION_CHARS} characters, asked of the team '
     'about a field that is a gap or of low confidence.\n'
-    '- Answer with the JSON object of the schema only.'
+    '- Answer with one JSON object and nothing else, no code fence: {"fields": [...], "questions": [...]}. "fields" '
+    'is an array of one entry for each of the 12 fields: {"field": the field\'s name, "status": "proposed", '
+    '"unchanged", "gap" or "conflict", "value": text, "citations": [{"source_id": "S1", "quote": text, "page": a '
+    'number or null}], "confidence": "high", "medium" or "low", "note": text}. "questions" is an array of '
+    '{"field": the field\'s name, "question": text}.'
 )
 
 
@@ -350,25 +358,23 @@ def _string(**extra: Any) -> dict[str, Any]:
 
 
 def proposal_schema() -> dict[str, Any]:
-    """The answer's JSON schema: every key required, no other key (a JSON-outputs schema takes no length bounds:
-    ``validated`` caps every string and list)."""
+    """The answer's JSON schema: ``fields`` an array of entries, each naming its field, and ``questions``; every key
+    required, no other key. Small on purpose (7.109.01): Bedrock compiles a JSON-outputs schema into a grammar and
+    refused 7.104.00's, 12 named field objects with their citations, on every model ("The compiled grammar is too
+    large"). So no length bound, no field named in a property and no states for ``current_state``: ``validated``
+    caps every string and list, keeps a field's first entry and holds ``current_state`` to its states."""
     citation = {'type': 'object', 'additionalProperties': False, 'required': ['source_id', 'quote', 'page'],
                 'properties': {'source_id': _string(), 'quote': _string(),
                                'page': {'anyOf': [{'type': 'integer'}, {'type': 'null'}]}}}
-
-    def entry(value: dict[str, Any]) -> dict[str, Any]:
-        return {'type': 'object', 'additionalProperties': False,
-                'required': ['status', 'value', 'citations', 'confidence', 'note'],
-                'properties': {'status': _string(enum=list(FIELD_STATUSES)), 'value': value,
-                               'citations': {'type': 'array', 'items': citation},
-                               'confidence': _string(enum=list(CONFIDENCES)), 'note': _string()}}
-    fields = {name: entry(_string(enum=[*LIFECYCLE_STATES, '']) if name == CURRENT_STATE else _string())
-              for name in FIELD_ORDER}
+    entry = {'type': 'object', 'additionalProperties': False,
+             'required': ['field', 'status', 'value', 'citations', 'confidence', 'note'],
+             'properties': {'field': _string(enum=list(FIELD_ORDER)), 'status': _string(enum=list(FIELD_STATUSES)),
+                            'value': _string(), 'citations': {'type': 'array', 'items': citation},
+                            'confidence': _string(enum=list(CONFIDENCES)), 'note': _string()}}
     question = {'type': 'object', 'additionalProperties': False, 'required': ['field', 'question'],
                 'properties': {'field': _string(enum=list(FIELD_ORDER)), 'question': _string()}}
     return {'type': 'object', 'additionalProperties': False, 'required': ['fields', 'questions'],
-            'properties': {'fields': {'type': 'object', 'additionalProperties': False, 'required': list(FIELD_ORDER),
-                                      'properties': fields},
+            'properties': {'fields': {'type': 'array', 'items': entry},
                            'questions': {'type': 'array', 'items': question}}}
 
 
@@ -382,9 +388,11 @@ def _folded(text: str) -> str:
 def _citations(raw: object, sources: Mapping[str, Source]) -> list[dict[str, Any]]:
     out = []
     for citation in raw if isinstance(raw, list) else []:
-        if not isinstance(citation, Mapping) or citation.get('source_id') not in sources:
+        source_id = citation.get('source_id') if isinstance(citation, Mapping) else None
+        # Text first, as a question's field (``_questions``): a list or a map is unhashable for the membership test.
+        if not isinstance(source_id, str) or source_id not in sources:
             continue
-        source = sources[citation['source_id']]
+        source = sources[source_id]
         quote = str(citation.get('quote') or '').strip()[:MAX_QUOTE_CHARS]
         page = citation.get('page')
         page = page if isinstance(page, int) and not isinstance(page, bool) and page > 0 else None
@@ -429,23 +437,38 @@ def _questions(raw: object, fields: Mapping[str, Mapping[str, Any]]) -> list[dic
     first for each field (the gaps panel answers a field once, and a voice start takes one question a field)."""
     out: list[dict[str, str]] = []
     for entry in raw if isinstance(raw, list) else []:
-        if not isinstance(entry, Mapping) or entry.get('field') not in fields:
+        field = entry.get('field') if isinstance(entry, Mapping) else None
+        # Text first: a list or a map (the model's JSON) is no field, and is unhashable for the membership test.
+        if not isinstance(field, str) or field not in fields:
             continue
-        proposed = fields[entry['field']]
+        proposed = fields[field]
         question = ' '.join(str(entry.get('question') or '').split())[:MAX_QUESTION_CHARS]
         wanted = proposed['status'] == 'gap' or proposed['confidence'] == 'low'
-        if question and wanted and all(kept['field'] != entry['field'] for kept in out):
-            out.append({'field': entry['field'], 'question': question})
+        if question and wanted and all(kept['field'] != field for kept in out):
+            out.append({'field': field, 'question': question})
         if len(out) == MAX_QUESTIONS:
             break
     return out
 
 
+def _entries(raw: object) -> dict[str, Mapping[str, Any]]:
+    """The answer's ``fields`` array by field (``proposal_schema``): each field's first entry; an entry for a field
+    the form does not have, or whose field is not text, a later one for the same field, and anything that is not an
+    entry are dropped."""
+    entries: dict[str, Mapping[str, Any]] = {}
+    for entry in raw if isinstance(raw, list) else []:
+        name = entry.get('field') if isinstance(entry, Mapping) else None
+        if isinstance(name, str) and name in FIELD_ORDER and name not in entries:
+            entries[name] = entry
+    return entries
+
+
 def validated(raw: Mapping[str, Any], sources: Iterable[Source],
               state: ContextState) -> tuple[dict[str, dict[str, Any]], list[dict[str, str]]]:
-    """The answer's 12 fields and its questions, checked against the sources sent and the form as it was."""
+    """The answer's 12 fields and its questions, checked against the sources sent and the form as it was: a field
+    the answer has no entry for is a gap."""
     by_id = {source.source_id: source for source in sources}
-    answered = mapping_at(raw, 'fields')
+    answered = _entries(raw.get('fields'))
     fields = {name: _field(name, answered.get(name), by_id, state) for name in FIELD_ORDER}
     return fields, _questions(raw.get('questions'), fields)
 
