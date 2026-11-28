@@ -17,6 +17,83 @@ the platform package version.
 
 ## [Unreleased]
 
+## [7.108.00] - 2026-11-28
+
+A fix: a workspace's manual import keeps its raw copies by the deployment's retention window, as every other
+ingestion path does. No route, stack, table or stored-data change.
+
+### Fixed
+
+- **A workspace's manual import of a source with a retention window is archived per item, not as one whole file,
+  when the workspace's own profile allows PII.** A workspace's source profile carries no retention window (the window is the deployment's, and a
+  workspace profile refuses one), and `shared/ingest_archive.py` `upload_profile`, the manual import's reader (the
+  paste confirm, the CSV upload and the JSON upload, `api/manual_import_handler.py`), returned that profile without
+  the deployment's window for the source. So `archive_mode` saw no window and kept the whole upload as one file
+  (`ws/{ws}/raw/csv_upload/…`, `ws/{ws}/raw/json_upload/…`, the paste's `ws/{ws}/raw/manual_import/{y}/{m}/{d}/{job_id}.json`).
+  A window's run deletes each item and its own raw copy, never a whole-file archive, so the raw personal data in that
+  file was kept past the source's stated window. Every other ingestion path (`cached_source_profile_strict`) already
+  merged the window. Both now go through one merge, `shared/source_profiles.py` `with_deployment_window` (the workspace's
+  profile, the deployment's `retention_days` and `retention_legal_basis` for that source, no Radar fields), so a
+  workspace's upload of such a source writes one raw copy per item, which the window deletes with the item. The upload
+  reads the deployment's profiles uncached and strongly consistent, as it reads the workspace's, and refuses with the
+  retryable 503 when either cannot be read; so a corrupt deployment `SETTINGS#sources` row now also stops a
+  workspace's uploads with that 503, as the strict reader already did for every other ingestion path. Who it
+  affected: workspaces that used the manual import (paste, CSV or JSON) for a source whose deployment profile has a
+  retention window (whatever that profile's own PII policy: it never applied in a workspace) and whose workspace
+  profile allows PII. A workspace whose own profile redacts or keeps summaries only (or that saved none for the
+  source: its default redacts) wrote no raw copy, a source with no window keeps its whole file as before, and the
+  deployment's own uploads are unchanged.
+
+### Upgrade notes
+
+- **Whole files written before this release stay until an operator reviews them.** Neither retention nor an erasure
+  deletes them: a window's run deletes only each item's own copy, a whole-source erasure in a workspace is refused,
+  and no existing tool lists these files. The retention run's "files needing review" list knows only the deployment's
+  two whole-upload folders (`shared/retention.py` `whole_upload_key`), not a workspace's, and not the paste confirm's
+  whole file in either scope. Only a workspace's hard delete removes them, with everything else under `ws/{ws}/`.
+  (The deployment's own paste files are not affected by this bug, and its whole-source erasure of `manual_import`
+  deletes them with the rest of `raw/manual_import/`.) To find them, for each source whose deployment profile has a
+  window, in every workspace, whatever its profile of that source says today (one that allowed PII then and redacts
+  now still left its file):
+  - **The quicker first lead, the workspace's import history** (`WS#{ws}#IMPORT_RUN`, one summary row per run):
+    every paste, CSV and JSON run records its whole file's URI in `raw_s3_key`, empty when no whole file was
+    written, and its source in `source_id`. A run of such a source with a non-empty `raw_s3_key`, started before this
+    release was deployed, names one such file. The history can miss a run (`record_import_run` logs a failed write
+    and never fails the import), so it is not the complete search.
+  - **The complete search, the raw bucket itself**: the objects under `ws/{ws}/raw/csv_upload/` and
+    `ws/{ws}/raw/json_upload/`, and the files directly in a date folder of `ws/{ws}/raw/manual_import/{y}/{m}/{d}/`
+    (named `{job_id}.json`; a per-item copy sits one folder deeper, `…/{item}/{sha16}.json`), written before this
+    release was deployed. A file's source is its run row's `source_id` (the run whose `raw_s3_key` is the file's URI),
+    or, where no run row was written, the source of the items whose `s3_raw_uri` points at the file (a paste's file
+    is always `manual_import`'s).
+
+  A file all of whose rows are past the window holds data that should be gone. A file only partly past it also holds
+  rows still inside the window, and deleting it removes the only raw copy of those too: their items stay, and a
+  replay from Bronze falls back to each item's stored text. Whether to delete a file now or keep it until its last row is
+  past the window is the operator's decision, under the window's legal basis and with its own audit. This
+  release builds no cleanup.
+- **Fixed next, in 7.109.00**: `whole_upload_key` learns a workspace's whole-upload folders and the paste's whole
+  file in either scope, so a window's run and a field erasure list these files for review (TENETS.md, D5's gaps row).
+
+### Tenet check
+
+Tenets touched: D5, D8 (TENETS.md).
+
+- **D5, customer data is never removed; a legal obligation is the only exception** (advanced): a retention limit
+  the deployment is bound to must reach every copy of the item. A workspace's upload of a windowed source, under a
+  workspace profile that allows PII, now leaves one raw copy per item, which `voc-retention` deletes with the item
+  under the source's legal basis, so the window reaches a workspace's raw data as it does the deployment's. D5's
+  gaps row in TENETS.md drops this gap and writes down what stays open: the whole files written before this release,
+  found by hand (the Upgrade notes) and removed only by the operator, and `whole_upload_key`'s blind spot, fixed in
+  7.109.00. Nothing is deleted by this release.
+- **D8, each workspace is its own boundary** (held): the workspace's own profile still decides its PII policy,
+  restriction, defaults and tags; only the deployment's window, which a workspace cannot set and which applies to
+  every workspace's items, is merged in. The copies stay under the workspace's own `ws/{ws}/raw/` root, and the
+  deployment's profiles are read but never written by a workspace's request.
+
+What it is not: no cleanup of existing archives, no change to what the deployment's uploads write, and no
+workspace-level retention window.
+
 ## [7.107.00] - 2026-11-28
 
 The design of migrating an existing deployment into its `default` workspace (slice 3h-M0 of

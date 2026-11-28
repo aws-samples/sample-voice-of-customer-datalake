@@ -13,9 +13,11 @@ message, then archive only what ``archive_mode`` allows:
 - ``file``  (allow, keep forever): the caller may keep its whole-request
   archive (``raw/csv_upload/...``) as before.
 
-An upload in a workspace (``scope``, the request's resolved membership: the manual import and the form import of
-the import wizard, 7.67.00) reads that workspace's own profiles (a source it saved none for redacts, shared/
-source_profiles.py ``profile_for``) and archives under its own bronze layer, ``ws/{ws}/raw/…``.
+An upload in a workspace (``scope``, the request's resolved membership; the manual import and the form import of
+the import wizard, 7.67.00) archives under that workspace's own bronze layer, ``ws/{ws}/raw/…``, under a profile of
+that workspace with the deployment's retention window for the source: the manual import's from ``upload_profile``
+here (a source the workspace saved none for redacts, shared/source_profiles.py ``profile_for``; the window since
+7.108.00), the form import's from ``cached_source_profile_strict``, which it passes to ``prepare_messages``.
 """
 
 from __future__ import annotations
@@ -44,7 +46,14 @@ from shared.raw_versions import (
     version_key,
 )
 from shared.source_policy import ARCHIVE_FILE, ARCHIVE_ITEM, FreeText, archive_mode, quiet_policy, raw_archive_allowed
-from shared.source_profiles import PII_ALLOW, SOURCE_ID_RE, SourceProfilesUnavailable, load_source_profiles, profile_for
+from shared.source_profiles import (
+    PII_ALLOW,
+    SOURCE_ID_RE,
+    SourceProfilesUnavailable,
+    load_source_profiles,
+    profile_for,
+    with_deployment_window,
+)
 from shared.ws_repo import WorkspaceScope
 
 __all__ = [
@@ -69,6 +78,11 @@ def upload_profile(table: Any, raw_source_id: object, scope: WorkspaceScope | No
     ``ValidationError`` for anything else (an unknown id would create a source
     nobody configured). ``SourceProfilesUnavailable`` (503, retryable) when the
     profiles cannot be read: an upload must not slip past a policy it could not load.
+
+    A workspace's profile takes the deployment's retention window for its source, as every other ingestion path's
+    (shared/source_profiles.py ``with_deployment_window``, the one merge): so a source with a window that the
+    workspace's own profile allows PII for is archived per item, which retention deletes item by item, never as a whole file (7.108.00). Both lists are read
+    uncached; either failing is the 503.
     """
     source_id = DEFAULT_UPLOAD_SOURCE if raw_source_id in (None, '') else raw_source_id
     if not isinstance(source_id, str) or not SOURCE_ID_RE.match(source_id.strip()):
@@ -76,12 +90,14 @@ def upload_profile(table: Any, raw_source_id: object, scope: WorkspaceScope | No
     source_id = source_id.strip()
     try:
         profiles = load_source_profiles(table, scope) if table is not None else []
+        deployment = load_source_profiles(table) if table is not None and scope is not None else []
     except (*_AWS_ERRORS, ValueError) as e:
         logger.exception('Source profiles could not be read for an upload')
         raise SourceProfilesUnavailable from e
     if source_id != DEFAULT_UPLOAD_SOURCE and source_id not in {profile['id'] for profile in profiles}:
         raise ValidationError(f'Unknown source_id "{source_id}": configure it in Administration → Privacy & access → Source policies first')
-    return profile_for(profiles, source_id, workspace=scope is not None)
+    profile = profile_for(profiles, source_id, workspace=scope is not None)
+    return profile if scope is None else with_deployment_window(profile, deployment)
 
 
 def policy_applied(messages: list[dict[str, Any]], profile: Mapping[str, Any], *, free_text: FreeText = None,

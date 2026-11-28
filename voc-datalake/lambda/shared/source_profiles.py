@@ -69,6 +69,7 @@ __all__ = [
     'load_source_profiles',
     'profile_for',
     'validate_source_profiles',
+    'with_deployment_window',
     'workspace_profiles_problem',
 ]
 
@@ -354,7 +355,16 @@ def cached_source_profile_strict(source_id: str, scope: WorkspaceScope | None = 
     deployment, deployment_failed = _cached_profiles(None)
     if deployment_failed:
         raise SourceProfilesUnavailable
-    window = profile_for(deployment, source_id)
+    return with_deployment_window(profile, deployment)
+
+
+def with_deployment_window(profile: Mapping[str, Any], deployment: list[dict[str, Any]]) -> dict[str, Any]:
+    """A workspace's ``profile`` (``profile_for(…, workspace=True)``) as every ingestion path applies it: with the
+    deployment's retention window for its source (``_DEPLOYMENT_WINDOW``, from ``deployment``, the deployment's
+    profiles) and no Radar brand. The one merge of ``cached_source_profile_strict`` and the upload's reader
+    (shared/ingest_archive.py ``upload_profile``, 7.108.00), so ``archive_mode`` keeps a raw copy per item wherever
+    the deployment's window deletes item by item."""
+    window = profile_for(deployment, str(profile['id']))
     return {**{key: value for key, value in profile.items() if key not in _RADAR_FIELDS},
             **{field: window[field] for field in _DEPLOYMENT_WINDOW}}
 

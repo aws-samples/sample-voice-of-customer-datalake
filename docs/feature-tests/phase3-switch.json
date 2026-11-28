@@ -574,6 +574,93 @@
         "reviewed_at": "5206884546132df2301d8e3a01f25df5e9b7ca03"
       },
       "uncertain": "the words \"docs and tenets only\" suggest no-behaviour: a reviewed decision lets it stand"
+    },
+    {
+      "id": "7.108.00",
+      "aliases": [
+        "7.108.0"
+      ],
+      "title": "A fix: a workspace's manual import keeps its raw copies by the deployment's retention window, as every other ingestion path does.",
+      "source": {
+        "changelog": "7.108.00",
+        "doc": null
+      },
+      "kind": "fix",
+      "status": "done",
+      "unit": [
+        {
+          "runner": "pytest",
+          "node": "voc-datalake/lambda/shared/test/test_upload_profile_window.py::test_an_upload_and_the_strict_reader_give_the_same_window[workspace-windowed]",
+          "written_by": "voc-lead-3h/bf-window",
+          "accepted_by": null,
+          "accepted_at": null,
+          "digest": "e480a1f6ec81d7a6c70dd3ad8b8fbd78b9872a9f394ac9969d63e1502f043cd4",
+          "verdict": null,
+          "rejections": []
+        },
+        {
+          "runner": "pytest",
+          "node": "voc-datalake/lambda/shared/test/test_upload_profile_window.py::test_a_workspace_upload_of_a_windowed_pii_allowed_source_is_archived_per_item",
+          "written_by": "voc-lead-3h/bf-window",
+          "accepted_by": "eval-bf/1",
+          "accepted_at": "899574bd6bd1ace0edae933407f5e6fe23835cbd",
+          "digest": "c1cd3adeca009447e424ba3b38fd269bfcba7db02a5880c70d8016ba3634aea2",
+          "verdict": "docs/test-verdicts/7.108.00/pytest-32909c81ad82.md",
+          "rejections": []
+        },
+        {
+          "runner": "pytest",
+          "node": "voc-datalake/lambda/api/test/test_manual_import_workspace_window.py::test_a_workspace_upload_of_a_windowed_pii_allowed_source_is_archived_per_item[csv]",
+          "written_by": "voc-lead-3h/bf-window",
+          "accepted_by": "eval-bf/1",
+          "accepted_at": "899574bd6bd1ace0edae933407f5e6fe23835cbd",
+          "digest": "1b7bff27d16140980033c45365c7481e6a73dbf4d17c2b00127bbbffca6a3245",
+          "verdict": "docs/test-verdicts/7.108.00/pytest-2b00180131b7.md",
+          "rejections": []
+        },
+        {
+          "runner": "pytest",
+          "node": "voc-datalake/lambda/shared/test/test_upload_profile_window.py::test_a_workspace_allow_upload_takes_the_window_of_a_source_the_deployment_redacts",
+          "written_by": "voc-lead-3h/bf-window",
+          "accepted_by": null,
+          "accepted_at": null,
+          "digest": "947f6709edd83dadf33d01b95463e167d88c1e839fbf1963af43ebb019cac1dd",
+          "verdict": null,
+          "rejections": []
+        },
+        {
+          "runner": "pytest",
+          "node": "voc-datalake/lambda/shared/test/test_upload_profile_window.py::test_a_workspace_upload_fails_closed_when_the_deployments_window_is_unreadable",
+          "written_by": "voc-lead-3h/bf-window",
+          "accepted_by": null,
+          "accepted_at": null,
+          "digest": "947f6709edd83dadf33d01b95463e167d88c1e839fbf1963af43ebb019cac1dd",
+          "verdict": null,
+          "rejections": []
+        },
+        {
+          "runner": "pytest",
+          "node": "voc-datalake/lambda/api/test/test_manual_import_workspace_window.py::test_a_workspace_allow_upload_of_a_source_the_deployment_redacts_keeps_its_window[csv]",
+          "written_by": "voc-lead-3h/bf-window",
+          "accepted_by": null,
+          "accepted_at": null,
+          "digest": "d6bbcc94888b1373ca757812d3eda6b8594ad4ea5360f8be7db49d53621f0d6c",
+          "verdict": null,
+          "rejections": []
+        },
+        {
+          "runner": "pytest",
+          "node": "voc-datalake/lambda/shared/test/test_upload_profile_window.py::test_a_workspace_upload_fails_closed_when_the_deployments_row_is_corrupt",
+          "written_by": "voc-lead-3h/bf-window",
+          "accepted_by": null,
+          "accepted_at": null,
+          "digest": "c1cd3adeca009447e424ba3b38fd269bfcba7db02a5880c70d8016ba3634aea2",
+          "verdict": null,
+          "rejections": []
+        }
+      ],
+      "e2e": [],
+      "exemption": null
     }
   ]
 }
